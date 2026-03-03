@@ -14,7 +14,128 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      favorites: {
+        Row: {
+          created_at: string | null
+          id: string
+          user_id: string
+          venue_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          user_id: string
+          venue_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          user_id?: string
+          venue_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "favorites_venue_id_fkey"
+            columns: ["venue_id"]
+            isOneToOne: false
+            referencedRelation: "venues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      search_history: {
+        Row: {
+          created_at: string | null
+          id: string
+          query_text: string
+          results: Json | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          query_text: string
+          results?: Json | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          query_text?: string
+          results?: Json | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      user_profiles: {
+        Row: {
+          created_at: string | null
+          display_name: string | null
+          id: string
+          location: string | null
+          preferences: Json | null
+        }
+        Insert: {
+          created_at?: string | null
+          display_name?: string | null
+          id: string
+          location?: string | null
+          preferences?: Json | null
+        }
+        Update: {
+          created_at?: string | null
+          display_name?: string | null
+          id?: string
+          location?: string | null
+          preferences?: Json | null
+        }
+        Relationships: []
+      }
+      venues: {
+        Row: {
+          address: string | null
+          category: string | null
+          google_place_id: string
+          id: string
+          last_fetched: string | null
+          lat: number | null
+          lng: number | null
+          name: string
+          photo_url: string | null
+          price_level: number | null
+          rating: number | null
+          review_count: number | null
+        }
+        Insert: {
+          address?: string | null
+          category?: string | null
+          google_place_id: string
+          id?: string
+          last_fetched?: string | null
+          lat?: number | null
+          lng?: number | null
+          name: string
+          photo_url?: string | null
+          price_level?: number | null
+          rating?: number | null
+          review_count?: number | null
+        }
+        Update: {
+          address?: string | null
+          category?: string | null
+          google_place_id?: string
+          id?: string
+          last_fetched?: string | null
+          lat?: number | null
+          lng?: number | null
+          name?: string
+          photo_url?: string | null
+          price_level?: number | null
+          rating?: number | null
+          review_count?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
