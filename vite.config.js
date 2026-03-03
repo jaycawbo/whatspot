@@ -1,20 +1,38 @@
-import base44 from "@base44/vite-plugin"
-import react from '@vitejs/plugin-react'
+import react from '@vitejs/plugin-react-swc'
 import { defineConfig } from 'vite'
+import path from 'path'
+import { VitePWA } from 'vite-plugin-pwa'
 
-// https://vite.dev/config/
 export default defineConfig({
-  logLevel: 'error', // Suppress warnings, only show errors
+  server: {
+    host: '::',
+    port: 8080,
+    hmr: { overlay: false },
+  },
   plugins: [
-    base44({
-      // Support for legacy code that imports the base44 SDK with @/integrations, @/entities, etc.
-      // can be removed if the code has been updated to use the new SDK imports from @base44/sdk
-      legacySDKImports: process.env.BASE44_LEGACY_SDK_IMPORTS === 'true',
-      hmrNotifier: true,
-      navigationNotifier: true,
-      analyticsTracker: true,
-      visualEditAgent: true
-    }),
     react(),
-  ]
-});
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.ico', 'robots.txt'],
+      manifest: {
+        name: 'Whatspot',
+        short_name: 'Whatspot',
+        description: 'Discover the best venues near you',
+        theme_color: '#0F1B38',
+        background_color: '#FFFFFF',
+        display: 'standalone',
+        start_url: '/',
+        icons: [
+          { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+      },
+    }),
+  ],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+})
