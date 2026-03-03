@@ -19,7 +19,7 @@ export async function recommend(params) {
   }
 
   // If no results from filter, return all (mock behavior)
-  if (results.length === 0 && params.relaxation_level > 0) {
+  if (results.length === 0) {
     results = [...mockVenues];
   }
 
