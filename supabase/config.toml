@@ -1,1 +1,19 @@
 project_id = "coxecffaunsrnbddrack"
+
+[functions.search-google-place]
+verify_jwt = false
+
+[functions.google-places-details]
+verify_jwt = false
+
+[functions.google-places-broad-search]
+verify_jwt = false
+
+[functions.get-place-photos]
+verify_jwt = false
+
+[functions.geocode-address]
+verify_jwt = false
+
+[functions.search-location]
+verify_jwt = false
