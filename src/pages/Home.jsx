@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useMemo } from 'react';
+import whatspotLogo from '@/assets/whatspot_logo.svg';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { recommend } from '@/services/api';
 import Header from '@/components/home/Header';
@@ -132,9 +133,7 @@ export default function Home() {
       {isPreSearch && (
         <div className="pt-14">
           <div className="flex flex-col items-center justify-center px-4 md:px-8 pt-12 md:pt-20 space-y-6">
-            <h1 className="text-3xl md:text-4xl font-bold text-foreground tracking-tight">
-              Whatspot
-            </h1>
+            <img src={whatspotLogo} alt="Whatspot" className="h-10 md:h-12" />
 
             <SearchBar
               query={state.query}
