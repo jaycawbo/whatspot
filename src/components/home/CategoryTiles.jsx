@@ -12,7 +12,7 @@ const categories = [
 
 export default function CategoryTiles({ onSelectCategory, compact }) {
   return (
-    <div className={cn('flex flex-wrap justify-center gap-2', compact && 'gap-1.5')}>
+    <div className={cn('flex gap-2 overflow-x-auto scrollbar-hide pb-1', compact && 'gap-1.5')}>
       {categories.map((cat) => {
         const Icon = cat.icon;
         return (
@@ -20,11 +20,11 @@ export default function CategoryTiles({ onSelectCategory, compact }) {
             key={cat.label}
             onClick={() => onSelectCategory(cat)}
             className={cn(
-              'inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2.5 hover:bg-accent hover:border-accent-foreground/20 transition-colors',
-              compact && 'px-3 py-2'
+              'inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1.5 hover:bg-accent hover:border-accent-foreground/20 transition-colors whitespace-nowrap shrink-0',
+              compact && 'px-3 py-1.5'
             )}
           >
-            <Icon className="h-4 w-4 text-muted-foreground" />
+            <Icon className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="text-sm font-medium text-foreground">{cat.label}</span>
           </button>
         );
