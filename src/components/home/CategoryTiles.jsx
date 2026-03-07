@@ -12,7 +12,7 @@ const categories = [
 
 export default function CategoryTiles({ onSelectCategory, compact }) {
   return (
-    <div className={cn('flex flex-wrap justify-center gap-2', compact && 'gap-1.5')}>
+    <div className={cn('flex gap-2 overflow-x-auto scrollbar-hide pb-1', compact && 'gap-1.5')}>
       {categories.map((cat) => {
         const Icon = cat.icon;
         return (
