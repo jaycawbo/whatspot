@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -12,16 +12,9 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-export default function MapView({ results, isLoading }) {
-  const { state } = useGlobalState();
-  const center = [state.userLocation.lat, state.userLocation.lon];
-
-  if (isLoading) {
-    return <div className="h-full w-full rounded-xl bg-muted animate-pulse" />;
-  }
-
+function MapContent({ results }) {
   return (
-    <MapContainer center={center} zoom={13} className="h-full w-full rounded-xl" scrollWheelZoom>
+    <>
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -38,6 +31,21 @@ export default function MapView({ results, isLoading }) {
           </Popup>
         </Marker>
       ))}
+    </>
+  );
+}
+
+export default function MapView({ results, isLoading }) {
+  const { state } = useGlobalState();
+  const center = [state.userLocation.lat, state.userLocation.lon];
+
+  if (isLoading) {
+    return <div className="h-full w-full rounded-xl bg-muted animate-pulse" />;
+  }
+
+  return (
+    <MapContainer center={center} zoom={13} className="h-full w-full rounded-xl" scrollWheelZoom>
+      <MapContent results={results} />
     </MapContainer>
   );
 }
