@@ -96,20 +96,12 @@ export default function Home() {
     [dispatch]
   );
 
-  // --- Client-side filter + sort ---
+  // --- Display results (sort only, filtering is server-side) ---
   const displayResults = useMemo(() => {
     let r = [...state.results];
-    const f = state.filters;
-    if (f.openNow) r = r.filter((v) => v.is_open_now);
-    if (f.priceLevels.length) r = r.filter((v) => f.priceLevels.includes(v.price_level));
-    if (f.cuisines.length)
-      r = r.filter((v) =>
-        f.cuisines.some((c) => v.cuisine_type?.toLowerCase().includes(c.toLowerCase()))
-      );
-    r = r.filter((v) => v.distance_km <= f.radius);
     if (state.sort === 'distance') r.sort((a, b) => a.distance_km - b.distance_km);
     return r;
-  }, [state.results, state.filters, state.sort]);
+  }, [state.results, state.sort]);
 
   // --- Relaxation ---
   const handleRelax = useCallback(() => {
