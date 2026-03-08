@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,8 +18,14 @@ const CUISINE_OPTIONS = [
   'Chinese', 'Mediterranean', 'Korean', 'American', 'Spanish', 'Canadian',
 ];
 
-export default function FilterDialog({ filters, onFilterChange, maxRadius = 10 }) {
-  const [open, setOpen] = useState(false);
+export default function FilterDialog({ filters, onFilterChange, maxRadius = 10, externalOpen, onExternalOpenChange, hideTrigger }) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen !== undefined ? externalOpen : internalOpen;
+  const setOpen = (v) => {
+    if (onExternalOpenChange) onExternalOpenChange(v);
+    setInternalOpen(v);
+  };
+
   const [local, setLocal] = useState(filters);
 
   const handleOpen = (o) => {
@@ -52,12 +58,14 @@ export default function FilterDialog({ filters, onFilterChange, maxRadius = 10 }
 
   return (
     <Dialog open={open} onOpenChange={handleOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5">
-          <SlidersHorizontal className="h-3.5 w-3.5" />
-          Filters
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-1.5">
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Filters
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Filters</DialogTitle>
