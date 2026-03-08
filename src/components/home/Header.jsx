@@ -1,23 +1,23 @@
 import React, { useState } from 'react';
 import { MapPin, X, ChevronDown } from 'lucide-react';
 import { useGlobalState } from '@/context/GlobalStateContext';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import whatspotLogo from '@/assets/whatspot_logo.svg';
+import LocationSearch from '@/components/home/LocationSearch';
 
 export default function Header() {
   const { state, dispatch } = useGlobalState();
   const [editingLocation, setEditingLocation] = useState(false);
-  const [locationInput, setLocationInput] = useState(state.locationName);
 
-  const handleLocationConfirm = () => {
-    if (locationInput.trim()) {
-      dispatch({
-        type: 'SET_LOCATION',
-        payload: { coords: state.userLocation, name: locationInput.trim() },
-      });
-    }
+  const handleLocationSelect = ({ name, coords }) => {
+    dispatch({
+      type: 'SET_LOCATION',
+      payload: {
+        coords: coords || state.userLocation,
+        name,
+      },
+    });
     setEditingLocation(false);
   };
 
@@ -37,27 +37,14 @@ export default function Header() {
 
       <div className="flex items-center gap-2 min-w-0">
         {editingLocation ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleLocationConfirm();
-            }}
-            className="flex items-center gap-1"
-          >
-            <Input
-              autoFocus
-              value={locationInput}
-              onChange={(e) => setLocationInput(e.target.value)}
-              className="h-8 text-xs w-40 md:w-56"
-              onBlur={handleLocationConfirm}
-            />
-          </form>
+          <LocationSearch
+            currentName={state.locationName}
+            onLocationSelect={handleLocationSelect}
+            onClose={() => setEditingLocation(false)}
+          />
         ) : (
           <button
-            onClick={() => {
-              setLocationInput(state.locationName);
-              setEditingLocation(true);
-            }}
+            onClick={() => setEditingLocation(true)}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors max-w-[200px] truncate"
           >
             <MapPin className="h-3.5 w-3.5 shrink-0" />
