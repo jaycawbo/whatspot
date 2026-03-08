@@ -41,15 +41,14 @@ export default function Home() {
 
       try {
         const res = await recommend({
+          mode: state.category ? 'browse_category' : 'query',
+          category: state.category,
           query: queryText,
           lat: state.userLocation.lat,
           lon: state.userLocation.lon,
           location_name: state.locationName,
-          anonymous_id: state.anonymousId,
+          radius_km: state.filters.radius,
           relaxation_level: state.relaxationLevel,
-          sort: state.sort,
-          page_size: 10,
-          cursor: 0,
         });
         dispatch({ type: 'SET_RESULTS', payload: res });
       } catch {
