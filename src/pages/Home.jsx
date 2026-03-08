@@ -49,6 +49,9 @@ export default function Home() {
           location_name: state.locationName,
           radius_km: state.filters.radius,
           relaxation_level: state.relaxationLevel,
+          open_now: state.filters.openNow || undefined,
+          price_levels: state.filters.priceLevels.length ? state.filters.priceLevels : undefined,
+          cuisines: state.filters.cuisines.length ? state.filters.cuisines : undefined,
         });
         dispatch({ type: 'SET_RESULTS', payload: res });
       } catch {
