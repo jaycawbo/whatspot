@@ -83,8 +83,8 @@ export default function Home() {
 
   // --- Chip append ---
   const handleAppendChip = useCallback(
-    (chip) => {
-      const newQuery = (state.query + ' ' + chip).trim();
+    (chipLabel, connector = ' ') => {
+      const newQuery = (state.query + connector + chipLabel).trim();
       dispatch({ type: 'SET_QUERY', payload: newQuery });
     },
     [state.query, dispatch]
