@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.search-location]
 verify_jwt = false
+
+[functions.recommend]
+verify_jwt = false
