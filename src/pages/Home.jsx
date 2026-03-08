@@ -147,7 +147,7 @@ export default function Home() {
             />
 
             <div className="w-full max-w-xl">
-              <CategoryTiles onSelectCategory={handleSelectCategory} />
+              <CategoryTiles onSelectCategory={handleSelectCategory} onOpenFilters={() => setFilterDialogOpen(true)} />
             </div>
 
             {state.tileBaseQuery && (
