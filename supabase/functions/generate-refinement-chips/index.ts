@@ -1,72 +1,62 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
     const { query } = await req.json();
 
     if (!query) {
-      return new Response(JSON.stringify({ chips: [] }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      return new Response(JSON.stringify({ error: "Missing query" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      console.error('LOVABLE_API_KEY not configured');
+    const apiKey = Deno.env.get("LOVABLE_API_KEY");
+    if (!apiKey) {
+      console.error("LOVABLE_API_KEY not configured");
       return new Response(JSON.stringify({ chips: [] }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-lite',
+        model: "google/gemini-2.5-flash-lite",
+        max_tokens: 150,
+        temperature: 0.7,
         messages: [
           {
-            role: 'system',
-            content: `You generate short refinement chip labels for a venue search app. Each label is a noun phrase (2-4 words) that reads naturally when appended with "with" or "and" to a search query. Examples: "outdoor seating", "craft cocktails", "cozy vibes", "budget-friendly prices". Return exactly 6 labels. Do not include generic terms like "restaurant", "bar", "cafe".`,
+            role: "system",
+            content: `You generate short search refinement chips for a venue discovery app. 
+Given a search query, return exactly 6 short noun phrases that a user might want to add to refine their search.
+Rules:
+- Each phrase must be 1-4 words
+- Phrases must read naturally after "with" or "and" (e.g. "outdoor seating", "cozy vibes", "late night hours")
+- Be specific and useful, not generic
+- No duplicates
+- Return ONLY a JSON array of 6 strings, nothing else. No markdown, no explanation.
+Example output: ["outdoor seating", "craft cocktails", "cozy vibes", "late night hours", "pet-friendly patio", "happy hour deals"]`,
           },
           {
-            role: 'user',
-            content: `Generate 6 refinement chip labels for this search: "${query}"`,
+            role: "user",
+            content: `Search query: "${query}"`,
           },
         ],
-        tools: [
-          {
-            type: 'function',
-            function: {
-              name: 'return_chips',
-              description: 'Return refinement chip labels',
-              parameters: {
-                type: 'object',
-                properties: {
-                  chips: {
-                    type: 'array',
-                    items: { type: 'string' },
-                    minItems: 6,
-                    maxItems: 6,
-                  },
-                },
-                required: ['chips'],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
-        tool_choice: { type: 'function', function: { name: 'return_chips' } },
       }),
     });
 
@@ -76,31 +66,28 @@ Deno.serve(async (req) => {
       console.error(`AI gateway error [${status}]:`, text);
       return new Response(JSON.stringify({ chips: [] }), {
         status: status === 429 || status === 402 ? status : 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const data = await response.json();
-    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    let chips: string[] = [];
+    const raw = data.choices?.[0]?.message?.content?.trim();
 
-    if (toolCall?.function?.arguments) {
-      try {
-        const parsed = JSON.parse(toolCall.function.arguments);
-        chips = parsed.chips || [];
-      } catch {
-        console.error('Failed to parse tool call arguments');
-      }
+    let chips: string[] = [];
+    try {
+      chips = JSON.parse(raw);
+    } catch {
+      chips = [];
     }
 
     return new Response(JSON.stringify({ chips }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error('generate-refinement-chips error:', error);
-    return new Response(JSON.stringify({ chips: [] }), {
+    console.error("generate-refinement-chips error:", error);
+    return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
