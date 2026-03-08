@@ -91,9 +91,17 @@ export default function Home() {
   );
 
   // --- Filters ---
+  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
+
   const handleFilterChange = useCallback(
-    (f) => dispatch({ type: 'SET_FILTERS', payload: f }),
-    [dispatch]
+    (f) => {
+      dispatch({ type: 'SET_FILTERS', payload: f });
+      // Re-run search if we're in post-search mode
+      if (state.mode === 'post-search' && state.query) {
+        runSearch(state.query);
+      }
+    },
+    [dispatch, state.mode, state.query, runSearch]
   );
 
   // --- Display results (sort only, filtering is server-side) ---
