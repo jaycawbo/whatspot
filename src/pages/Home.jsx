@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useMemo } from 'react';
+import React, { useCallback, useRef, useMemo, useState } from 'react';
 import whatspotLogo from '@/assets/whatspot_logo.svg';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { recommend } from '@/services/api';
@@ -49,13 +49,16 @@ export default function Home() {
           location_name: state.locationName,
           radius_km: state.filters.radius,
           relaxation_level: state.relaxationLevel,
+          open_now: state.filters.openNow || undefined,
+          price_levels: state.filters.priceLevels.length ? state.filters.priceLevels : undefined,
+          cuisines: state.filters.cuisines.length ? state.filters.cuisines : undefined,
         });
         dispatch({ type: 'SET_RESULTS', payload: res });
       } catch {
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     },
-    [state.userLocation, state.locationName, state.anonymousId, state.relaxationLevel, state.sort, dispatch]
+    [state.userLocation, state.locationName, state.anonymousId, state.relaxationLevel, state.filters, state.sort, dispatch]
   );
 
   const handleSearch = useCallback(
@@ -91,25 +94,25 @@ export default function Home() {
   );
 
   // --- Filters ---
+  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
+
   const handleFilterChange = useCallback(
-    (f) => dispatch({ type: 'SET_FILTERS', payload: f }),
-    [dispatch]
+    (f) => {
+      dispatch({ type: 'SET_FILTERS', payload: f });
+      // Re-run search if we're in post-search mode
+      if (state.mode === 'post-search' && state.query) {
+        runSearch(state.query);
+      }
+    },
+    [dispatch, state.mode, state.query, runSearch]
   );
 
-  // --- Client-side filter + sort ---
+  // --- Display results (sort only, filtering is server-side) ---
   const displayResults = useMemo(() => {
     let r = [...state.results];
-    const f = state.filters;
-    if (f.openNow) r = r.filter((v) => v.is_open_now);
-    if (f.priceLevels.length) r = r.filter((v) => f.priceLevels.includes(v.price_level));
-    if (f.cuisines.length)
-      r = r.filter((v) =>
-        f.cuisines.some((c) => v.cuisine_type?.toLowerCase().includes(c.toLowerCase()))
-      );
-    r = r.filter((v) => v.distance_km <= f.radius);
     if (state.sort === 'distance') r.sort((a, b) => a.distance_km - b.distance_km);
     return r;
-  }, [state.results, state.filters, state.sort]);
+  }, [state.results, state.sort]);
 
   // --- Relaxation ---
   const handleRelax = useCallback(() => {
@@ -144,7 +147,7 @@ export default function Home() {
             />
 
             <div className="w-full max-w-xl">
-              <CategoryTiles onSelectCategory={handleSelectCategory} />
+              <CategoryTiles onSelectCategory={handleSelectCategory} onOpenFilters={() => setFilterDialogOpen(true)} />
             </div>
 
             {state.tileBaseQuery && (
@@ -247,6 +250,15 @@ export default function Home() {
 
       {/* Gated modal */}
       <GatedModal isOpen={state.gated} onClose={() => {}} />
+
+      {/* Standalone filter dialog (triggered from pre-search icon) */}
+      <FilterDialog
+        filters={state.filters}
+        onFilterChange={handleFilterChange}
+        externalOpen={filterDialogOpen}
+        onExternalOpenChange={setFilterDialogOpen}
+        hideTrigger
+      />
     </div>
   );
 }
