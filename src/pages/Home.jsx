@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useMemo } from 'react';
+import React, { useCallback, useRef, useMemo, useState } from 'react';
 import whatspotLogo from '@/assets/whatspot_logo.svg';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { recommend } from '@/services/api';
