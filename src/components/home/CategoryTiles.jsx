@@ -1,6 +1,6 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
-import { UtensilsCrossed, Wine, Coffee, CakeSlice, Zap } from 'lucide-react';
+import { UtensilsCrossed, Wine, Coffee, CakeSlice, Zap, SlidersHorizontal } from 'lucide-react';
 
 const categories = [
 { icon: UtensilsCrossed, label: 'Food', prompt: 'best restaurants nearby' },
@@ -10,9 +10,21 @@ const categories = [
 { icon: Zap, label: 'Quick Bites', prompt: 'quick bites and fast food nearby' }];
 
 
-export default function CategoryTiles({ onSelectCategory, compact }) {
+export default function CategoryTiles({ onSelectCategory, compact, onOpenFilters }) {
   return (
-    <div className={cn('flex gap-2 overflow-x-auto scrollbar-hide pb-1', compact && 'gap-1.5')}>
+    <div className={cn('flex gap-2 overflow-x-auto scrollbar-hide pb-1 items-center', compact && 'gap-1.5')}>
+      {onOpenFilters && (
+        <button
+          onClick={onOpenFilters}
+          className={cn(
+            "inline-flex items-center justify-center rounded-full border border-border bg-card hover:bg-accent hover:border-accent-foreground/20 transition-colors shrink-0 h-[34px] w-[34px]",
+            compact && 'h-[30px] w-[30px]'
+          )}
+          aria-label="Filters"
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+        </button>
+      )}
       {categories.map((cat) => {
         const Icon = cat.icon;
         return (
