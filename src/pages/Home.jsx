@@ -250,6 +250,15 @@ export default function Home() {
 
       {/* Gated modal */}
       <GatedModal isOpen={state.gated} onClose={() => {}} />
+
+      {/* Standalone filter dialog (triggered from pre-search icon) */}
+      <FilterDialog
+        filters={state.filters}
+        onFilterChange={handleFilterChange}
+        externalOpen={filterDialogOpen}
+        onExternalOpenChange={setFilterDialogOpen}
+        hideTrigger
+      />
     </div>
   );
 }
