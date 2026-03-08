@@ -5,6 +5,7 @@ import { recommend } from '@/services/api';
 import Header from '@/components/home/Header';
 import SearchBar from '@/components/home/SearchBar';
 import CategoryTiles from '@/components/home/CategoryTiles';
+import FilterSummary from '@/components/home/FilterSummary';
 import RefinementChips from '@/components/home/RefinementChips';
 import SuggestedChips from '@/components/home/SuggestedChips';
 import ResultsList from '@/components/home/ResultsList';
