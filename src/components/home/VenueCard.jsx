@@ -37,7 +37,11 @@ export default function VenueCard({ venue }) {
             </span>
           )}
           {venue.distance_km != null && (
-            <span className="text-[10px] text-muted-foreground">{venue.distance_km} km</span>
+            <span className="text-[10px] text-muted-foreground">
+              {venue.distance_km >= 100
+                ? Math.round(venue.distance_km)
+                : parseFloat(venue.distance_km.toFixed(1))} km
+            </span>
           )}
           <span
             className={cn(
