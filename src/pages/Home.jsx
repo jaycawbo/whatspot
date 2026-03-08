@@ -58,7 +58,7 @@ export default function Home() {
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     },
-    [state.userLocation, state.locationName, state.anonymousId, state.relaxationLevel, state.sort, dispatch]
+    [state.userLocation, state.locationName, state.anonymousId, state.relaxationLevel, state.filters, state.sort, dispatch]
   );
 
   const handleSearch = useCallback(
