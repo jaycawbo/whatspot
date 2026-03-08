@@ -4,10 +4,10 @@ import { v4 as uuidv4 } from 'uuid';
 const GlobalStateContext = createContext();
 
 const initialFilters = {
-  openNow: false,
+  openNow: true,
   priceLevels: [],
   cuisines: [],
-  radius: 3,
+  radius: 2,
 };
 
 function getInitialState() {

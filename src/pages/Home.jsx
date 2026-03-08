@@ -5,6 +5,7 @@ import { recommend } from '@/services/api';
 import Header from '@/components/home/Header';
 import SearchBar from '@/components/home/SearchBar';
 import CategoryTiles from '@/components/home/CategoryTiles';
+import FilterSummary from '@/components/home/FilterSummary';
 import RefinementChips from '@/components/home/RefinementChips';
 import SuggestedChips from '@/components/home/SuggestedChips';
 import ResultsList from '@/components/home/ResultsList';
@@ -147,7 +148,11 @@ export default function Home() {
             />
 
             <div className="w-full max-w-xl">
-              <CategoryTiles onSelectCategory={handleSelectCategory} onOpenFilters={() => setFilterDialogOpen(true)} />
+              <CategoryTiles onSelectCategory={handleSelectCategory} />
+            </div>
+
+            <div className="w-full max-w-xl">
+              <FilterSummary filters={state.filters} onOpenFilters={() => setFilterDialogOpen(true)} />
             </div>
 
             {state.tileBaseQuery && (
