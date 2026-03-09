@@ -117,8 +117,18 @@ async function callLLM(apiKey: string, systemPrompt: string, userPrompt: string,
 
 // ─── Google Places helpers (inlined) ───
 
-async function googlePlacesBroadSearch(apiKey: string, query: string, lat: number, lon: number, radiusKm: number) {
+async function googlePlacesBroadSearch(apiKey: string, query: string, lat: number, lon: number, radiusKm: number, openNow?: boolean, priceLevels?: string[]) {
   const url = 'https://places.googleapis.com/v1/places:searchText';
+  const reqBody: any = {
+    textQuery: query,
+    maxResultCount: 20,
+    locationBias: {
+      circle: { center: { latitude: lat, longitude: lon }, radius: radiusKm * 1000 },
+    },
+  };
+  if (openNow) reqBody.openNow = true;
+  if (priceLevels && priceLevels.length > 0) reqBody.priceLevels = priceLevels;
+
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
@@ -127,13 +137,7 @@ async function googlePlacesBroadSearch(apiKey: string, query: string, lat: numbe
       'X-Goog-FieldMask':
         'places.id,places.name,places.displayName,places.formattedAddress,places.types,places.location,places.rating,places.userRatingCount,places.priceLevel,places.businessStatus',
     },
-    body: JSON.stringify({
-      textQuery: query,
-      maxResultCount: 20,
-      locationBias: {
-        circle: { center: { latitude: lat, longitude: lon }, radius: radiusKm * 1000 },
-      },
-    }),
+    body: JSON.stringify(reqBody),
   });
   if (!resp.ok) {
     const err = await resp.text();
@@ -221,6 +225,8 @@ Deno.serve(async (req) => {
       lon,
       location_name,
       relaxation_level = 0,
+      open_now,
+      price_levels,
     } = await req.json();
 
     const GOOGLE_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY');
@@ -287,6 +293,22 @@ Deno.serve(async (req) => {
     }
 
     // ─── STEP 2: Google Places broad search ───
+    const reversePriceLevelMap: Record<string, string[]> = {
+      '$': ['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE'],
+      '$$': ['PRICE_LEVEL_MODERATE'],
+      '$$$': ['PRICE_LEVEL_EXPENSIVE'],
+      '$$$$': ['PRICE_LEVEL_VERY_EXPENSIVE'],
+    };
+
+    let googlePriceLevels: string[] = [];
+    if (price_levels && Array.isArray(price_levels) && price_levels.length > 0) {
+      price_levels.forEach((pl: string) => {
+        if (reversePriceLevelMap[pl]) {
+          googlePriceLevels.push(...reversePriceLevelMap[pl]);
+        }
+      });
+    }
+
     console.log(`🌍 STEP 2: Google Places search for "${refinedSearchTerm}"...`);
     const googleResults = await googlePlacesBroadSearch(
       GOOGLE_KEY,
@@ -294,6 +316,8 @@ Deno.serve(async (req) => {
       lat,
       lon,
       admission.maxRadius,
+      open_now,
+      googlePriceLevels
     );
     console.log(`📊 Google returned ${googleResults.length} venues`);
 
@@ -316,9 +340,17 @@ Deno.serve(async (req) => {
     const filteredVenues = googleResults
       .map((place: any) => {
         const distance_km = calculateDistance(lat, lon, place.lat, place.lon);
+        if (distance_km > admission.maxRadius) return null;
         if (place.business_status === 'CLOSED_PERMANENTLY') return null;
         if (!place.rating || !place.user_ratings_total) return null;
         if (place.rating < admission.minRating || place.user_ratings_total < admission.minReviewCount) return null;
+
+        const mappedPriceLevel = priceLevelMap[place.price_level] || null;
+        if (price_levels && Array.isArray(price_levels) && price_levels.length > 0) {
+            if (!mappedPriceLevel || !price_levels.includes(mappedPriceLevel)) {
+                return null;
+            }
+        }
 
         const isRelaxedAdmission =
           place.rating < SCORING.RATING_FLOOR || place.user_ratings_total < SCORING.REVIEW_FLOOR;
