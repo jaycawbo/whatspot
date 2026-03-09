@@ -1,18 +1,24 @@
 import React from 'react';
 import { Star, MapPin, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import HeartButton from '@/components/spots/HeartButton';
 
 export default function VenueCard({ venue }) {
   const imgUrl = venue.image_urls?.[0] || '/placeholder.svg';
 
   return (
-    <div className="flex gap-3 rounded-xl border border-border bg-card p-3 shadow-sm hover:shadow-md transition-shadow">
-      <img
-        src={imgUrl}
-        alt={venue.name}
-        className="h-24 w-24 rounded-lg object-cover shrink-0 bg-muted"
-        loading="lazy"
-      />
+    <div className="relative flex gap-3 rounded-xl border border-border bg-card p-3 shadow-sm hover:shadow-md transition-shadow">
+      <div className="relative shrink-0">
+        <img
+          src={imgUrl}
+          alt={venue.name}
+          className="h-24 w-24 rounded-lg object-cover bg-muted"
+          loading="lazy"
+        />
+        <div className="absolute top-1 right-1">
+          <HeartButton venue={venue} size="sm" />
+        </div>
+      </div>
       <div className="flex flex-col min-w-0 flex-1 justify-between py-0.5">
         <div>
           <h3 className="font-semibold text-sm text-foreground truncate">{venue.name}</h3>
@@ -43,15 +49,11 @@ export default function VenueCard({ venue }) {
                 : parseFloat(venue.distance_km.toFixed(1))} km
             </span>
           )}
-          <span
-            className={cn(
-              'flex items-center gap-0.5 text-[10px] font-medium',
-              venue.is_open_now ? 'text-green-600' : 'text-destructive'
-            )}
-          >
-            <Clock className="h-2.5 w-2.5" />
-            {venue.is_open_now ? 'Open' : 'Closed'}
-          </span>
+          {venue.descriptors?.length > 0 && venue.descriptors.slice(0, 2).map((d) => (
+            <span key={d} className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-accent-foreground">
+              {d}
+            </span>
+          ))}
         </div>
       </div>
     </div>

@@ -601,7 +601,7 @@ Deno.serve(async (req) => {
     }
 
     // ─── Strip internal fields ───
-    const resultsForFrontend = resultsWithDescriptors.map(({ place_id, isRelaxedAdmission, unknownPrice, ...rest }: any) => rest);
+    const resultsForFrontend = resultsWithDescriptors.map(({ isRelaxedAdmission, unknownPrice, ...rest }: any) => rest);
 
     return new Response(
       JSON.stringify({
