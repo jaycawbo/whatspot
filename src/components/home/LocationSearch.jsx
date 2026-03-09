@@ -59,6 +59,35 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
     debounceRef.current = setTimeout(() => fetchSuggestions(val), 250);
   };
 
+  const handleUseCurrentLocation = () => {
+    if (navigator.geolocation) {
+      setLoading(true);
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`);
+            const data = await res.json();
+            const name = data.address?.city || data.address?.town || data.address?.village || data.address?.suburb || "Current Location";
+            onLocationSelect({
+              name,
+              coords: { lat: latitude, lon: longitude },
+            });
+          } catch {
+            onLocationSelect({
+              name: "Current Location",
+              coords: { lat: latitude, lon: longitude },
+            });
+          }
+        },
+        (err) => {
+          console.error(err);
+          setLoading(false);
+        }
+      );
+    }
+  };
+
   const selectSuggestion = async (suggestion) => {
     setLoading(true);
     try {
