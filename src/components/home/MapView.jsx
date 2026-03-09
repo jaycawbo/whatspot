@@ -1,6 +1,7 @@
 import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { useGlobalState } from '@/context/GlobalStateContext';
+import HeartButton from '@/components/spots/HeartButton';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -22,11 +23,13 @@ function MapContent({ results }) {
       {results.map((v, i) => (
         <Marker key={v.name + i} position={[v.lat, v.lon]}>
           <Popup>
-            <div className="text-sm">
-              <strong>{v.name}</strong>
-              <br />
-              {v.address}
-              {v.rating && <><br />⭐ {v.rating}</>}
+            <div className="text-sm min-w-[160px]">
+              <div className="flex items-start justify-between gap-2">
+                <strong>{v.name}</strong>
+                <HeartButton venue={v} size="sm" />
+              </div>
+              <span className="text-muted-foreground">{v.address}</span>
+              {v.rating && <div className="mt-1">⭐ {v.rating}</div>}
             </div>
           </Popup>
         </Marker>
