@@ -117,8 +117,18 @@ async function callLLM(apiKey: string, systemPrompt: string, userPrompt: string,
 
 // ─── Google Places helpers (inlined) ───
 
-async function googlePlacesBroadSearch(apiKey: string, query: string, lat: number, lon: number, radiusKm: number) {
+async function googlePlacesBroadSearch(apiKey: string, query: string, lat: number, lon: number, radiusKm: number, openNow?: boolean, priceLevels?: string[]) {
   const url = 'https://places.googleapis.com/v1/places:searchText';
+  const reqBody: any = {
+    textQuery: query,
+    maxResultCount: 20,
+    locationBias: {
+      circle: { center: { latitude: lat, longitude: lon }, radius: radiusKm * 1000 },
+    },
+  };
+  if (openNow) reqBody.openNow = true;
+  if (priceLevels && priceLevels.length > 0) reqBody.priceLevels = priceLevels;
+
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
@@ -127,13 +137,7 @@ async function googlePlacesBroadSearch(apiKey: string, query: string, lat: numbe
       'X-Goog-FieldMask':
         'places.id,places.name,places.displayName,places.formattedAddress,places.types,places.location,places.rating,places.userRatingCount,places.priceLevel,places.businessStatus',
     },
-    body: JSON.stringify({
-      textQuery: query,
-      maxResultCount: 20,
-      locationBias: {
-        circle: { center: { latitude: lat, longitude: lon }, radius: radiusKm * 1000 },
-      },
-    }),
+    body: JSON.stringify(reqBody),
   });
   if (!resp.ok) {
     const err = await resp.text();
