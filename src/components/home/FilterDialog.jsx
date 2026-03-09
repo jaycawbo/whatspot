@@ -13,10 +13,6 @@ import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 
 const PRICE_LEVELS = ['$', '$$', '$$$', '$$$$'];
-const CUISINE_OPTIONS = [
-  'Italian', 'Mexican', 'Thai', 'Japanese', 'Indian', 'French',
-  'Chinese', 'Mediterranean', 'Korean', 'American', 'Spanish', 'Canadian',
-];
 
 export default function FilterDialog({ filters, onFilterChange, maxRadius = 10, externalOpen, onExternalOpenChange, hideTrigger }) {
   const [internalOpen, setInternalOpen] = useState(false);
