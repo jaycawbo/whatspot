@@ -293,6 +293,22 @@ Deno.serve(async (req) => {
     }
 
     // ─── STEP 2: Google Places broad search ───
+    const reversePriceLevelMap: Record<string, string[]> = {
+      '$': ['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE'],
+      '$$': ['PRICE_LEVEL_MODERATE'],
+      '$$$': ['PRICE_LEVEL_EXPENSIVE'],
+      '$$$$': ['PRICE_LEVEL_VERY_EXPENSIVE'],
+    };
+
+    let googlePriceLevels: string[] = [];
+    if (price_levels && Array.isArray(price_levels) && price_levels.length > 0) {
+      price_levels.forEach((pl: string) => {
+        if (reversePriceLevelMap[pl]) {
+          googlePriceLevels.push(...reversePriceLevelMap[pl]);
+        }
+      });
+    }
+
     console.log(`🌍 STEP 2: Google Places search for "${refinedSearchTerm}"...`);
     const googleResults = await googlePlacesBroadSearch(
       GOOGLE_KEY,
@@ -300,6 +316,8 @@ Deno.serve(async (req) => {
       lat,
       lon,
       admission.maxRadius,
+      open_now,
+      googlePriceLevels
     );
     console.log(`📊 Google returned ${googleResults.length} venues`);
 
