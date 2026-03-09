@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Search, X } from 'lucide-react';
+import { Search, X, ArrowUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function SearchBar({ query, onQueryChange, onSearch, isQuerying, onStopQuery, centered }) {
