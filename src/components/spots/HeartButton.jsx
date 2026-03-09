@@ -3,7 +3,7 @@ import { Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSpots } from '@/hooks/useSpots';
 import SaveToSpotsDialog from './SaveToSpotsDialog';
-import { toast } from 'sonner';
+import AuthModal from '@/components/auth/AuthModal';
 
 /**
  * Heart button for saving/unsaving a venue.
@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 export default function HeartButton({ venue, size = 'md', className }) {
   const { isSaved, isAuthenticated } = useSpots();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
 
   const placeId = venue?.place_id?.replace(/^places\//, '') || venue?.google_place_id;
   const saved = isSaved(placeId);
@@ -19,10 +20,9 @@ export default function HeartButton({ venue, size = 'md', className }) {
   const handleClick = (e) => {
     e.stopPropagation();
     e.preventDefault();
+    
     if (!isAuthenticated) {
-      toast.info('Sign in to save spots', {
-        description: 'Create an account to build your personal Spots list.',
-      });
+      setAuthModalOpen(true);
       return;
     }
     setDialogOpen(true);
@@ -64,6 +64,11 @@ export default function HeartButton({ venue, size = 'md', className }) {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         venue={venue}
+      />
+
+      <AuthModal
+        open={authModalOpen}
+        onOpenChange={setAuthModalOpen}
       />
     </>
   );
