@@ -347,9 +347,15 @@ Deno.serve(async (req) => {
         if (place.rating < admission.minRating || place.user_ratings_total < admission.minReviewCount) return null;
 
         const mappedPriceLevel = priceLevelMap[place.price_level] || null;
+        let unknownPrice = false;
         if (price_levels && Array.isArray(price_levels) && price_levels.length > 0) {
-            if (!mappedPriceLevel || !price_levels.includes(mappedPriceLevel)) {
+            if (mappedPriceLevel && !price_levels.includes(mappedPriceLevel)) {
+                // Known price that doesn't match filter — exclude
                 return null;
+            }
+            if (!mappedPriceLevel) {
+                // Unknown price — keep but flag for down-ranking
+                unknownPrice = true;
             }
         }
 
