@@ -36,7 +36,4 @@ export default defineConfig({
     },
     dedupe: ['react', 'react-dom'],
   },
-  optimizeDeps: {
-    exclude: ['react-leaflet', '@react-leaflet/core', 'leaflet'],
-  },
 })
