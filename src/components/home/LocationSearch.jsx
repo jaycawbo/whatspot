@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { MapPin, Loader2, X } from 'lucide-react';
+import { MapPin, Loader2, X, Navigation, Map } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
+import LocationMapPicker from '@/components/home/LocationMapPicker';
 
 export default function LocationSearch({ currentName, onLocationSelect, onClose }) {
   const [query, setQuery] = useState('');
@@ -9,6 +10,7 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
   const [loading, setLoading] = useState(false);
   const [didYouMean, setDidYouMean] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [mapPickerOpen, setMapPickerOpen] = useState(false);
   const inputRef = useRef(null);
   const debounceRef = useRef(null);
   const containerRef = useRef(null);
@@ -55,6 +57,35 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
     setDidYouMean(null);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => fetchSuggestions(val), 250);
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (navigator.geolocation) {
+      setLoading(true);
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`);
+            const data = await res.json();
+            const name = data.address?.city || data.address?.town || data.address?.village || data.address?.suburb || "Current Location";
+            onLocationSelect({
+              name,
+              coords: { lat: latitude, lon: longitude },
+            });
+          } catch {
+            onLocationSelect({
+              name: "Current Location",
+              coords: { lat: latitude, lon: longitude },
+            });
+          }
+        },
+        (err) => {
+          console.error(err);
+          setLoading(false);
+        }
+      );
+    }
   };
 
   const selectSuggestion = async (suggestion) => {
@@ -167,7 +198,7 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
         </div>
       </form>
 
-      {displayList.length > 0 && (
+      {displayList.length > 0 ? (
         <div className="absolute top-full left-0 mt-1 w-72 md:w-80 bg-popover border border-border rounded-lg shadow-lg z-[60] overflow-hidden">
           {didYouMean && (
             <div className="px-3 py-1.5 text-[11px] font-medium text-muted-foreground border-b border-border bg-muted/50">
@@ -188,6 +219,33 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
             </button>
           ))}
         </div>
+      ) : !query && (
+        <div className="absolute top-full left-0 mt-1 w-72 md:w-80 bg-popover border border-border rounded-lg shadow-lg z-[60] overflow-hidden py-1">
+          <button
+            type="button"
+            onClick={handleUseCurrentLocation}
+            className="w-full text-left px-3 py-2.5 flex items-center gap-2 hover:bg-accent/50 transition-colors text-primary"
+          >
+            <Navigation className="h-4 w-4 shrink-0" />
+            <span className="text-sm font-medium">Use current location</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMapPickerOpen(true)}
+            className="w-full text-left px-3 py-2.5 flex items-center gap-2 hover:bg-accent/50 transition-colors text-foreground"
+          >
+            <Map className="h-4 w-4 shrink-0" />
+            <span className="text-sm font-medium">Pin a location on map</span>
+          </button>
+        </div>
+      )}
+
+      {mapPickerOpen && (
+        <LocationMapPicker 
+          isOpen={mapPickerOpen} 
+          onClose={() => setMapPickerOpen(false)} 
+          onLocationSelect={onLocationSelect} 
+        />
       )}
     </div>
   );
