@@ -340,9 +340,17 @@ Deno.serve(async (req) => {
     const filteredVenues = googleResults
       .map((place: any) => {
         const distance_km = calculateDistance(lat, lon, place.lat, place.lon);
+        if (distance_km > admission.maxRadius) return null;
         if (place.business_status === 'CLOSED_PERMANENTLY') return null;
         if (!place.rating || !place.user_ratings_total) return null;
         if (place.rating < admission.minRating || place.user_ratings_total < admission.minReviewCount) return null;
+
+        const mappedPriceLevel = priceLevelMap[place.price_level] || null;
+        if (price_levels && Array.isArray(price_levels) && price_levels.length > 0) {
+            if (!mappedPriceLevel || !price_levels.includes(mappedPriceLevel)) {
+                return null;
+            }
+        }
 
         const isRelaxedAdmission =
           place.rating < SCORING.RATING_FLOOR || place.user_ratings_total < SCORING.REVIEW_FLOOR;
