@@ -1,66 +1,114 @@
 
-## Diagnosis (why you still see `render2 is not a function`)
-The stacktrace (`<Context.Consumer>` → `MapContainerComponent` inside `react-leaflet.js`) matches a very specific incompatibility: the currently-served prebundled `react-leaflet` file (from `node_modules/.vite/deps/react-leaflet.js`) is using **React 19-style “renderable context”** (rendering `<LeafletContext value={...}>`) which React 18 interprets as `<Context.Consumer>`. That makes React expect a render-function child, so it crashes with `render2 is not a function`.
 
-I confirmed this directly by inspecting the generated file: `node_modules/.vite/deps/react-leaflet.js` contains:
-- `const context = (0, react.use)(LeafletContext)` (React 19 API),
-- and `React.createElement(LeafletContext, { value: ... }, children)` (React 19 provider shorthand),
-even though your installed package sources in `node_modules/@react-leaflet/core/lib/context.js` are React-18-compatible (`useContext`, `LeafletContext.Provider`).
+# Whatspot — Frontend Shell + PWA Build Plan
 
-So the fix is: **force Vite to stop serving / regenerate that stale optimized dependency output**.
+## Overview
 
----
+Build the complete Whatspot frontend UI with mock data, PWA support, and prepare the architecture for future Supabase Edge Function integration. The app is a single-page venue discovery tool with search, category browsing, filtering, and map/list views.
 
-## Plan to fix (implementation)
-### 1) Force Vite to regenerate optimized deps and/or bypass prebundling for leaflet libs
-Update `vite.config.ts` to:
-- **dedupe** React to avoid multiple copies (common cause of weird context issues)
-- **exclude** `react-leaflet` + `@react-leaflet/core` (and optionally `leaflet`) from Vite `optimizeDeps` so Vite won’t use the problematic prebundled artifact
+## Current State
 
-Concrete changes:
-- `resolve.dedupe: ['react', 'react-dom']`
-- `optimizeDeps.exclude: ['react-leaflet', '@react-leaflet/core', 'leaflet']`
+- Empty shell: no pages besides `Index.tsx` placeholder and `NotFound.tsx`
+- Existing Base44 SDK setup (auth, vite plugin, edge functions for Google Places)
+- Existing edge functions for Google Places APIs (will be migrated to Supabase later)
+- No Home page, no components, no global state
 
-This also changes Vite’s config hash, which triggers a fresh optimization pass in the preview environment.
+## Architecture Decisions
 
-### 2) Make the dev server always rebuild optimized deps once (belt-and-suspenders)
-Update `package.json` script:
-- change `"dev": "vite"` → `"dev": "vite --force"`
+- **Routing**: Use the existing `pages.config.js` system with `App.jsx` as the entry point
+- **State management**: React Context (`GlobalStateContext`) for app-wide state (location, search query, filters, sort, view mode)
+- **Styling**: Tailwind CSS with existing design tokens from `index.css`
+- **Maps**: `react-leaflet` for the map view (free, no API key needed)
+- **Mock data**: Hardcoded venue results for development; API service layer with easy swap-in points
+- **PWA**: `vite-plugin-pwa` for service worker, manifest, and installability
 
-This ensures that even if caching/lockfile mismatch happens again, the preview won’t keep serving a stale `.vite/deps/react-leaflet.js`.
+## Build Phases (all frontend shell)
 
-### 3) Resolve the lockfile mismatch that prevents proper cache invalidation (important)
-Right now, `package-lock.json` appears out of sync (it doesn’t even list `react-leaflet` at the top-level dependency set), while `bun.lock` does.
-That’s a recipe for Vite to think “deps unchanged” and keep stale optimized output.
+### Phase 1: Foundation
 
-I’ll do one of these (choose the one that matches how you want installs handled):
-- **Option A (recommended):** remove `package-lock.json` and standardize on `bun.lock` only, or
-- **Option B:** regenerate/update `package-lock.json` so it accurately reflects `react-leaflet` / `@react-leaflet/core` versions
+1. **PWA setup** — Add `vite-plugin-pwa`, create `manifest.json` with Whatspot branding, configure service worker for offline caching
+2. **GlobalStateContext** — Context provider with: `query`, `category`, `mode` (pre-search/post-search), `sort`, `view` (list/map), `userLocation`, `locationName`, `filters`, `anonymousId`, `suggestedChips`, `searchHistory`
+3. **Mock API service** — `src/services/api.ts` with `recommend()` and `recommendPage()` returning realistic mock venue data, matching the spec's response shape
+4. **Update `pages.config.js`** — Register `Home` page as main page
 
-(We only want one source of truth so Vite can reliably detect changes.)
+### Phase 2: Core Components
 
-### 4) Prevent “blank screen” even if a map error occurs again (quality/safety)
-Add a small React error boundary around the map picker dialog content so that:
-- if a map library throws, the dialog shows a friendly fallback (“Map failed to load — try again”) instead of crashing the whole app.
+5. **Header** — Fixed top bar with logo, location display (editable), clear-search button
+6. **SearchBar** — Text input with search/stop icons, centered (pre-search) vs left-aligned (post-search), Enter-to-submit
+7. **CategoryTiles** — Grid of emoji+label tiles (Pizza, Coffee, Bars, etc.), clicking populates search bar
+8. **RefinementChips** — Horizontal scrollable pills that appear after tile selection, click appends to query
+9. **Home page** — Compose Header + SearchBar + CategoryTiles + RefinementChips for pre-search state
 
-Files likely involved:
-- `src/components/home/LocationMapPicker.jsx` (wrap the map area)
-- new tiny component: `src/components/ErrorBoundary.jsx` (or in an existing `src/lib/` utilities folder)
+### Phase 3: Post-Search UI
 
----
+10. **ResultsList** — Venue cards with name, address, distance, rating stars, price level, cuisine tag, open/closed badge, image
+11. **MapView** — react-leaflet map with venue markers and popups
+12. **ViewToggle** — List/map icon toggle
+13. **SortToggle** — Relevance/Distance inline toggle
+14. **FilterDialog** — Modal with Open Now toggle, price multi-select, cuisine filter, radius slider
+15. **SuggestedChips** — AI-generated refinement chips row (mock data)
+16. **RelaxationBanner** — Info banner when constraints were loosened
+17. **NoResultsPrompt** — Zero-results state with "Relax constraints" button
+18. **Pagination** — "More options" button when `has_more` is true
 
-## Verification checklist (what you should test after the change)
-1. On Home, open the location dropdown → click “Pin a location on map”.
-2. Confirm the dialog opens and the map renders tiles (no blank screen).
-3. Click/tap on the map to drop a pin; confirm the marker appears.
-4. Use the dialog “X” close button: verify it returns you to the location search dropdown (typing is still possible; location stays unchanged).
-5. Repeat on mobile viewport (touch drag/zoom, tap to place pin).
+### Phase 4: Modals & Mobile
 
----
+19. **GatedModal** — Sign-in prompt overlay
+20. **LocationConfirmModal** — Detected vs current location chooser
+21. **MobileBottomSheet** — Slide-up sheet for mobile post-search with search bar, categories, chips, history
+22. **Responsive layout** — Desktop side-by-side vs mobile stacked with bottom sheet
 
-## If it *still* fails after this fix
-We’ll capture which exact code Vite is serving by re-checking:
-- `node_modules/.vite/deps/react-leaflet.js` for any remaining `react.use(...)` and `<LeafletContext value=...>` usage
-Then we’ll hard-pin to a known-good `@react-leaflet/core`/`react-leaflet` pairing and (if needed) switch the map picker to import from stable subpaths to bypass any optimizer quirks.
+### Phase 5: User Flows & Polish
 
-(You can also use the app “History” view to roll back to the last version before this map-picker addition while we isolate the problem: https://docs.lovable.dev/tips-tricks/troubleshooting)
+23. **Location detection** — Browser geolocation → reverse geocode (mock for now) → localStorage persistence
+24. **Search history** — localStorage-based, max 10 items, deduped
+25. **Cache restore** — Save/restore results from localStorage on navigation
+26. **Anonymous ID** — UUID generation and localStorage persistence
+
+## New Dependencies
+
+- `react-leaflet` + `leaflet` — Map rendering
+- `vite-plugin-pwa` — PWA support (service worker, manifest)
+- `lodash.debounce` or inline debounce — Search debouncing
+- `framer-motion` — AnimatePresence for results transitions
+- `uuid` — Anonymous ID generation
+
+## File Structure
+
+```text
+src/
+├── pages/
+│   └── Home.jsx                    # Main (only) page
+├── components/
+│   └── home/
+│       ├── Header.jsx
+│       ├── SearchBar.jsx
+│       ├── CategoryTiles.jsx
+│       ├── RefinementChips.jsx
+│       ├── ResultsList.jsx
+│       ├── VenueCard.jsx
+│       ├── MapView.jsx
+│       ├── ViewToggle.jsx
+│       ├── SortToggle.jsx
+│       ├── FilterDialog.jsx
+│       ├── SuggestedChips.jsx
+│       ├── RelaxationBanner.jsx
+│       ├── NoResultsPrompt.jsx
+│       ├── GatedModal.jsx
+│       ├── LocationConfirmModal.jsx
+│       └── MobileBottomSheet.jsx
+├── context/
+│   └── GlobalStateContext.jsx
+├── services/
+│   └── api.js                      # Mock API, swap for real later
+└── data/
+    └── mockVenues.js               # Mock venue data
+```
+
+## Technical Notes
+
+- The existing Base44 auth system in `AuthContext.jsx` will be preserved but the app will work without auth (anonymous mode)
+- Edge functions in `functions/` will remain as-is; they'll be migrated to Supabase Edge Functions in a later phase
+- The `recommend` API will initially return mock data; the service layer is designed so swapping in real API calls requires changing only `src/services/api.js`
+- PWA manifest will include app name "Whatspot", appropriate icons, theme color matching the design tokens, and `display: standalone`
+
