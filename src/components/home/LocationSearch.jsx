@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { MapPin, Loader2, X } from 'lucide-react';
+import { MapPin, Loader2, X, Navigation, Map } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
+import LocationMapPicker from '@/components/home/LocationMapPicker';
 
 export default function LocationSearch({ currentName, onLocationSelect, onClose }) {
   const [query, setQuery] = useState('');
