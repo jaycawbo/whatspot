@@ -11,7 +11,6 @@ import SuggestedChips from '@/components/home/SuggestedChips';
 import ResultsList from '@/components/home/ResultsList';
 import MapView from '@/components/home/MapView';
 import ViewToggle from '@/components/home/ViewToggle';
-import SortToggle from '@/components/home/SortToggle';
 import FilterDialog from '@/components/home/FilterDialog';
 import RelaxationBanner from '@/components/home/RelaxationBanner';
 import NoResultsPrompt from '@/components/home/NoResultsPrompt';
