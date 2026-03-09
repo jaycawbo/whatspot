@@ -19,7 +19,4 @@ export default defineConfig(({ mode }) => ({
     },
     dedupe: ['react', 'react-dom'],
   },
-  optimizeDeps: {
-    exclude: ['react-leaflet', '@react-leaflet/core', 'leaflet'],
-  },
 }));
