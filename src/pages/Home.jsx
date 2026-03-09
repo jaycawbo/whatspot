@@ -189,10 +189,7 @@ export default function Home() {
             {/* Controls row */}
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2">
-                <FilterDialog
-                  filters={state.filters}
-                  onFilterChange={handleFilterChange}
-                />
+                <FilterSummary filters={state.filters} onOpenFilters={() => setFilterDialogOpen(true)} />
                 <ViewToggle
                   view={state.view}
                   setView={(v) => dispatch({ type: 'SET_VIEW', payload: v })}

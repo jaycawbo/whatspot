@@ -1,25 +1,36 @@
 import React from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 
+function formatPriceLevels(levels) {
+  if (!levels || levels.length === 0) return 'Any price';
+  const sorted = [...levels].sort((a, b) => a.length - b.length);
+  const allLevels = ['$', '$$', '$$$', '$$$$'];
+  const indices = sorted.map(l => allLevels.indexOf(l)).filter(i => i !== -1).sort((a, b) => a - b);
+  
+  if (indices.length === 0) return sorted.join(', ');
+
+  let isContiguous = true;
+  for (let i = 1; i < indices.length; i++) {
+    if (indices[i] !== indices[i - 1] + 1) {
+      isContiguous = false;
+      break;
+    }
+  }
+
+  if (isContiguous && indices.length > 1) {
+    return `${allLevels[indices[0]]}-${allLevels[indices[indices.length - 1]]}`;
+  }
+  return sorted.join(', ');
+}
+
 function getFilterSummaryText(filters) {
   const parts = [];
 
-  // Open now
   parts.push(filters.openNow ? 'Open now' : 'Any hours');
-
-  // Price
-  if (filters.priceLevels.length === 0) {
-    parts.push('any price');
-  } else {
-    parts.push(filters.priceLevels.join(', '));
-  }
-
-  // Radius
+  parts.push(formatPriceLevels(filters.priceLevels));
   parts.push(`within ${filters.radius} km`);
 
-  // Join with commas, last with "and"
-  if (parts.length <= 2) return parts.join(' and ');
-  return parts.slice(0, -1).join(', ') + ', and ' + parts[parts.length - 1];
+  return parts.join(', ');
 }
 
 export default function FilterSummary({ filters, onOpenFilters }) {

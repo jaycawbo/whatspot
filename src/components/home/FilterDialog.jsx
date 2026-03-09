@@ -85,27 +85,6 @@ export default function FilterDialog({ filters, onFilterChange, maxRadius = 10, 
             </div>
           </div>
 
-          {/* Cuisine */}
-          <div>
-            <span className="text-sm font-medium text-foreground">Cuisine</span>
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {CUISINE_OPTIONS.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => toggleCuisine(c)}
-                  className={cn(
-                    'rounded-full border px-2.5 py-1 text-xs transition-colors',
-                    local.cuisines.includes(c)
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'border-border text-muted-foreground hover:bg-accent'
-                  )}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Radius */}
           <div>
             <div className="flex items-center justify-between">
