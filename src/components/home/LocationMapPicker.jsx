@@ -7,14 +7,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const LazyMap = lazy(() => import('./LocationMapContent'));
 
-function MapEvents({ onLocationSelected }) {
-  useMapEvents({
-    click(e) {
-      onLocationSelected(e.latlng);
-    },
-  });
-  return null;
-}
+
 
 export default function LocationMapPicker({ isOpen, onClose, onLocationSelect }) {
   const { state } = useGlobalState();
