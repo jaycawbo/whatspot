@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -8,11 +8,20 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { lovable } from '@/integrations/lovable';
+import { useAuth } from '@/lib/AuthContext';
 import { Heart } from 'lucide-react';
 
 export default function AuthModal({ open, onOpenChange }) {
+  const { isAuthenticated } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Auto-close when user becomes authenticated
+  useEffect(() => {
+    if (isAuthenticated && open) {
+      onOpenChange(false);
+    }
+  }, [isAuthenticated, open, onOpenChange]);
 
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
