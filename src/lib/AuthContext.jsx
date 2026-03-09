@@ -1,33 +1,61 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoadingAuth, setIsLoadingAuth] = useState(false);
-  const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(false);
+  const [session, setSession] = useState(null);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [isLoadingPublicSettings] = useState(false);
   const [authError, setAuthError] = useState(null);
 
-  const logout = () => {
-    setUser(null);
-    setIsAuthenticated(false);
+  useEffect(() => {
+    // Set up auth state listener FIRST (before getSession)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        setIsLoadingAuth(false);
+      }
+    );
+
+    // Then get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setIsLoadingAuth(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const signOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      setUser(null);
+      setSession(null);
+    } catch (error) {
+      setAuthError(error);
+    }
   };
 
   const navigateToLogin = () => {
-    // Stub — will be implemented with Supabase auth later
-    console.log('Login redirect not yet implemented');
+    // Could navigate to a login page, but we're using modals
+    console.log('Navigate to login');
   };
 
   return (
     <AuthContext.Provider value={{
       user,
-      isAuthenticated,
+      session,
+      isAuthenticated: !!user,
       isLoadingAuth,
       isLoadingPublicSettings,
       authError,
       appPublicSettings: null,
-      logout,
+      signOut,
+      logout: signOut, // alias
       navigateToLogin,
       checkAppState: () => {},
     }}>
