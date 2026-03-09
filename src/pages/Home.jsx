@@ -103,7 +103,7 @@ export default function Home() {
       dispatch({ type: 'SET_FILTERS', payload: f });
       // Re-run search if we're in post-search mode
       if (state.mode === 'post-search' && state.query) {
-        runSearch(state.query);
+        runSearch(state.query, f);
       }
     },
     [dispatch, state.mode, state.query, runSearch]
