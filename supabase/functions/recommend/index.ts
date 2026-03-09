@@ -370,13 +370,14 @@ Deno.serve(async (req) => {
           distance_km,
           rating: place.rating,
           review_count: place.user_ratings_total,
-          price_level: priceLevelMap[place.price_level] || null,
+          price_level: mappedPriceLevel,
           place_id: place.place_id,
           category:
             place.types?.find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) ||
             'Restaurant',
           cuisine_type: place.types?.find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
           isRelaxedAdmission,
+          unknownPrice,
         };
       })
       .filter((v: any) => v !== null);
