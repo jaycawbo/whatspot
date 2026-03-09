@@ -236,6 +236,7 @@ Deno.serve(async (req) => {
 
     const searchTerm = mode === 'browse_category' && category ? category : query;
     console.log(`🎯 recommend: "${searchTerm}" at (${lat}, ${lon}) relaxation=${relaxation_level}`);
+    console.log(`🔧 Filters received — open_now: ${open_now}, price_levels: ${JSON.stringify(price_levels)}, radius_km: ${radius_km}`);
 
     // ─── Admission thresholds ───
     const admission = {
