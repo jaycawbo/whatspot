@@ -10,6 +10,7 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
   const [loading, setLoading] = useState(false);
   const [didYouMean, setDidYouMean] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [mapPickerOpen, setMapPickerOpen] = useState(false);
   const inputRef = useRef(null);
   const debounceRef = useRef(null);
   const containerRef = useRef(null);
