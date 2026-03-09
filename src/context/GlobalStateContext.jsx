@@ -6,7 +6,6 @@ const GlobalStateContext = createContext();
 const initialFilters = {
   openNow: true,
   priceLevels: [],
-  cuisines: [],
   radius: 2,
 };
 
