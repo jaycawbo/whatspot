@@ -55,20 +55,23 @@ export default function LocationMapPicker({ isOpen, onClose, onLocationSelect })
         </DialogHeader>
         
         <div className="flex-1 min-h-0 rounded-md overflow-hidden relative border border-border">
-          <MapContainer 
-            center={[state.userLocation.lat, state.userLocation.lon]} 
-            zoom={13} 
-            className="w-full h-full"
-          >
-            <TileLayer
-              attribution='&copy; OpenStreetMap'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            <MapEvents onLocationSelected={setSelectedPos} />
-            {selectedPos && (
-              <Marker position={selectedPos} />
-            )}
-          </MapContainer>
+          <ErrorBoundary fallback={
+            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+              Map failed to load. Please close and try again.
+            </div>
+          }>
+            <Suspense fallback={
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            }>
+              <LazyMap
+                center={[state.userLocation.lat, state.userLocation.lon]}
+                selectedPos={selectedPos}
+                onLocationSelected={setSelectedPos}
+              />
+            </Suspense>
+          </ErrorBoundary>
         </div>
 
         <div className="mt-4 flex gap-2 shrink-0">
