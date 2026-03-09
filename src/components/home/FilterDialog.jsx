@@ -38,15 +38,6 @@ export default function FilterDialog({ filters, onFilterChange, maxRadius = 10, 
     }));
   };
 
-  const toggleCuisine = (c) => {
-    setLocal((prev) => ({
-      ...prev,
-      cuisines: prev.cuisines.includes(c)
-        ? prev.cuisines.filter((x) => x !== c)
-        : [...prev.cuisines, c],
-    }));
-  };
-
   const apply = () => {
     onFilterChange(local);
     setOpen(false);
