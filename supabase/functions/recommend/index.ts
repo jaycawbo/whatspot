@@ -225,6 +225,8 @@ Deno.serve(async (req) => {
       lon,
       location_name,
       relaxation_level = 0,
+      open_now,
+      price_levels,
     } = await req.json();
 
     const GOOGLE_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY');
