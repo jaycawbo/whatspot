@@ -25,6 +25,10 @@ export default function Home() {
   const isMobile = useIsMobile();
   const abortRef = useRef(null);
 
+  // Keep a ref to filters so runSearch always reads the latest values
+  const filtersRef = useRef(state.filters);
+  filtersRef.current = state.filters;
+
   // --- Search ---
   const runSearch = useCallback(
     async (queryText, overrideFilters = null) => {
@@ -39,7 +43,7 @@ export default function Home() {
         payload: { query: queryText, location_name: state.locationName, timestamp: Date.now() },
       });
 
-      const activeFilters = overrideFilters || state.filters;
+      const activeFilters = overrideFilters || filtersRef.current;
 
       try {
         const res = await recommend({
@@ -59,13 +63,13 @@ export default function Home() {
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     },
-    [state.userLocation, state.locationName, state.anonymousId, state.relaxationLevel, state.filters, state.sort, dispatch]
+    [state.userLocation, state.locationName, state.anonymousId, state.relaxationLevel, state.sort, dispatch]
   );
 
   const handleSearch = useCallback(
     (q) => {
       dispatch({ type: 'SET_QUERY', payload: q });
-      runSearch(q);
+      runSearch(q, filtersRef.current);
     },
     [dispatch, runSearch]
   );
