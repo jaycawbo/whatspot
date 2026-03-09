@@ -18,18 +18,21 @@ export type Database = {
         Row: {
           created_at: string | null
           id: string
+          labels: string[] | null
           user_id: string
           venue_id: string
         }
         Insert: {
           created_at?: string | null
           id?: string
+          labels?: string[] | null
           user_id: string
           venue_id: string
         }
         Update: {
           created_at?: string | null
           id?: string
+          labels?: string[] | null
           user_id?: string
           venue_id?: string
         }
@@ -74,6 +77,8 @@ export type Database = {
           id: string
           location: string | null
           preferences: Json | null
+          spots_is_public: boolean | null
+          spots_share_token: string | null
         }
         Insert: {
           created_at?: string | null
@@ -81,6 +86,8 @@ export type Database = {
           id: string
           location?: string | null
           preferences?: Json | null
+          spots_is_public?: boolean | null
+          spots_share_token?: string | null
         }
         Update: {
           created_at?: string | null
@@ -88,6 +95,8 @@ export type Database = {
           id?: string
           location?: string | null
           preferences?: Json | null
+          spots_is_public?: boolean | null
+          spots_share_token?: string | null
         }
         Relationships: []
       }
