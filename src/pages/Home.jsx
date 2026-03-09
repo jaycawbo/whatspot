@@ -28,7 +28,7 @@ export default function Home() {
 
   // --- Search ---
   const runSearch = useCallback(
-    async (queryText) => {
+    async (queryText, overrideFilters = null) => {
       if (abortRef.current) abortRef.current.abort();
       abortRef.current = new AbortController();
 
@@ -40,6 +40,8 @@ export default function Home() {
         payload: { query: queryText, location_name: state.locationName, timestamp: Date.now() },
       });
 
+      const activeFilters = overrideFilters || state.filters;
+
       try {
         const res = await recommend({
           mode: state.category ? 'browse_category' : 'query',
@@ -48,11 +50,10 @@ export default function Home() {
           lat: state.userLocation.lat,
           lon: state.userLocation.lon,
           location_name: state.locationName,
-          radius_km: state.filters.radius,
+          radius_km: activeFilters.radius,
           relaxation_level: state.relaxationLevel,
-          open_now: state.filters.openNow || undefined,
-          price_levels: state.filters.priceLevels.length ? state.filters.priceLevels : undefined,
-          cuisines: state.filters.cuisines.length ? state.filters.cuisines : undefined,
+          open_now: activeFilters.openNow || undefined,
+          price_levels: activeFilters.priceLevels.length ? activeFilters.priceLevels : undefined,
         });
         dispatch({ type: 'SET_RESULTS', payload: res });
       } catch {
@@ -102,7 +103,7 @@ export default function Home() {
       dispatch({ type: 'SET_FILTERS', payload: f });
       // Re-run search if we're in post-search mode
       if (state.mode === 'post-search' && state.query) {
-        runSearch(state.query);
+        runSearch(state.query, f);
       }
     },
     [dispatch, state.mode, state.query, runSearch]
@@ -188,10 +189,7 @@ export default function Home() {
             {/* Controls row */}
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2">
-                <FilterDialog
-                  filters={state.filters}
-                  onFilterChange={handleFilterChange}
-                />
+                <FilterSummary filters={state.filters} onOpenFilters={() => setFilterDialogOpen(true)} />
                 <ViewToggle
                   view={state.view}
                   setView={(v) => dispatch({ type: 'SET_VIEW', payload: v })}

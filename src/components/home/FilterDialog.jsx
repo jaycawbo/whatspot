@@ -13,10 +13,6 @@ import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 
 const PRICE_LEVELS = ['$', '$$', '$$$', '$$$$'];
-const CUISINE_OPTIONS = [
-  'Italian', 'Mexican', 'Thai', 'Japanese', 'Indian', 'French',
-  'Chinese', 'Mediterranean', 'Korean', 'American', 'Spanish', 'Canadian',
-];
 
 export default function FilterDialog({ filters, onFilterChange, maxRadius = 10, externalOpen, onExternalOpenChange, hideTrigger }) {
   const [internalOpen, setInternalOpen] = useState(false);
@@ -39,15 +35,6 @@ export default function FilterDialog({ filters, onFilterChange, maxRadius = 10, 
       priceLevels: prev.priceLevels.includes(p)
         ? prev.priceLevels.filter((x) => x !== p)
         : [...prev.priceLevels, p],
-    }));
-  };
-
-  const toggleCuisine = (c) => {
-    setLocal((prev) => ({
-      ...prev,
-      cuisines: prev.cuisines.includes(c)
-        ? prev.cuisines.filter((x) => x !== c)
-        : [...prev.cuisines, c],
     }));
   };
 
@@ -93,27 +80,6 @@ export default function FilterDialog({ filters, onFilterChange, maxRadius = 10, 
                   )}
                 >
                   {p}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Cuisine */}
-          <div>
-            <span className="text-sm font-medium text-foreground">Cuisine</span>
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {CUISINE_OPTIONS.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => toggleCuisine(c)}
-                  className={cn(
-                    'rounded-full border px-2.5 py-1 text-xs transition-colors',
-                    local.cuisines.includes(c)
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'border-border text-muted-foreground hover:bg-accent'
-                  )}
-                >
-                  {c}
                 </button>
               ))}
             </div>
