@@ -236,6 +236,7 @@ Deno.serve(async (req) => {
 
     const searchTerm = mode === 'browse_category' && category ? category : query;
     console.log(`🎯 recommend: "${searchTerm}" at (${lat}, ${lon}) relaxation=${relaxation_level}`);
+    console.log(`🔧 Filters received — open_now: ${open_now}, price_levels: ${JSON.stringify(price_levels)}, radius_km: ${radius_km}`);
 
     // ─── Admission thresholds ───
     const admission = {
@@ -346,9 +347,15 @@ Deno.serve(async (req) => {
         if (place.rating < admission.minRating || place.user_ratings_total < admission.minReviewCount) return null;
 
         const mappedPriceLevel = priceLevelMap[place.price_level] || null;
+        let unknownPrice = false;
         if (price_levels && Array.isArray(price_levels) && price_levels.length > 0) {
-            if (!mappedPriceLevel || !price_levels.includes(mappedPriceLevel)) {
+            if (mappedPriceLevel && !price_levels.includes(mappedPriceLevel)) {
+                // Known price that doesn't match filter — exclude
                 return null;
+            }
+            if (!mappedPriceLevel) {
+                // Unknown price — keep but flag for down-ranking
+                unknownPrice = true;
             }
         }
 
@@ -363,13 +370,14 @@ Deno.serve(async (req) => {
           distance_km,
           rating: place.rating,
           review_count: place.user_ratings_total,
-          price_level: priceLevelMap[place.price_level] || null,
+          price_level: mappedPriceLevel,
           place_id: place.place_id,
           category:
             place.types?.find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) ||
             'Restaurant',
           cuisine_type: place.types?.find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
           isRelaxedAdmission,
+          unknownPrice,
         };
       })
       .filter((v: any) => v !== null);
@@ -392,10 +400,11 @@ Deno.serve(async (req) => {
 
     // ─── STEP 4: Score + sort ───
     const scoredVenues = filteredVenues
-      .map((venue: any) => ({
-        ...venue,
-        score: calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission),
-      }))
+      .map((venue: any) => {
+        let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
+        if (venue.unknownPrice) score *= 0.7; // Down-rank venues with unknown price when price filter is active
+        return { ...venue, score };
+      })
       .filter((v: any) => v.score > admission.minScore)
       .sort((a: any, b: any) => {
         const diff = b.score - a.score;
@@ -592,7 +601,7 @@ Deno.serve(async (req) => {
     }
 
     // ─── Strip internal fields ───
-    const resultsForFrontend = resultsWithDescriptors.map(({ place_id, isRelaxedAdmission, ...rest }: any) => rest);
+    const resultsForFrontend = resultsWithDescriptors.map(({ place_id, isRelaxedAdmission, unknownPrice, ...rest }: any) => rest);
 
     return new Response(
       JSON.stringify({
