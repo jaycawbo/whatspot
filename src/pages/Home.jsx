@@ -28,7 +28,7 @@ export default function Home() {
 
   // --- Search ---
   const runSearch = useCallback(
-    async (queryText) => {
+    async (queryText, overrideFilters = null) => {
       if (abortRef.current) abortRef.current.abort();
       abortRef.current = new AbortController();
 
@@ -40,6 +40,8 @@ export default function Home() {
         payload: { query: queryText, location_name: state.locationName, timestamp: Date.now() },
       });
 
+      const activeFilters = overrideFilters || state.filters;
+
       try {
         const res = await recommend({
           mode: state.category ? 'browse_category' : 'query',
@@ -48,11 +50,10 @@ export default function Home() {
           lat: state.userLocation.lat,
           lon: state.userLocation.lon,
           location_name: state.locationName,
-          radius_km: state.filters.radius,
+          radius_km: activeFilters.radius,
           relaxation_level: state.relaxationLevel,
-          open_now: state.filters.openNow || undefined,
-          price_levels: state.filters.priceLevels.length ? state.filters.priceLevels : undefined,
-          cuisines: state.filters.cuisines.length ? state.filters.cuisines : undefined,
+          open_now: activeFilters.openNow || undefined,
+          price_levels: activeFilters.priceLevels.length ? activeFilters.priceLevels : undefined,
         });
         dispatch({ type: 'SET_RESULTS', payload: res });
       } catch {
