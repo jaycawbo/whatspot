@@ -39,9 +39,9 @@ export default function SearchBar({ query, onQueryChange, onSearch, isQuerying, 
         query.trim() ?
         <button
           type="submit"
-          className="absolute right-2 h-7 w-7 flex items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+          className="absolute right-2 h-7 w-7 flex items-center justify-center rounded-full bg-green-600 text-white hover:bg-green-700 transition-colors">
           
-            <Search className="h-3.5 w-3.5" />
+            <ArrowUp className="h-4 w-4" />
           </button> :
         null}
       </div>
