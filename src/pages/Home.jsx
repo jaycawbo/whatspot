@@ -134,9 +134,11 @@ export default function Home() {
 
       {/* Pre-search state */}
       {isPreSearch && (
-        <div className="pt-14">
-          <div className="flex flex-col items-center justify-center px-4 md:px-8 pt-12 md:pt-20 space-y-6">
-            <img src={whatspotLogo} alt="Whatspot" className="h-10 md:h-12" />
+        <div className="flex flex-col items-center justify-center min-h-screen pt-14 pb-20 px-4 md:px-8">
+          <div className="flex flex-col items-center justify-center w-full space-y-6">
+            <a href="/" onClick={(e) => { e.preventDefault(); dispatch({ type: 'CLEAR_SEARCH' }); }} className="flex items-center cursor-pointer">
+              <img src={whatspotLogo} alt="Whatspot" className="h-10 md:h-12" />
+            </a>
 
             <SearchBar
               query={state.query}
