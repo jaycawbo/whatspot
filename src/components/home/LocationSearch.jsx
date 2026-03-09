@@ -198,7 +198,7 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
         </div>
       </form>
 
-      {displayList.length > 0 && (
+      {displayList.length > 0 ? (
         <div className="absolute top-full left-0 mt-1 w-72 md:w-80 bg-popover border border-border rounded-lg shadow-lg z-[60] overflow-hidden">
           {didYouMean && (
             <div className="px-3 py-1.5 text-[11px] font-medium text-muted-foreground border-b border-border bg-muted/50">
@@ -219,6 +219,33 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
             </button>
           ))}
         </div>
+      ) : !query && (
+        <div className="absolute top-full left-0 mt-1 w-72 md:w-80 bg-popover border border-border rounded-lg shadow-lg z-[60] overflow-hidden py-1">
+          <button
+            type="button"
+            onClick={handleUseCurrentLocation}
+            className="w-full text-left px-3 py-2.5 flex items-center gap-2 hover:bg-accent/50 transition-colors text-primary"
+          >
+            <Navigation className="h-4 w-4 shrink-0" />
+            <span className="text-sm font-medium">Use current location</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMapPickerOpen(true)}
+            className="w-full text-left px-3 py-2.5 flex items-center gap-2 hover:bg-accent/50 transition-colors text-foreground"
+          >
+            <Map className="h-4 w-4 shrink-0" />
+            <span className="text-sm font-medium">Pin a location on map</span>
+          </button>
+        </div>
+      )}
+
+      {mapPickerOpen && (
+        <LocationMapPicker 
+          isOpen={mapPickerOpen} 
+          onClose={() => setMapPickerOpen(false)} 
+          onLocationSelect={onLocationSelect} 
+        />
       )}
     </div>
   );
