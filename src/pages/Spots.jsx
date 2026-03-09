@@ -6,11 +6,11 @@ import { useAuth } from '@/lib/AuthContext';
 import SpotCard from '@/components/spots/SpotCard';
 import SpotsMapView from '@/components/spots/SpotsMapView';
 import ShareListDialog from '@/components/spots/ShareListDialog';
+import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { List, Map, Share2, Heart } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
 
 const LABEL_FILTERS = [
   { id: 'all', label: 'All Spots' },
@@ -24,6 +24,7 @@ export default function Spots() {
   const [viewMode, setViewMode] = useState('list');
   const [activeFilter, setActiveFilter] = useState('all');
   const [shareOpen, setShareOpen] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
 
   const filteredSpots = useMemo(() => {
     if (activeFilter === 'all') return spots;
@@ -48,7 +49,9 @@ export default function Spots() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Spots</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {spots.length} {spots.length === 1 ? 'spot' : 'spots'} saved
+              {isAuthenticated
+                ? `${spots.length} ${spots.length === 1 ? 'spot' : 'spots'} saved`
+                : 'Sign in to see your saved spots'}
             </p>
           </div>
           {isAuthenticated && spots.length > 0 && (
@@ -71,6 +74,9 @@ export default function Spots() {
                 Save your favorite venues and access them anytime.
               </p>
             </div>
+            <Button onClick={() => setAuthModalOpen(true)}>
+              Sign in with Google
+            </Button>
           </div>
         )}
 
@@ -163,6 +169,7 @@ export default function Spots() {
       </div>
 
       <ShareListDialog open={shareOpen} onOpenChange={setShareOpen} />
+      <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
     </div>
   );
 }
