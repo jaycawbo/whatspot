@@ -31,6 +31,8 @@ export default function Spots() {
   const [customInput, setCustomInput] = useState('');
   const [shareOpen, setShareOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [labelSearchOpen, setLabelSearchOpen] = useState(false);
+  const [labelSearchResults, setLabelSearchResults] = useState(null);
 
   // All unique custom labels from saved spots
   const existingCustomLabels = useMemo(() => {
