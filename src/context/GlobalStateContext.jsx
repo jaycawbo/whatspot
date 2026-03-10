@@ -78,6 +78,7 @@ function reducer(state, action) {
         pagination: action.payload.pagination,
         suggestedChips: action.payload.suggested_chips || [],
         appliedRelaxations: action.payload.applied_relaxations || [],
+        searchSummary: action.payload.search_summary || null,
         gated: action.payload.gated || false,
         isLoading: false,
         isQuerying: false,
