@@ -118,14 +118,15 @@ async function callLLM(apiKey: string, systemPrompt: string, userPrompt: string,
 
 // ─── Google Places helpers (inlined) ───
 
-async function googlePlacesBroadSearch(apiKey: string, query: string, lat: number, lon: number, radiusKm: number, openNow?: boolean, priceLevels?: string[]) {
+async function googlePlacesBroadSearch(apiKey: string, query: string, lat: number, lon: number, radiusKm: number, openNow?: boolean, priceLevels?: string[], useRestriction = false) {
   const url = 'https://places.googleapis.com/v1/places:searchText';
+  const locationConfig = useRestriction
+    ? { locationRestriction: { circle: { center: { latitude: lat, longitude: lon }, radius: radiusKm * 1000 } } }
+    : { locationBias: { circle: { center: { latitude: lat, longitude: lon }, radius: radiusKm * 1000 } } };
   const reqBody: any = {
     textQuery: query,
     maxResultCount: 20,
-    locationBias: {
-      circle: { center: { latitude: lat, longitude: lon }, radius: radiusKm * 1000 },
-    },
+    ...locationConfig,
   };
   if (openNow) reqBody.openNow = true;
   if (priceLevels && priceLevels.length > 0) reqBody.priceLevels = priceLevels;
@@ -460,31 +461,15 @@ Deno.serve(async (req) => {
     }
     console.log(`🌍 STEP 2: Google Places search for "${googleSearchQuery}" in "${googleLocationContext}"...`);
     
-    // For on-street searches, do two parallel searches: one street-specific, one broader
     let googleResults: any[];
     if (isOnStreetSearch && detectedStreetName) {
-      const [streetResults, broadResults] = await Promise.all([
-        googlePlacesBroadSearch(
-          GOOGLE_KEY,
-          `${googleSearchQuery} on ${detectedStreetName}, ${location_name}`,
-          lat, lon, 2, open_now, googlePriceLevels
-        ),
-        googlePlacesBroadSearch(
-          GOOGLE_KEY,
-          `${googleSearchQuery} in ${location_name}`,
-          lat, lon, admission.maxRadius, open_now, googlePriceLevels
-        ),
-      ]);
-      // Deduplicate by place_id, preferring street results first
-      const seen = new Set<string>();
-      googleResults = [];
-      for (const v of [...streetResults, ...broadResults]) {
-        if (!seen.has(v.place_id)) {
-          seen.add(v.place_id);
-          googleResults.push(v);
-        }
-      }
-      console.log(`📊 Google returned ${streetResults.length} street-targeted + ${broadResults.length} broad = ${googleResults.length} unique venues`);
+      // Use locationRestriction (not locationBias) for on-street searches — 300m tight circle
+      googleResults = await googlePlacesBroadSearch(
+        GOOGLE_KEY,
+        `${googleSearchQuery} on ${detectedStreetName}, ${location_name}`,
+        lat, lon, 0.3, open_now, googlePriceLevels, true // useRestriction = true
+      );
+      console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationRestriction 300m)`);
     } else {
       googleResults = await googlePlacesBroadSearch(
         GOOGLE_KEY,
