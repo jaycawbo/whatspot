@@ -7,6 +7,7 @@ import SpotsMapView from '@/components/spots/SpotsMapView';
 import ShareListDialog from '@/components/spots/ShareListDialog';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { List, Map, Share2, Heart, X, Plus, Search } from 'lucide-react';
 import LabelSearchBar from '@/components/spots/LabelSearchBar';
 import { Input } from '@/components/ui/input';
@@ -210,18 +211,26 @@ export default function Spots() {
               </div>
 
               <div className="flex gap-1 shrink-0">
-                <Button
-                  variant={labelSearchOpen ? 'secondary' : 'ghost'}
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => {
-                    setLabelSearchOpen((prev) => !prev);
-                    if (labelSearchOpen) setLabelSearchResults(null);
-                  }}
-                  title="Search by label"
-                >
-                  <Search className="h-4 w-4" />
-                </Button>
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant={labelSearchOpen ? 'secondary' : 'ghost'}
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => {
+                          setLabelSearchOpen((prev) => !prev);
+                          if (labelSearchOpen) setLabelSearchResults(null);
+                        }}
+                      >
+                        <Search className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Search by Label</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <Button
                   variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                   size="icon"
