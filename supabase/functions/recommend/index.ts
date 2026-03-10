@@ -656,6 +656,43 @@ Deno.serve(async (req) => {
       console.warn('⚠️ Chip generation failed:', e.message);
     }
 
+    // ─── Step 7: Search summary generation ───
+    let search_summary: string | null = null;
+    try {
+      const venueSnippets = resultsWithDescriptors.slice(0, 10).map((v: any) => ({
+        name: v.name,
+        cuisine_type: v.cuisine_type || null,
+        rating: v.rating,
+        reasoning_explanation: v.reasoning_explanation || null,
+      }));
+      const summaryResult = await callLLM(
+        LOVABLE_KEY,
+        'You are a knowledgeable local friend making warm, specific, confident dining and venue recommendations. Write in a conversational tone.',
+        `The user searched for "${searchTerm}" in ${location_name}. Here are the top results:\n${JSON.stringify(venueSnippets)}\n\nWrite a 2-3 sentence conversational summary explaining why these specific venues were chosen. Be warm, specific, and confident — like a local friend giving a personal recommendation.`,
+        [
+          {
+            type: 'function',
+            function: {
+              name: 'generate_summary',
+              description: 'Return a conversational search summary',
+              parameters: {
+                type: 'object',
+                properties: {
+                  summary: { type: 'string' },
+                },
+                required: ['summary'],
+                additionalProperties: false,
+              },
+            },
+          },
+        ],
+        { type: 'function', function: { name: 'generate_summary' } },
+      );
+      search_summary = summaryResult.summary || null;
+    } catch (e: any) {
+      console.warn('⚠️ Search summary generation failed:', e.message);
+    }
+
     // ─── Strip internal fields ───
     const resultsForFrontend = resultsWithDescriptors.map(({ isRelaxedAdmission, unknownPrice, ...rest }: any) => rest);
 
@@ -663,6 +700,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         results: resultsForFrontend,
         suggested_chips,
+        search_summary,
         pagination: { has_more: false },
         relaxation_applied: relaxation_level > 0,
         relaxation_level,
