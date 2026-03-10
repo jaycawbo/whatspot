@@ -280,9 +280,9 @@ Deno.serve(async (req) => {
     const [refinementResult, locationDetectionResult] = await Promise.all([
       safe('step1-refinement', () => callLLM(
         LOVABLE_KEY,
-        'You extract cuisine keywords from search queries for Google Places API.',
-        `The user is searching for "${searchTerm}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return the original query.\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise keywords/phrases suitable for a Google Places search, or the original query if no specific culinary focus is detected.${sessionContextString}`,
-        [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined keywords or original query' } }, required: ['keywords'], additionalProperties: false } } }],
+        'You extract cuisine keywords from search queries for Google Places API. IMPORTANT: Do NOT include any location names, street names, city names, or neighbourhood names in your output. Only return food/cuisine/dining keywords.',
+        `The user is searching for "${searchTerm}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "Toronto", etc.).\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise cuisine/food keywords suitable for a Google Places search.${sessionContextString}`,
+        [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'refine_query' } },
       ), null),
       safe('step1b-location', () => callLLM(
@@ -435,10 +435,28 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`🌍 STEP 2: Google Places search for "${refinedSearchTerm}"...`);
+    // For on-street searches, strip any location words that may have leaked into the refined term
+    let googleSearchQuery = refinedSearchTerm;
+    if (isOnStreetSearch && detectedStreetBase) {
+      // Remove the street name and common location words from the refined query
+      const streetWords = detectedStreetBase.split(/\s+/);
+      const locationWords = [...streetWords, 'street', 'st', 'avenue', 'ave', 'road', 'rd', 'boulevard', 'blvd', 'drive', 'dr', 'lane', 'ln', 'toronto', 'ontario', 'canada'];
+      googleSearchQuery = refinedSearchTerm
+        .split(/[\s,]+/)
+        .filter(w => !locationWords.includes(w.toLowerCase()))
+        .join(' ')
+        .trim();
+      // Ensure we have a meaningful cuisine query; append "restaurant" if it's just a cuisine word
+      if (googleSearchQuery && !/(restaurant|cafe|bar|bistro|pub|eatery|diner|trattoria|pizzeria|bakery)/i.test(googleSearchQuery)) {
+        googleSearchQuery += ' restaurant';
+      }
+      if (!googleSearchQuery) googleSearchQuery = 'restaurant';
+      console.log(`📍 On-street: cleaned query "${refinedSearchTerm}" → "${googleSearchQuery}"`);
+    }
+    console.log(`🌍 STEP 2: Google Places search for "${googleSearchQuery}"...`);
     const googleResults = await googlePlacesBroadSearch(
       GOOGLE_KEY,
-      `${refinedSearchTerm} in ${location_name}`,
+      `${googleSearchQuery} in ${location_name}`,
       lat,
       lon,
       admission.maxRadius,
