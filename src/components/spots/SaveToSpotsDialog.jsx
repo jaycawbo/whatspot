@@ -8,28 +8,14 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Heart, Trash2, Star, Tag, Plus, X } from 'lucide-react';
+import { Heart, Trash2, Star, Tag } from 'lucide-react';
 import { useSpots } from '@/hooks/useSpots';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
-const DEFAULT_LABELS = [
+const PREDEFINED_LABELS = [
   { id: 'top-spot', label: 'Top Spot', icon: Star },
   { id: 'want-to-go', label: 'Want to Go', icon: Tag },
-];
-
-const SUGGESTED_LABELS = [
-  'Special Occasion',
-  'Date Night',
-  'Business Meal',
-  'Hidden Gem',
-  'Best Cocktails',
-  'Good for Groups',
-  'Neighbourhood Gem',
-  'Underrated',
-  'Worth the Wait',
-  'Would Not Go Back',
 ];
 
 export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
@@ -40,19 +26,10 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
   const currentLabels = getLabels(placeId);
 
   const [selectedLabels, setSelectedLabels] = useState([]);
-  const [showCustom, setShowCustom] = useState(false);
-  const [customInput, setCustomInput] = useState('');
-  const [customLabels, setCustomLabels] = useState([]);
 
   useEffect(() => {
     if (open) {
       setSelectedLabels(currentLabels);
-      // Extract any labels that aren't default or suggested
-      const defaultAndSuggested = [...DEFAULT_LABELS.map(d => d.label), ...SUGGESTED_LABELS];
-      const existing = currentLabels.filter(l => !defaultAndSuggested.includes(l));
-      setCustomLabels(existing);
-      setShowCustom(false);
-      setCustomInput('');
     }
   }, [open, currentLabels.join(',')]);
 
@@ -62,29 +39,14 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
     );
   };
 
-  const handleAddCustom = () => {
-    const trimmed = customInput.trim();
-    if (!trimmed) return;
-    if (!customLabels.includes(trimmed)) {
-      setCustomLabels((prev) => [...prev, trimmed]);
-    }
-    if (!selectedLabels.includes(trimmed)) {
-      setSelectedLabels((prev) => [...prev, trimmed]);
-    }
-    setCustomInput('');
-  };
-
-  const handleRemoveCustom = (label) => {
-    setCustomLabels((prev) => prev.filter((l) => l !== label));
-    setSelectedLabels((prev) => prev.filter((l) => l !== label));
-  };
-
   const handleSave = async () => {
     try {
       if (saved) {
+        // Update labels
         await updateLabels({ placeId, labels: selectedLabels });
         toast.success('Labels updated');
       } else {
+        // Add to spots
         await saveSpot({ venue, labels: selectedLabels });
         toast.success(`${venue.name} added to Spots`);
       }
@@ -110,7 +72,7 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Heart className={cn('h-5 w-5', saved ? 'fill-red-500 text-red-500' : 'text-muted-foreground')} />
@@ -134,10 +96,10 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
             </div>
           </div>
 
-          {/* Default Labels */}
+          {/* Labels */}
           <div className="space-y-3">
             <p className="text-sm font-medium text-foreground">Labels</p>
-            {DEFAULT_LABELS.map(({ id, label, icon: Icon }) => (
+            {PREDEFINED_LABELS.map(({ id, label, icon: Icon }) => (
               <label
                 key={id}
                 className="flex items-center gap-3 cursor-pointer rounded-lg border border-border p-3 hover:bg-muted/50 transition-colors"
@@ -151,82 +113,6 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
               </label>
             ))}
           </div>
-
-          {/* Custom label section */}
-          {!showCustom ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs text-muted-foreground"
-              onClick={() => setShowCustom(true)}
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" />
-              Add custom label
-            </Button>
-          ) : (
-            <div className="space-y-3">
-              {/* User-typed custom labels */}
-              {customLabels.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {customLabels.map((label) => (
-                    <button
-                      key={label}
-                      className={cn(
-                        'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium border transition-colors',
-                        selectedLabels.includes(label)
-                          ? 'bg-primary text-primary-foreground border-primary'
-                          : 'bg-secondary text-secondary-foreground border-border'
-                      )}
-                      onClick={() => toggleLabel(label)}
-                    >
-                      {label}
-                      <X
-                        className="h-3 w-3 opacity-60 hover:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemoveCustom(label);
-                        }}
-                      />
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Suggested labels */}
-              <div className="flex flex-wrap gap-1.5">
-                {SUGGESTED_LABELS.map((label) => (
-                  <button
-                    key={label}
-                    onClick={() => toggleLabel(label)}
-                    className={cn(
-                      'rounded-full px-2.5 py-1 text-xs font-medium border transition-colors',
-                      selectedLabels.includes(label)
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : 'bg-secondary text-secondary-foreground border-border hover:bg-accent'
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Custom input */}
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Or type your own label..."
-                  value={customInput}
-                  onChange={(e) => setCustomInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddCustom();
-                    }
-                  }}
-                  className="h-8 text-xs"
-                />
-              </div>
-            </div>
-          )}
         </div>
 
         <DialogFooter className="flex-col gap-2 sm:flex-col">
