@@ -337,6 +337,22 @@ Deno.serve(async (req) => {
     }
     console.log('✅ STEPS 1 & 1b complete');
 
+    // ─── Street-level precision detection ───
+    const STREET_IDENTIFIERS = /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i;
+    const PROXIMITY_WORDS = /\b(near|around|by|close to|nearby|near me|off of|around the corner)\b/i;
+    let isOnStreetSearch = false;
+    let detectedStreetName = '';
+
+    if (STREET_IDENTIFIERS.test(location_name || '') && !PROXIMITY_WORDS.test(searchTerm || '')) {
+      isOnStreetSearch = true;
+      // Extract the street name (e.g. "College Street" from "College Street, Toronto")
+      const locParts = (location_name || '').split(',')[0].trim();
+      detectedStreetName = locParts;
+      console.log(`📍 On-street search detected: ${detectedStreetName} — strict address filtering applied`);
+      // Widen radius slightly so we get enough candidates to filter from
+      admission.maxRadius = Math.max(admission.maxRadius, 1);
+    }
+
     // ─── STEP 1c: Refinement intent detection ───
     let refinementIntent: { is_refinement: boolean; keep_results: string[]; replace_count: number; refined_query: string } | null = null;
 
@@ -475,7 +491,40 @@ Deno.serve(async (req) => {
 
     console.log(`✅ ${filteredVenues.length} passed filters`);
 
-    if (filteredVenues.length === 0) {
+    // ─── STEP 3b: Street-level address validation ───
+    let streetFilterApplied = false;
+    let streetFilteredVenues = filteredVenues;
+
+    if (isOnStreetSearch && filteredVenues.length > 0) {
+      const streetNameLower = detectedStreetName.toLowerCase();
+      // Extract just the street name words without the suffix for flexible matching
+      const streetWords = streetNameLower.replace(/\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/gi, '').trim();
+
+      const streetValidated = filteredVenues.filter((v: any) => {
+        const addrLower = (v.address || '').toLowerCase();
+        // Check if venue address contains the detected street name
+        if (addrLower.includes(streetNameLower) || (streetWords && addrLower.includes(streetWords))) {
+          return true;
+        }
+        // Cross-street proximity check: within ~50m of geocoded street center
+        const distFromStreet = calculateDistance(lat, lon, v.lat, v.lon);
+        if (distFromStreet <= 0.05) {
+          return true;
+        }
+        return false;
+      });
+
+      if (streetValidated.length >= 3) {
+        streetFilteredVenues = streetValidated;
+        streetFilterApplied = true;
+        console.log(`📍 Street filter kept ${streetFilteredVenues.length}/${filteredVenues.length} venues on ${detectedStreetName}`);
+      } else {
+        console.warn(`⚠️ Street filter returned too few results (${streetValidated.length}), falling back to radius search`);
+        streetFilteredVenues = filteredVenues;
+      }
+    }
+
+    if (streetFilteredVenues.length === 0) {
       return new Response(
         JSON.stringify({
           results: [],
@@ -490,7 +539,7 @@ Deno.serve(async (req) => {
     }
 
     // ─── STEP 4: Score + sort ───
-    const scoredVenues = filteredVenues
+    const scoredVenues = streetFilteredVenues
       .map((venue: any) => {
         let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
         if (venue.unknownPrice) score *= 0.7; // Down-rank venues with unknown price when price filter is active
