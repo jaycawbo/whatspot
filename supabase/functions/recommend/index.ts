@@ -46,6 +46,7 @@ function isSimpleQuery(originalTerm: string, refinedTerm: string): boolean {
   ) {
     return true;
   }
+  if (originalTerm.toLowerCase().includes('best')) return false;
   return false;
 }
 
