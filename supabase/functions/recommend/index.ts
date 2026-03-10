@@ -482,7 +482,7 @@ Deno.serve(async (req) => {
 
     const TARGET = 5;
     const LLM_THRESHOLD = 0.6;
-    const LLM_BATCH = 5;
+    const LLM_BATCH = 10;
     const skipLLM = isSimpleQuery(searchTerm, refinedSearchTerm) || scoredVenues.length < 3;
 
     let finalResults: any[] = [];
@@ -502,54 +502,75 @@ Deno.serve(async (req) => {
         finalResults = dedup(scoredVenues).slice(0, TARGET);
       }
     } else {
-      console.log(`🧠 STEP 4b: LLM intent re-ranking for "${searchTerm}"`);
-      const pool = [...dedup(scoredVenues)];
-      const confident: any[] = [];
+      console.log(`🧠 STEP 4b: Batched LLM intent re-ranking for "${searchTerm}"`);
+      const pool = dedup(scoredVenues).slice(0, LLM_BATCH * 2); // cap at 20 venues max
 
-      while (confident.length < TARGET && pool.length > 0) {
-        const batch = pool.splice(0, LLM_BATCH);
-        const evaluated = await Promise.all(
-          batch.map(async (venue: any) => {
-            try {
-              const result = await callLLM(
-                LOVABLE_KEY,
-                'You assess how well a venue matches a user search query.',
-                `The user searched for "${searchTerm}" in ${location_name}.\nVenue: ${venue.name}, ${venue.address}. Category: ${venue.category}. Cuisine: ${venue.cuisine_type}. Price: ${venue.price_level || 'Unknown'}. Rating: ${venue.rating} (${venue.review_count} reviews). Distance: ${venue.distance_km?.toFixed(1)}km.\nAssess how well this venue matches. Consider occasion suitability, culinary style, ambiance, dietary needs.`,
-                [
-                  {
-                    type: 'function',
-                    function: {
-                      name: 'assess_venue',
-                      description: 'Return confidence score and reasoning',
-                      parameters: {
+      try {
+        const venueListText = pool.map((v: any, i: number) =>
+          `${i + 1}. ${v.name} — ${v.address}. Category: ${v.category}. Cuisine: ${v.cuisine_type}. Price: ${v.price_level || 'Unknown'}. Rating: ${v.rating} (${v.review_count} reviews). Distance: ${v.distance_km?.toFixed(1)}km.`
+        ).join('\n');
+
+        const batchResult = await callLLM(
+          LOVABLE_KEY,
+          'You assess how well venues match a user search query. Evaluate ALL venues and return confidence scores.',
+          `The user searched for "${searchTerm}" in ${location_name}.\n\nHere are the venues to evaluate:\n${venueListText}\n\nFor EACH venue, assess how well it matches the search query. Consider occasion suitability, culinary style, ambiance, and dietary needs. Return confidence scores for ALL venues.`,
+          [
+            {
+              type: 'function',
+              function: {
+                name: 'assess_venues_batch',
+                description: 'Return confidence scores and reasoning for all venues',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    venues: {
+                      type: 'array',
+                      items: {
                         type: 'object',
                         properties: {
+                          name: { type: 'string', description: 'Venue name' },
                           confidence_score: { type: 'number', description: '0.0-1.0 match score' },
                           reasoning: { type: 'string', description: '1-2 sentences starting with "This spot"' },
                         },
-                        required: ['confidence_score', 'reasoning'],
-                        additionalProperties: false,
+                        required: ['name', 'confidence_score', 'reasoning'],
                       },
                     },
                   },
-                ],
-                { type: 'function', function: { name: 'assess_venue' } },
-              );
-              console.log(`🎯 ${venue.name}: confidence=${result.confidence_score?.toFixed(2)}`);
-              return { ...venue, llm_confidence: result.confidence_score, reasoning_explanation: result.reasoning };
-            } catch {
-              return { ...venue, llm_confidence: 1.0, reasoning_explanation: null };
-            }
-          }),
+                  required: ['venues'],
+                  additionalProperties: false,
+                },
+              },
+            },
+          ],
+          { type: 'function', function: { name: 'assess_venues_batch' } },
         );
-        for (const v of evaluated) {
-          if (v.llm_confidence >= LLM_THRESHOLD && confident.length < TARGET) {
-            confident.push(v);
-          }
+
+        // Map LLM results back to venues
+        const llmMap = new Map<string, { confidence_score: number; reasoning: string }>();
+        for (const v of batchResult.venues || []) {
+          llmMap.set(v.name.toLowerCase().trim(), { confidence_score: v.confidence_score, reasoning: v.reasoning });
         }
+
+        const evaluated = pool.map((venue: any) => {
+          const llmResult = llmMap.get(venue.name.toLowerCase().trim());
+          if (llmResult) {
+            console.log(`🎯 ${venue.name}: confidence=${llmResult.confidence_score?.toFixed(2)}`);
+            return { ...venue, llm_confidence: llmResult.confidence_score, reasoning_explanation: llmResult.reasoning };
+          }
+          return { ...venue, llm_confidence: 1.0, reasoning_explanation: null };
+        });
+
+        const confident = evaluated
+          .filter((v: any) => v.llm_confidence >= LLM_THRESHOLD)
+          .sort((a: any, b: any) => b.llm_confidence - a.llm_confidence)
+          .slice(0, TARGET);
+
+        finalResults = confident;
+      } catch (e: any) {
+        console.warn('⚠️ STEP 4b: Batch re-ranking failed:', e.message);
+        finalResults = pool.slice(0, TARGET);
       }
 
-      finalResults = confident;
       if (finalResults.length < TARGET) {
         const ids = new Set(finalResults.map((v: any) => v.place_id));
         const fillers = dedup(scoredVenues)
