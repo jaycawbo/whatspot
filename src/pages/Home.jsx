@@ -208,6 +208,9 @@ export default function Home() {
             {/* Relaxation banner */}
             <RelaxationBanner relaxations={state.appliedRelaxations} />
 
+            {/* Search summary */}
+            {!state.isLoading && <SearchSummary summary={state.searchSummary} />}
+
             {/* Results */}
             {state.view === 'list' ? (
               <div>
