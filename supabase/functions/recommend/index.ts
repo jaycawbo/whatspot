@@ -597,7 +597,7 @@ Deno.serve(async (req) => {
       safe('step7-summary', () => callLLM(
         LOVABLE_KEY,
         'You are a knowledgeable local friend who knows the city\'s food and drink scene intimately. Write warm, specific, confident recommendations — never generic.',
-        `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescForSummary}\n\nReturn a short 1-sentence intro explaining the overall theme of these picks, then a bullet point for each venue (1 sentence each) explaining what makes it special for this query. Sound like a trusted local friend, not a search engine.`,
+        `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescForSummary}\n\nReturn a short 1-sentence intro explaining the overall theme of these picks, then a bullet point for each venue (1 sentence each) explaining what makes it special for this query. Sound like a trusted local friend, not a search engine.${sessionContextString}`,
         [{ type: 'function', function: { name: 'generate_summary', description: 'Return a conversational search summary with intro and per-venue bullets', parameters: { type: 'object', properties: { intro: { type: 'string', description: 'One sentence conversational intro about the overall picks' }, bullets: { type: 'array', items: { type: 'object', properties: { name: { type: 'string', description: 'Venue name' }, note: { type: 'string', description: 'One sentence about why this venue is great for the query' } }, required: ['name', 'note'] }, description: 'Per-venue bullet points' } }, required: ['intro', 'bullets'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'generate_summary' } },
       ), null),
