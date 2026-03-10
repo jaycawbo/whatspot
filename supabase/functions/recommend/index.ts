@@ -435,10 +435,28 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`🌍 STEP 2: Google Places search for "${refinedSearchTerm}"...`);
+    // For on-street searches, strip any location words that may have leaked into the refined term
+    let googleSearchQuery = refinedSearchTerm;
+    if (isOnStreetSearch && detectedStreetBase) {
+      // Remove the street name and common location words from the refined query
+      const streetWords = detectedStreetBase.split(/\s+/);
+      const locationWords = [...streetWords, 'street', 'st', 'avenue', 'ave', 'road', 'rd', 'boulevard', 'blvd', 'drive', 'dr', 'lane', 'ln', 'toronto', 'ontario', 'canada'];
+      googleSearchQuery = refinedSearchTerm
+        .split(/[\s,]+/)
+        .filter(w => !locationWords.includes(w.toLowerCase()))
+        .join(' ')
+        .trim();
+      // Ensure we have a meaningful cuisine query; append "restaurant" if it's just a cuisine word
+      if (googleSearchQuery && !/(restaurant|cafe|bar|bistro|pub|eatery|diner|trattoria|pizzeria|bakery)/i.test(googleSearchQuery)) {
+        googleSearchQuery += ' restaurant';
+      }
+      if (!googleSearchQuery) googleSearchQuery = 'restaurant';
+      console.log(`📍 On-street: cleaned query "${refinedSearchTerm}" → "${googleSearchQuery}"`);
+    }
+    console.log(`🌍 STEP 2: Google Places search for "${googleSearchQuery}"...`);
     const googleResults = await googlePlacesBroadSearch(
       GOOGLE_KEY,
-      `${refinedSearchTerm} in ${location_name}`,
+      `${googleSearchQuery} in ${location_name}`,
       lat,
       lon,
       admission.maxRadius,
