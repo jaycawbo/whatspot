@@ -463,13 +463,13 @@ Deno.serve(async (req) => {
     
     let googleResults: any[];
     if (isOnStreetSearch && detectedStreetName) {
-      // Use locationRestriction (not locationBias) for on-street searches — 300m tight circle
+      // Use locationBias (not locationRestriction) with 3km radius centered on geocoded street coords
       googleResults = await googlePlacesBroadSearch(
         GOOGLE_KEY,
         `${googleSearchQuery} on ${detectedStreetName}, ${location_name}`,
-        lat, lon, 0.3, open_now, googlePriceLevels, true // useRestriction = true
+        lat, lon, 3, open_now, googlePriceLevels, false // locationBias, 3km radius
       );
-      console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationRestriction 300m)`);
+      console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationBias 3km)`);
     } else {
       googleResults = await googlePlacesBroadSearch(
         GOOGLE_KEY,
