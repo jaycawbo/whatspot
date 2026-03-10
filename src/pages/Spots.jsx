@@ -9,6 +9,7 @@ import ShareListDialog from '@/components/spots/ShareListDialog';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { List, Map, Share2, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 
 
