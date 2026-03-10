@@ -501,7 +501,7 @@ Deno.serve(async (req) => {
         const batchResult = await callLLM(
           LOVABLE_KEY,
           'You assess how well venues match a user search query. Evaluate ALL venues and return confidence scores.',
-          `The user searched for "${searchTerm}" in ${location_name}.\n\nHere are the venues to evaluate:\n${venueListText}\n\nFor EACH venue, assess how well it matches the search query. Consider occasion suitability, culinary style, ambiance, and dietary needs. Return confidence scores for ALL venues.`,
+          `The user searched for "${searchTerm}" in ${location_name}.\n\nHere are the venues to evaluate:\n${venueListText}\n\nFor EACH venue, assess how well it matches the search query. Consider occasion suitability, culinary style, ambiance, and dietary needs. Return confidence scores for ALL venues.${sessionContextString}`,
           [
             {
               type: 'function',
