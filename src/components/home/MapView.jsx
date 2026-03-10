@@ -20,20 +20,25 @@ function MapContent({ results }) {
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
-      {results.map((v, i) => (
-        <Marker key={v.name + i} position={[v.lat, v.lon]}>
-          <Popup>
-            <div className="text-sm min-w-[160px]">
-              <div className="flex items-start justify-between gap-2">
-                <strong>{v.name}</strong>
-                <HeartButton venue={v} size="sm" />
+      {results.map((v, i) => {
+        const lat = v.lat;
+        const lng = v.lon ?? v.lng;
+        if (lat == null || lng == null) return null;
+        return (
+          <Marker key={v.name + i} position={[lat, lng]}>
+            <Popup>
+              <div className="text-sm min-w-[160px]">
+                <div className="flex items-start justify-between gap-2">
+                  <strong>{v.name}</strong>
+                  <HeartButton venue={v} size="sm" />
+                </div>
+                <span className="text-muted-foreground">{v.address}</span>
+                {v.rating && <div className="mt-1">⭐ {v.rating}</div>}
               </div>
-              <span className="text-muted-foreground">{v.address}</span>
-              {v.rating && <div className="mt-1">⭐ {v.rating}</div>}
-            </div>
-          </Popup>
-        </Marker>
-      ))}
+            </Popup>
+          </Marker>
+        );
+      })}
     </>
   );
 }
