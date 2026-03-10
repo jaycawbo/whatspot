@@ -187,8 +187,11 @@ export default function Home() {
               />
             )}
 
+            {/* Loading messages */}
+            {state.isLoading && <LoadingMessages />}
+
             {/* Suggested chips */}
-            {!isMobile && (
+            {!isMobile && !state.isLoading && (
               <SuggestedChips chips={state.suggestedChips} onAppendChip={handleAppendChip} />
             )}
 
