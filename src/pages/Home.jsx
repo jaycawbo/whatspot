@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useMemo, useState } from 'react';
+import LoadingMessages from '@/components/home/LoadingMessages';
 import whatspotLogo from '@/assets/whatspot_logo.svg';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { recommend } from '@/services/api';
@@ -186,8 +187,11 @@ export default function Home() {
               />
             )}
 
+            {/* Loading messages */}
+            {state.isLoading && <LoadingMessages />}
+
             {/* Suggested chips */}
-            {!isMobile && (
+            {!isMobile && !state.isLoading && (
               <SuggestedChips chips={state.suggestedChips} onAppendChip={handleAppendChip} />
             )}
 

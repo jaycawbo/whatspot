@@ -263,71 +263,38 @@ Deno.serve(async (req) => {
       admission.minReviewCount = 10;
     }
 
-    // ─── STEP 1: LLM query refinement ───
+    // ─── STEPS 1 & 1b: Parallel query refinement + neighbourhood detection ───
+    console.log('🤖 STEPS 1 & 1b: Running in parallel...');
     let refinedSearchTerm = searchTerm;
-    try {
-      console.log('🤖 STEP 1: Refining search query...');
-      const refinement = await callLLM(
+
+    const [refinementResult, locationDetectionResult] = await Promise.all([
+      safe('step1-refinement', () => callLLM(
         LOVABLE_KEY,
         'You extract cuisine keywords from search queries for Google Places API.',
         `The user is searching for "${searchTerm}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return the original query.\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise keywords/phrases suitable for a Google Places search, or the original query if no specific culinary focus is detected.`,
-        [
-          {
-            type: 'function',
-            function: {
-              name: 'refine_query',
-              description: 'Return refined search keywords',
-              parameters: {
-                type: 'object',
-                properties: {
-                  keywords: { type: 'string', description: 'Comma-separated refined keywords or original query' },
-                },
-                required: ['keywords'],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
+        [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined keywords or original query' } }, required: ['keywords'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'refine_query' } },
-      );
-      if (refinement.keywords && refinement.keywords.toLowerCase() !== searchTerm.toLowerCase()) {
-        refinedSearchTerm = refinement.keywords;
-        console.log(`✅ Refined to: "${refinedSearchTerm}"`);
-      }
-    } catch (e: any) {
-      console.warn('⚠️ LLM refinement failed:', e.message);
-    }
-
-    // ─── STEP 1b: Neighbourhood / city detection ───
-    try {
-      console.log('📍 STEP 1b: Detecting neighbourhood/city in query...');
-      const locationDetection = await callLLM(
+      ), null),
+      safe('step1b-location', () => callLLM(
         LOVABLE_KEY,
         'You detect neighbourhood, district, or city names in search queries.',
         `Given the search query "${searchTerm}" and current location "${location_name}", identify if the query mentions a specific neighbourhood, district, or city name that is different from or more specific than the current location. Return the detected location string or "NONE" if no specific location is mentioned.`,
-        [
-          {
-            type: 'function',
-            function: {
-              name: 'detect_location',
-              description: 'Return detected location or NONE',
-              parameters: {
-                type: 'object',
-                properties: {
-                  detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' },
-                },
-                required: ['detected_location'],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
+        [{ type: 'function', function: { name: 'detect_location', description: 'Return detected location or NONE', parameters: { type: 'object', properties: { detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' } }, required: ['detected_location'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'detect_location' } },
-      );
+      ), null),
+    ]);
 
-      const detectedLocation = locationDetection.detected_location;
-      if (detectedLocation && detectedLocation !== 'NONE') {
-        console.log(`📍 Detected location: "${detectedLocation}", geocoding...`);
+    // Apply Step 1 result
+    if (refinementResult?.keywords && refinementResult.keywords.toLowerCase() !== searchTerm.toLowerCase()) {
+      refinedSearchTerm = refinementResult.keywords;
+      console.log(`✅ STEP 1: Refined to: "${refinedSearchTerm}"`);
+    }
+
+    // Apply Step 1b result
+    if (locationDetectionResult?.detected_location && locationDetectionResult.detected_location !== 'NONE') {
+      const detectedLocation = locationDetectionResult.detected_location;
+      console.log(`📍 STEP 1b: Detected location: "${detectedLocation}", geocoding...`);
+      try {
         const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
         const geocodeResp = await fetch(`${SUPABASE_URL}/functions/v1/geocode-address`, {
           method: 'POST',
@@ -341,13 +308,14 @@ Deno.serve(async (req) => {
             lon = geocodeData.lon;
             location_name = detectedLocation;
             admission.maxRadius = 2;
-            console.log(`📍 Location override: ${detectedLocation} (${lat}, ${lon})`);
+            console.log(`📍 STEP 1b: Location override: ${detectedLocation} (${lat}, ${lon})`);
           }
         }
+      } catch (e: any) {
+        console.warn('⚠️ STEP 1b: Geocoding failed:', e.message);
       }
-    } catch (e: any) {
-      console.warn('⚠️ Neighbourhood detection failed:', e.message);
     }
+    console.log('✅ STEPS 1 & 1b complete');
 
     // ─── STEP 2: Google Places broad search ───
     const reversePriceLevelMap: Record<string, string[]> = {
@@ -482,7 +450,7 @@ Deno.serve(async (req) => {
 
     const TARGET = 5;
     const LLM_THRESHOLD = 0.6;
-    const LLM_BATCH = 5;
+    const LLM_BATCH = 10;
     const skipLLM = isSimpleQuery(searchTerm, refinedSearchTerm) || scoredVenues.length < 3;
 
     let finalResults: any[] = [];
@@ -502,54 +470,75 @@ Deno.serve(async (req) => {
         finalResults = dedup(scoredVenues).slice(0, TARGET);
       }
     } else {
-      console.log(`🧠 STEP 4b: LLM intent re-ranking for "${searchTerm}"`);
-      const pool = [...dedup(scoredVenues)];
-      const confident: any[] = [];
+      console.log(`🧠 STEP 4b: Batched LLM intent re-ranking for "${searchTerm}"`);
+      const pool = dedup(scoredVenues).slice(0, LLM_BATCH * 2); // cap at 20 venues max
 
-      while (confident.length < TARGET && pool.length > 0) {
-        const batch = pool.splice(0, LLM_BATCH);
-        const evaluated = await Promise.all(
-          batch.map(async (venue: any) => {
-            try {
-              const result = await callLLM(
-                LOVABLE_KEY,
-                'You assess how well a venue matches a user search query.',
-                `The user searched for "${searchTerm}" in ${location_name}.\nVenue: ${venue.name}, ${venue.address}. Category: ${venue.category}. Cuisine: ${venue.cuisine_type}. Price: ${venue.price_level || 'Unknown'}. Rating: ${venue.rating} (${venue.review_count} reviews). Distance: ${venue.distance_km?.toFixed(1)}km.\nAssess how well this venue matches. Consider occasion suitability, culinary style, ambiance, dietary needs.`,
-                [
-                  {
-                    type: 'function',
-                    function: {
-                      name: 'assess_venue',
-                      description: 'Return confidence score and reasoning',
-                      parameters: {
+      try {
+        const venueListText = pool.map((v: any, i: number) =>
+          `${i + 1}. ${v.name} — ${v.address}. Category: ${v.category}. Cuisine: ${v.cuisine_type}. Price: ${v.price_level || 'Unknown'}. Rating: ${v.rating} (${v.review_count} reviews). Distance: ${v.distance_km?.toFixed(1)}km.`
+        ).join('\n');
+
+        const batchResult = await callLLM(
+          LOVABLE_KEY,
+          'You assess how well venues match a user search query. Evaluate ALL venues and return confidence scores.',
+          `The user searched for "${searchTerm}" in ${location_name}.\n\nHere are the venues to evaluate:\n${venueListText}\n\nFor EACH venue, assess how well it matches the search query. Consider occasion suitability, culinary style, ambiance, and dietary needs. Return confidence scores for ALL venues.`,
+          [
+            {
+              type: 'function',
+              function: {
+                name: 'assess_venues_batch',
+                description: 'Return confidence scores and reasoning for all venues',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    venues: {
+                      type: 'array',
+                      items: {
                         type: 'object',
                         properties: {
+                          name: { type: 'string', description: 'Venue name' },
                           confidence_score: { type: 'number', description: '0.0-1.0 match score' },
                           reasoning: { type: 'string', description: '1-2 sentences starting with "This spot"' },
                         },
-                        required: ['confidence_score', 'reasoning'],
-                        additionalProperties: false,
+                        required: ['name', 'confidence_score', 'reasoning'],
                       },
                     },
                   },
-                ],
-                { type: 'function', function: { name: 'assess_venue' } },
-              );
-              console.log(`🎯 ${venue.name}: confidence=${result.confidence_score?.toFixed(2)}`);
-              return { ...venue, llm_confidence: result.confidence_score, reasoning_explanation: result.reasoning };
-            } catch {
-              return { ...venue, llm_confidence: 1.0, reasoning_explanation: null };
-            }
-          }),
+                  required: ['venues'],
+                  additionalProperties: false,
+                },
+              },
+            },
+          ],
+          { type: 'function', function: { name: 'assess_venues_batch' } },
         );
-        for (const v of evaluated) {
-          if (v.llm_confidence >= LLM_THRESHOLD && confident.length < TARGET) {
-            confident.push(v);
-          }
+
+        // Map LLM results back to venues
+        const llmMap = new Map<string, { confidence_score: number; reasoning: string }>();
+        for (const v of batchResult.venues || []) {
+          llmMap.set(v.name.toLowerCase().trim(), { confidence_score: v.confidence_score, reasoning: v.reasoning });
         }
+
+        const evaluated = pool.map((venue: any) => {
+          const llmResult = llmMap.get(venue.name.toLowerCase().trim());
+          if (llmResult) {
+            console.log(`🎯 ${venue.name}: confidence=${llmResult.confidence_score?.toFixed(2)}`);
+            return { ...venue, llm_confidence: llmResult.confidence_score, reasoning_explanation: llmResult.reasoning };
+          }
+          return { ...venue, llm_confidence: 1.0, reasoning_explanation: null };
+        });
+
+        const confident = evaluated
+          .filter((v: any) => v.llm_confidence >= LLM_THRESHOLD)
+          .sort((a: any, b: any) => b.llm_confidence - a.llm_confidence)
+          .slice(0, TARGET);
+
+        finalResults = confident;
+      } catch (e: any) {
+        console.warn('⚠️ STEP 4b: Batch re-ranking failed:', e.message);
+        finalResults = pool.slice(0, TARGET);
       }
 
-      finalResults = confident;
       if (finalResults.length < TARGET) {
         const ids = new Set(finalResults.map((v: any) => v.place_id));
         const fillers = dedup(scoredVenues)
@@ -569,129 +558,58 @@ Deno.serve(async (req) => {
       }),
     );
 
-    // ─── STEP 6: LLM descriptors ───
-    console.log('🤖 STEP 6: Generating descriptors...');
-    let resultsWithDescriptors = enriched;
-    try {
-      const venueList = enriched.map((v: any) => `- ${v.name}`).join('\n');
-      const descResult = await callLLM(
+    // ─── STEPS 6, 7 & chips: Parallel descriptors + summary + chips ───
+    console.log('🤖 STEPS 6 & 7: Generating descriptors, summary, and chips in parallel...');
+
+    const venueDescForSummary = enriched.map((v: any) =>
+      `${v.name} (${v.cuisine_type}, ${v.rating}★${v.reasoning_explanation ? ` — ${v.reasoning_explanation}` : ''})`
+    ).join('\n');
+    const venueListForDesc = enriched.map((v: any) => `- ${v.name}`).join('\n');
+
+    const [descriptorResult, summaryResult, chipResult] = await Promise.all([
+      safe('step6-descriptors', () => callLLM(
         LOVABLE_KEY,
         'You generate short descriptive tags for venues. Do NOT include generic words like restaurant, cafe, bar, eatery, dining, food, place.',
-        `For each venue in ${location_name}, generate 2-3 SHORT descriptive tags (max 3-4 words each) capturing unique characteristics like ambiance, vibe, or standout qualities.\n\nVenues:\n${venueList}`,
-        [
-          {
-            type: 'function',
-            function: {
-              name: 'generate_descriptors',
-              description: 'Return descriptors per venue',
-              parameters: {
-                type: 'object',
-                properties: {
-                  venues: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        name: { type: 'string' },
-                        descriptors: { type: 'array', items: { type: 'string' } },
-                      },
-                      required: ['name', 'descriptors'],
-                    },
-                  },
-                },
-                required: ['venues'],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
+        `For each venue in ${location_name}, generate 2-3 SHORT descriptive tags (max 3-4 words each) capturing unique characteristics like ambiance, vibe, or standout qualities.\n\nVenues:\n${venueListForDesc}`,
+        [{ type: 'function', function: { name: 'generate_descriptors', description: 'Return descriptors per venue', parameters: { type: 'object', properties: { venues: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, descriptors: { type: 'array', items: { type: 'string' } } }, required: ['name', 'descriptors'] } } }, required: ['venues'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'generate_descriptors' } },
-      );
+      ), null),
+      safe('step7-summary', () => callLLM(
+        LOVABLE_KEY,
+        'You are a knowledgeable local friend who knows the city\'s food and drink scene intimately. Write warm, specific, confident recommendations — never generic.',
+        `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescForSummary}\n\nWrite a 2-3 sentence conversational summary explaining why these specific venues were chosen. Sound like a trusted local friend making a personal recommendation, not a search engine. Be specific about what makes these places worth visiting for this particular query.`,
+        [{ type: 'function', function: { name: 'generate_summary', description: 'Return a conversational search summary', parameters: { type: 'object', properties: { summary: { type: 'string', description: '2-3 sentence conversational recommendation' } }, required: ['summary'], additionalProperties: false } } }],
+        { type: 'function', function: { name: 'generate_summary' } },
+      ), null),
+      safe('chips', () => callLLM(
+        LOVABLE_KEY,
+        'You suggest related search queries.',
+        `Based on the search "${searchTerm}", suggest 3-4 related search queries the user might want to try next.`,
+        [{ type: 'function', function: { name: 'suggest_chips', description: 'Return suggested search queries', parameters: { type: 'object', properties: { chips: { type: 'array', items: { type: 'string' } } }, required: ['chips'], additionalProperties: false } } }],
+        { type: 'function', function: { name: 'suggest_chips' } },
+      ), null),
+    ]);
 
+    // Apply descriptors
+    let resultsWithDescriptors = enriched;
+    if (descriptorResult?.venues) {
       const genericTerms = ['restaurant', 'cafe', 'bar', 'eatery', 'dining', 'food', 'place'];
       const descMap = new Map<string, string[]>();
-      for (const v of descResult.venues || []) {
+      for (const v of descriptorResult.venues) {
         const filtered = (v.descriptors || []).filter(
           (d: string) => !genericTerms.some((g) => d.toLowerCase() === g || d.toLowerCase() === `${g}s`),
         );
         descMap.set(v.name, filtered.slice(0, 4));
       }
-      resultsWithDescriptors = enriched.map((v: any) => ({
-        ...v,
-        descriptors: descMap.get(v.name) || [],
-      }));
-    } catch (e: any) {
-      console.warn('⚠️ Descriptor generation failed:', e.message);
+      resultsWithDescriptors = enriched.map((v: any) => ({ ...v, descriptors: descMap.get(v.name) || [] }));
+    } else {
       resultsWithDescriptors = enriched.map((v: any) => ({ ...v, descriptors: [] }));
     }
 
-    // ─── Suggested chips ───
-    let suggested_chips: string[] = [];
-    try {
-      const chipResult = await callLLM(
-        LOVABLE_KEY,
-        'You suggest related search queries.',
-        `Based on the search "${searchTerm}", suggest 3-4 related search queries the user might want to try next.`,
-        [
-          {
-            type: 'function',
-            function: {
-              name: 'suggest_chips',
-              description: 'Return suggested search queries',
-              parameters: {
-                type: 'object',
-                properties: {
-                  chips: { type: 'array', items: { type: 'string' } },
-                },
-                required: ['chips'],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
-        { type: 'function', function: { name: 'suggest_chips' } },
-      );
-      suggested_chips = chipResult.chips || [];
-    } catch (e: any) {
-      console.warn('⚠️ Chip generation failed:', e.message);
-    }
-
-    // ─── STEP 7: Conversational search summary ───
-    console.log('🤖 STEP 7: Generating search summary...');
-    let search_summary = null;
-    try {
-      const venueDescriptions = resultsWithDescriptors.map((v: any) =>
-        `${v.name} (${v.cuisine_type}, ${v.rating}★${v.reasoning_explanation ? ` — ${v.reasoning_explanation}` : ''})`
-      ).join('\n');
-
-      const summaryResult = await callLLM(
-        LOVABLE_KEY,
-        'You are a knowledgeable local friend who knows the city\'s food and drink scene intimately. Write warm, specific, confident recommendations — never generic.',
-        `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescriptions}\n\nWrite a 2-3 sentence conversational summary explaining why these specific venues were chosen. Sound like a trusted local friend making a personal recommendation, not a search engine. Be specific about what makes these places worth visiting for this particular query.`,
-        [
-          {
-            type: 'function',
-            function: {
-              name: 'generate_summary',
-              description: 'Return a conversational search summary',
-              parameters: {
-                type: 'object',
-                properties: {
-                  summary: { type: 'string', description: '2-3 sentence conversational recommendation' },
-                },
-                required: ['summary'],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
-        { type: 'function', function: { name: 'generate_summary' } },
-      );
-      search_summary = summaryResult.summary || null;
-      console.log('✅ STEP 7: Summary generated');
-    } catch (e: any) {
-      console.warn('⚠️ STEP 7: Summary generation failed:', e.message);
-    }
+    const search_summary = summaryResult?.summary || null;
+    if (search_summary) console.log('✅ STEP 7: Summary generated');
+    const suggested_chips: string[] = chipResult?.chips || [];
+    console.log('✅ STEPS 6 & 7 complete');
 
     // ─── Strip internal fields ───
     const resultsForFrontend = resultsWithDescriptors.map(({ isRelaxedAdmission, unknownPrice, ...rest }: any) => rest);
