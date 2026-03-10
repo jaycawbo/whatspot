@@ -656,19 +656,18 @@ Deno.serve(async (req) => {
       console.warn('⚠️ Chip generation failed:', e.message);
     }
 
-    // ─── Step 7: Search summary generation ───
-    let search_summary: string | null = null;
+    // ─── STEP 7: Conversational search summary ───
+    console.log('🤖 STEP 7: Generating search summary...');
+    let search_summary = null;
     try {
-      const venueSnippets = resultsWithDescriptors.slice(0, 10).map((v: any) => ({
-        name: v.name,
-        cuisine_type: v.cuisine_type || null,
-        rating: v.rating,
-        reasoning_explanation: v.reasoning_explanation || null,
-      }));
+      const venueDescriptions = resultsWithDescriptors.map((v: any) =>
+        `${v.name} (${v.cuisine_type}, ${v.rating}★${v.reasoning_explanation ? ` — ${v.reasoning_explanation}` : ''})`
+      ).join('\n');
+
       const summaryResult = await callLLM(
         LOVABLE_KEY,
-        'You are a knowledgeable local friend making warm, specific, confident dining and venue recommendations. Write in a conversational tone.',
-        `The user searched for "${searchTerm}" in ${location_name}. Here are the top results:\n${JSON.stringify(venueSnippets)}\n\nWrite a 2-3 sentence conversational summary explaining why these specific venues were chosen. Be warm, specific, and confident — like a local friend giving a personal recommendation.`,
+        'You are a knowledgeable local friend who knows the city\'s food and drink scene intimately. Write warm, specific, confident recommendations — never generic.',
+        `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescriptions}\n\nWrite a 2-3 sentence conversational summary explaining why these specific venues were chosen. Sound like a trusted local friend making a personal recommendation, not a search engine. Be specific about what makes these places worth visiting for this particular query.`,
         [
           {
             type: 'function',
@@ -678,7 +677,7 @@ Deno.serve(async (req) => {
               parameters: {
                 type: 'object',
                 properties: {
-                  summary: { type: 'string' },
+                  summary: { type: 'string', description: '2-3 sentence conversational recommendation' },
                 },
                 required: ['summary'],
                 additionalProperties: false,
@@ -689,8 +688,9 @@ Deno.serve(async (req) => {
         { type: 'function', function: { name: 'generate_summary' } },
       );
       search_summary = summaryResult.summary || null;
+      console.log('✅ STEP 7: Summary generated');
     } catch (e: any) {
-      console.warn('⚠️ Search summary generation failed:', e.message);
+      console.warn('⚠️ STEP 7: Summary generation failed:', e.message);
     }
 
     // ─── Strip internal fields ───
