@@ -15,6 +15,7 @@ import ViewToggle from '@/components/home/ViewToggle';
 import FilterDialog from '@/components/home/FilterDialog';
 import RelaxationBanner from '@/components/home/RelaxationBanner';
 import NoResultsPrompt from '@/components/home/NoResultsPrompt';
+import SearchSummary from '@/components/home/SearchSummary';
 import GatedModal from '@/components/home/GatedModal';
 import MobileBottomSheet from '@/components/home/MobileBottomSheet';
 import { Loader2 } from 'lucide-react';
@@ -206,6 +207,9 @@ export default function Home() {
 
             {/* Relaxation banner */}
             <RelaxationBanner relaxations={state.appliedRelaxations} />
+
+            {/* Search summary */}
+            {!state.isLoading && <SearchSummary summary={state.searchSummary} />}
 
             {/* Results */}
             {state.view === 'list' ? (
