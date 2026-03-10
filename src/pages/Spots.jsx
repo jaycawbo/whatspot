@@ -155,7 +155,7 @@ export default function Spots() {
                   ].map((f) => (
                     <button
                       key={f.id}
-                      onClick={() => { setActiveFilter(f.id); setCustomLabelPickerOpen(false); }}
+                      onClick={() => { setActiveFilter(f.id); setCustomLabelPickerOpen(false); setLabelSearchOpen(false); setLabelSearchResults(null); }}
                       className={cn(
                         'shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap',
                         activeFilter === f.id
