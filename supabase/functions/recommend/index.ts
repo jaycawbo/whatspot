@@ -263,71 +263,38 @@ Deno.serve(async (req) => {
       admission.minReviewCount = 10;
     }
 
-    // ─── STEP 1: LLM query refinement ───
+    // ─── STEPS 1 & 1b: Parallel query refinement + neighbourhood detection ───
+    console.log('🤖 STEPS 1 & 1b: Running in parallel...');
     let refinedSearchTerm = searchTerm;
-    try {
-      console.log('🤖 STEP 1: Refining search query...');
-      const refinement = await callLLM(
+
+    const [refinementResult, locationDetectionResult] = await Promise.all([
+      safe('step1-refinement', () => callLLM(
         LOVABLE_KEY,
         'You extract cuisine keywords from search queries for Google Places API.',
         `The user is searching for "${searchTerm}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return the original query.\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise keywords/phrases suitable for a Google Places search, or the original query if no specific culinary focus is detected.`,
-        [
-          {
-            type: 'function',
-            function: {
-              name: 'refine_query',
-              description: 'Return refined search keywords',
-              parameters: {
-                type: 'object',
-                properties: {
-                  keywords: { type: 'string', description: 'Comma-separated refined keywords or original query' },
-                },
-                required: ['keywords'],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
+        [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined keywords or original query' } }, required: ['keywords'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'refine_query' } },
-      );
-      if (refinement.keywords && refinement.keywords.toLowerCase() !== searchTerm.toLowerCase()) {
-        refinedSearchTerm = refinement.keywords;
-        console.log(`✅ Refined to: "${refinedSearchTerm}"`);
-      }
-    } catch (e: any) {
-      console.warn('⚠️ LLM refinement failed:', e.message);
-    }
-
-    // ─── STEP 1b: Neighbourhood / city detection ───
-    try {
-      console.log('📍 STEP 1b: Detecting neighbourhood/city in query...');
-      const locationDetection = await callLLM(
+      ), null),
+      safe('step1b-location', () => callLLM(
         LOVABLE_KEY,
         'You detect neighbourhood, district, or city names in search queries.',
         `Given the search query "${searchTerm}" and current location "${location_name}", identify if the query mentions a specific neighbourhood, district, or city name that is different from or more specific than the current location. Return the detected location string or "NONE" if no specific location is mentioned.`,
-        [
-          {
-            type: 'function',
-            function: {
-              name: 'detect_location',
-              description: 'Return detected location or NONE',
-              parameters: {
-                type: 'object',
-                properties: {
-                  detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' },
-                },
-                required: ['detected_location'],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
+        [{ type: 'function', function: { name: 'detect_location', description: 'Return detected location or NONE', parameters: { type: 'object', properties: { detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' } }, required: ['detected_location'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'detect_location' } },
-      );
+      ), null),
+    ]);
 
-      const detectedLocation = locationDetection.detected_location;
-      if (detectedLocation && detectedLocation !== 'NONE') {
-        console.log(`📍 Detected location: "${detectedLocation}", geocoding...`);
+    // Apply Step 1 result
+    if (refinementResult?.keywords && refinementResult.keywords.toLowerCase() !== searchTerm.toLowerCase()) {
+      refinedSearchTerm = refinementResult.keywords;
+      console.log(`✅ STEP 1: Refined to: "${refinedSearchTerm}"`);
+    }
+
+    // Apply Step 1b result
+    if (locationDetectionResult?.detected_location && locationDetectionResult.detected_location !== 'NONE') {
+      const detectedLocation = locationDetectionResult.detected_location;
+      console.log(`📍 STEP 1b: Detected location: "${detectedLocation}", geocoding...`);
+      try {
         const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
         const geocodeResp = await fetch(`${SUPABASE_URL}/functions/v1/geocode-address`, {
           method: 'POST',
@@ -341,13 +308,14 @@ Deno.serve(async (req) => {
             lon = geocodeData.lon;
             location_name = detectedLocation;
             admission.maxRadius = 2;
-            console.log(`📍 Location override: ${detectedLocation} (${lat}, ${lon})`);
+            console.log(`📍 STEP 1b: Location override: ${detectedLocation} (${lat}, ${lon})`);
           }
         }
+      } catch (e: any) {
+        console.warn('⚠️ STEP 1b: Geocoding failed:', e.message);
       }
-    } catch (e: any) {
-      console.warn('⚠️ Neighbourhood detection failed:', e.message);
     }
+    console.log('✅ STEPS 1 & 1b complete');
 
     // ─── STEP 2: Google Places broad search ───
     const reversePriceLevelMap: Record<string, string[]> = {
