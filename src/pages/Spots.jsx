@@ -2,29 +2,35 @@ import React, { useState, useMemo } from 'react';
 import Header from '@/components/home/Header';
 import { useSpots } from '@/hooks/useSpots';
 import { useGlobalState } from '@/context/GlobalStateContext';
-import { useAuth } from '@/lib/AuthContext';
 import SpotCard from '@/components/spots/SpotCard';
 import SpotsMapView from '@/components/spots/SpotsMapView';
 import ShareListDialog from '@/components/spots/ShareListDialog';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { List, Map, Share2, Heart } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
-const LABEL_FILTERS = [
+const DEFAULT_FILTERS = [
   { id: 'all', label: 'All Spots' },
   { id: 'Top Spot', label: 'Top Spots' },
   { id: 'Want to Go', label: 'Want to Go' },
 ];
 
 export default function Spots() {
-  const { spots, isLoading, removeSpot, isAuthenticated } = useSpots();
+  const { spots, isLoading, removeSpot, isAuthenticated, allLabels } = useSpots();
   const { state } = useGlobalState();
   const [viewMode, setViewMode] = useState('list');
   const [activeFilter, setActiveFilter] = useState('all');
   const [shareOpen, setShareOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+
+  // Build dynamic filters: defaults + any custom labels not already in defaults
+  const defaultIds = DEFAULT_FILTERS.map((f) => f.id);
+  const customFilters = allLabels
+    .filter((l) => !defaultIds.includes(l))
+    .map((l) => ({ id: l, label: l }));
+  const allFilters = [...DEFAULT_FILTERS, ...customFilters];
 
   const filteredSpots = useMemo(() => {
     if (activeFilter === 'all') return spots;
@@ -74,31 +80,40 @@ export default function Spots() {
                 Save your favorite venues and access them anytime.
               </p>
             </div>
-            <Button onClick={() => setAuthModalOpen(true)}>
-              Sign in with Google
-            </Button>
+            <Button onClick={() => setAuthModalOpen(true)}>Sign in with Google</Button>
           </div>
         )}
 
         {/* Authenticated content */}
         {isAuthenticated && (
           <>
-            {/* Filter tabs + view toggle */}
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <Tabs value={activeFilter} onValueChange={setActiveFilter}>
-                <TabsList>
-                  {LABEL_FILTERS.map((f) => (
-                    <TabsTrigger key={f.id} value={f.id} className="text-xs">
-                      {f.label}
-                      {f.id === 'all'
-                        ? ` (${spots.length})`
-                        : ` (${spots.filter((s) => s.labels?.includes(f.id)).length})`}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
+            {/* Filter pills + view toggle */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 min-w-0">
+                {allFilters.map((f) => {
+                  const count =
+                    f.id === 'all'
+                      ? spots.length
+                      : spots.filter((s) => s.labels?.includes(f.id)).length;
+                  const active = activeFilter === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      onClick={() => setActiveFilter(f.id)}
+                      className={cn(
+                        'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap',
+                        active
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-secondary text-secondary-foreground hover:bg-accent'
+                      )}
+                    >
+                      {f.label} ({count})
+                    </button>
+                  );
+                })}
+              </div>
 
-              <div className="flex gap-1">
+              <div className="flex gap-1 shrink-0">
                 <Button
                   variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                   size="icon"
