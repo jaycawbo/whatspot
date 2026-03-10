@@ -524,7 +524,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (filteredVenues.length === 0) {
+    if (streetFilteredVenues.length === 0) {
       return new Response(
         JSON.stringify({
           results: [],
