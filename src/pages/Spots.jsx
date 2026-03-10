@@ -7,30 +7,17 @@ import SpotsMapView from '@/components/spots/SpotsMapView';
 import ShareListDialog from '@/components/spots/ShareListDialog';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { List, Map, Share2, Heart, X } from 'lucide-react';
+import { List, Map, Share2, Heart, X, Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
-const DEFAULT_FILTERS = [
-  { id: 'all', label: 'All Spots' },
-  { id: 'Top Spot', label: 'Top Spots' },
-  { id: 'Want to Go', label: 'Want to Go' },
-  { id: 'custom', label: 'Custom Labels' },
-];
+const BUILT_IN_FILTERS = ['all', 'Top Spot', 'Want to Go'];
 
 const SUGGESTED_LABELS = [
-  'Special Occasion',
-  'Date Night',
-  'Business Meal',
-  'Hidden Gem',
-  'Best Cocktails',
-  'Good for Groups',
-  'Neighbourhood Gem',
-  'Underrated',
-  'Worth the Wait',
-  'Would Not Go Back',
+  'Special Occasion', 'Date Night', 'Business Meal', 'Hidden Gem',
+  'Best Cocktails', 'Good for Groups', 'Neighbourhood Gem',
+  'Underrated', 'Worth the Wait', 'Would Not Go Back',
 ];
 
 export default function Spots() {
@@ -38,11 +25,13 @@ export default function Spots() {
   const { state } = useGlobalState();
   const [viewMode, setViewMode] = useState('list');
   const [activeFilter, setActiveFilter] = useState('all');
-  const [selectedCustomLabel, setSelectedCustomLabel] = useState(null);
+  const [customLabelPickerOpen, setCustomLabelPickerOpen] = useState(false);
+  const [pinnedLabels, setPinnedLabels] = useState([]);
+  const [customInput, setCustomInput] = useState('');
   const [shareOpen, setShareOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
-  // Collect all unique custom labels from saved spots
+  // All unique custom labels from saved spots
   const existingCustomLabels = useMemo(() => {
     const custom = new Set();
     spots.forEach((s) => {
@@ -53,39 +42,53 @@ export default function Spots() {
     return Array.from(custom);
   }, [spots]);
 
-  // Merge suggested + existing for display
-  const allCustomChips = useMemo(() => {
+  // Labels pinned to tab bar (union of pinned + those that exist on spots)
+  const visibleCustomTabs = useMemo(() => {
+    const merged = new Set([...pinnedLabels, ...existingCustomLabels]);
+    return Array.from(merged);
+  }, [pinnedLabels, existingCustomLabels]);
+
+  // All chips for the picker (suggested + any existing not in suggested)
+  const allChips = useMemo(() => {
     const merged = [...SUGGESTED_LABELS];
     existingCustomLabels.forEach((l) => {
       if (!merged.includes(l)) merged.push(l);
     });
+    pinnedLabels.forEach((l) => {
+      if (!merged.includes(l)) merged.push(l);
+    });
     return merged;
-  }, [existingCustomLabels]);
+  }, [existingCustomLabels, pinnedLabels]);
 
-  const handleFilterChange = (value) => {
-    setActiveFilter(value);
-    if (value !== 'custom') setSelectedCustomLabel(null);
+  const addLabelToTabs = (label) => {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    if (!pinnedLabels.includes(trimmed)) {
+      setPinnedLabels((prev) => [...prev, trimmed]);
+    }
+    setActiveFilter(trimmed);
+    setCustomLabelPickerOpen(false);
+    setCustomInput('');
   };
 
-  const handleCustomChipClick = (label) => {
-    setSelectedCustomLabel((prev) => (prev === label ? null : label));
+  const removePinnedLabel = (label) => {
+    setPinnedLabels((prev) => prev.filter((l) => l !== label));
+    if (activeFilter === label) setActiveFilter('all');
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addLabelToTabs(customInput);
+    }
   };
 
   const filteredSpots = useMemo(() => {
     if (activeFilter === 'all') return spots;
-    if (activeFilter === 'custom') {
-      if (selectedCustomLabel) {
-        return spots.filter((s) => s.labels?.includes(selectedCustomLabel));
-      }
-      return spots.filter((s) =>
-        s.labels?.some((l) => !['Top Spot', 'Want to Go'].includes(l))
-      );
-    }
     return spots.filter((s) => s.labels?.includes(activeFilter));
-  }, [spots, activeFilter, selectedCustomLabel]);
+  }, [spots, activeFilter]);
 
-  // Count for a custom chip
-  const chipCount = (label) => spots.filter((s) => s.labels?.includes(label)).length;
+  const spotCount = (label) => spots.filter((s) => s.labels?.includes(label)).length;
 
   const handleRemove = async (placeId) => {
     try {
@@ -138,25 +141,69 @@ export default function Spots() {
         {isAuthenticated && (
           <>
             {/* Filter tabs + view toggle */}
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="overflow-x-auto scrollbar-hide">
-                <Tabs value={activeFilter} onValueChange={handleFilterChange}>
-                  <TabsList>
-                    {DEFAULT_FILTERS.map((f) => (
-                      <TabsTrigger key={f.id} value={f.id} className="text-xs">
-                        {f.label}
-                        {f.id === 'all'
-                          ? ` (${spots.length})`
-                          : f.id === 'custom'
-                          ? ` (${spots.filter((s) => s.labels?.some((l) => !['Top Spot', 'Want to Go'].includes(l))).length})`
-                          : ` (${spots.filter((s) => s.labels?.includes(f.id)).length})`}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0 overflow-x-auto scrollbar-hide">
+                <div className="flex items-center gap-1.5 pb-1">
+                  {/* Built-in tabs */}
+                  {[
+                    { id: 'all', label: 'All Spots' },
+                    { id: 'Top Spot', label: 'Top Spots' },
+                    { id: 'Want to Go', label: 'Want to Go' },
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() => { setActiveFilter(f.id); setCustomLabelPickerOpen(false); }}
+                      className={cn(
+                        'shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap',
+                        activeFilter === f.id
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+                      )}
+                    >
+                      {f.label} ({f.id === 'all' ? spots.length : spotCount(f.id)})
+                    </button>
+                  ))}
+
+                  {/* Custom label tabs */}
+                  {visibleCustomTabs.map((label) => (
+                    <span
+                      key={label}
+                      className={cn(
+                        'shrink-0 inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap group',
+                        activeFilter === label
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+                      )}
+                    >
+                      <button onClick={() => { setActiveFilter(label); setCustomLabelPickerOpen(false); }}>
+                        {label} ({spotCount(label)})
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removePinnedLabel(label); }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+
+                  {/* Add custom label button */}
+                  <button
+                    onClick={() => setCustomLabelPickerOpen((prev) => !prev)}
+                    className={cn(
+                      'shrink-0 rounded-md p-1.5 transition-colors',
+                      customLabelPickerOpen
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+                    )}
+                    title="Add custom label filter"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
 
-              <div className="flex gap-1">
+              <div className="flex gap-1 shrink-0">
                 <Button
                   variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                   size="icon"
@@ -176,29 +223,46 @@ export default function Spots() {
               </div>
             </div>
 
-            {/* Custom Labels expanded section */}
-            {activeFilter === 'custom' && (
-              <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Filter by custom label:</p>
+            {/* Custom label picker */}
+            {customLabelPickerOpen && (
+              <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-3">
+                <p className="text-xs font-medium text-muted-foreground">Select or create a label filter:</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {allCustomChips.map((label) => {
-                    const count = chipCount(label);
-                    const active = selectedCustomLabel === label;
+                  {allChips.map((label) => {
+                    const isPinned = visibleCustomTabs.includes(label);
                     return (
                       <button
                         key={label}
-                        onClick={() => handleCustomChipClick(label)}
+                        onClick={() => addLabelToTabs(label)}
                         className={cn(
                           'rounded-full px-2.5 py-1 text-xs font-medium transition-colors border',
-                          active
-                            ? 'bg-primary text-primary-foreground border-primary'
+                          isPinned
+                            ? 'bg-primary/20 text-primary border-primary/30'
                             : 'bg-accent/50 text-accent-foreground border-transparent hover:bg-accent'
                         )}
                       >
-                        {label}{count > 0 ? ` (${count})` : ''}
+                        {label}
                       </button>
                     );
                   })}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    value={customInput}
+                    onChange={(e) => setCustomInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Type a custom label..."
+                    className="h-8 text-xs bg-background flex-1"
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-8 text-xs"
+                    onClick={() => addLabelToTabs(customInput)}
+                    disabled={!customInput.trim()}
+                  >
+                    Add
+                  </Button>
                 </div>
               </div>
             )}
@@ -225,9 +289,7 @@ export default function Spots() {
                 <p className="text-muted-foreground text-sm">
                   {activeFilter === 'all'
                     ? 'No spots saved yet. Search for venues and tap the heart to save them!'
-                    : selectedCustomLabel
-                    ? `No spots with the "${selectedCustomLabel}" label.`
-                    : `No spots with custom labels.`}
+                    : `No spots with the "${activeFilter}" label.`}
                 </p>
               </div>
             )}
