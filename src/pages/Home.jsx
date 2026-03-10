@@ -75,11 +75,22 @@ export default function Home() {
           const entry = {
             query: queryText,
             timestamp: Date.now(),
-            results: res.results.map(r => ({
+          results: res.results.map(r => ({
               name: r.name,
               cuisine_type: r.cuisine_type,
               descriptors: r.descriptors,
               reasoning_explanation: r.reasoning_explanation,
+              address: r.address,
+              lat: r.lat,
+              lon: r.lon,
+              rating: r.rating,
+              review_count: r.review_count,
+              price_level: r.price_level,
+              place_id: r.place_id,
+              image_urls: r.image_urls,
+              distance_km: r.distance_km,
+              category: r.category,
+              score: r.score,
             })),
           };
           try {
