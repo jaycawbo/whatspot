@@ -75,7 +75,7 @@ async function fetchWithConcurrency<T, R>(items: T[], fn: (item: T) => Promise<R
 // ─── LLM helper ───
 
 const AI_GATEWAY = 'https://ai.gateway.lovable.dev/v1/chat/completions';
-const LLM_MODEL = 'google/gemini-2.5-flash';
+const LLM_MODEL = 'openai/gpt-5-mini';
 
 async function callLLM(apiKey: string, systemPrompt: string, userPrompt: string, tools?: any[], toolChoice?: any): Promise<any> {
   const body: any = {
