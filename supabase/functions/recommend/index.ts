@@ -222,13 +222,17 @@ Deno.serve(async (req) => {
       category,
       query,
       radius_km,
-      lat,
-      lon,
-      location_name,
+      lat: originalLat,
+      lon: originalLon,
+      location_name: originalLocationName,
       relaxation_level = 0,
       open_now,
       price_levels,
     } = await req.json();
+
+    let lat = originalLat;
+    let lon = originalLon;
+    let location_name = originalLocationName;
 
     const GOOGLE_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY');
     const LOVABLE_KEY = Deno.env.get('LOVABLE_API_KEY');
