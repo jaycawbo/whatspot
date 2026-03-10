@@ -92,7 +92,7 @@ function reducer(state, action) {
         isLoading: false,
       };
     case 'SET_LOADING':
-      return { ...state, isLoading: action.payload, isQuerying: action.payload };
+      return { ...state, isLoading: action.payload, isQuerying: action.payload, ...(action.payload ? { mode: 'post-search' } : {}) };
     case 'SET_SUGGESTED_CHIPS':
       return { ...state, suggestedChips: action.payload };
     case 'ADD_SEARCH_HISTORY': {
