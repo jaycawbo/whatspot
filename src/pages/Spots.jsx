@@ -11,11 +11,6 @@ import { Button } from '@/components/ui/button';
 import { List, Map, Share2, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 
-const LABEL_FILTERS = [
-  { id: 'all', label: 'All Spots' },
-  { id: 'Top Spot', label: 'Top Spots' },
-  { id: 'Want to Go', label: 'Want to Go' },
-];
 
 export default function Spots() {
   const { spots, isLoading, removeSpot, isAuthenticated } = useSpots();
