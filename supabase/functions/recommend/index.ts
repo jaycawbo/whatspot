@@ -606,7 +606,7 @@ Deno.serve(async (req) => {
       resultsWithDescriptors = enriched.map((v: any) => ({ ...v, descriptors: [] }));
     }
 
-    const search_summary = summaryResult?.summary || null;
+    const search_summary = summaryResult && summaryResult.intro ? summaryResult : (summaryResult?.summary || null);
     if (search_summary) console.log('✅ STEP 7: Summary generated');
     const suggested_chips: string[] = chipResult?.chips || [];
     console.log('✅ STEPS 6 & 7 complete');
