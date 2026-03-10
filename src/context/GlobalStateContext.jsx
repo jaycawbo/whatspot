@@ -45,6 +45,7 @@ function getInitialState() {
     gated: false,
     relaxationLevel: 0,
     noVenuesAtAll: false,
+    searchSummary: null,
   };
 }
 
@@ -77,6 +78,7 @@ function reducer(state, action) {
         pagination: action.payload.pagination,
         suggestedChips: action.payload.suggested_chips || [],
         appliedRelaxations: action.payload.applied_relaxations || [],
+        searchSummary: action.payload.search_summary || null,
         gated: action.payload.gated || false,
         isLoading: false,
         isQuerying: false,
@@ -90,7 +92,7 @@ function reducer(state, action) {
         isLoading: false,
       };
     case 'SET_LOADING':
-      return { ...state, isLoading: action.payload, isQuerying: action.payload };
+      return { ...state, isLoading: action.payload, isQuerying: action.payload, ...(action.payload ? { mode: 'post-search' } : {}) };
     case 'SET_SUGGESTED_CHIPS':
       return { ...state, suggestedChips: action.payload };
     case 'ADD_SEARCH_HISTORY': {
@@ -118,6 +120,7 @@ function reducer(state, action) {
         appliedRelaxations: [],
         relaxationLevel: 0,
         noVenuesAtAll: false,
+        searchSummary: null,
         gated: false,
         isLoading: false,
         isQuerying: false,
