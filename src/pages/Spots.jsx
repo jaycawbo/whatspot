@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 
 
 export default function Spots() {
-  const { spots, isLoading, removeSpot, isAuthenticated } = useSpots();
+  const { spots, isLoading, removeSpot, isAuthenticated, allLabels } = useSpots();
   const { state } = useGlobalState();
   const [viewMode, setViewMode] = useState('list');
   const [activeFilter, setActiveFilter] = useState('all');
