@@ -118,14 +118,15 @@ async function callLLM(apiKey: string, systemPrompt: string, userPrompt: string,
 
 // ─── Google Places helpers (inlined) ───
 
-async function googlePlacesBroadSearch(apiKey: string, query: string, lat: number, lon: number, radiusKm: number, openNow?: boolean, priceLevels?: string[]) {
+async function googlePlacesBroadSearch(apiKey: string, query: string, lat: number, lon: number, radiusKm: number, openNow?: boolean, priceLevels?: string[], useRestriction = false) {
   const url = 'https://places.googleapis.com/v1/places:searchText';
+  const locationConfig = useRestriction
+    ? { locationRestriction: { circle: { center: { latitude: lat, longitude: lon }, radius: radiusKm * 1000 } } }
+    : { locationBias: { circle: { center: { latitude: lat, longitude: lon }, radius: radiusKm * 1000 } } };
   const reqBody: any = {
     textQuery: query,
     maxResultCount: 20,
-    locationBias: {
-      circle: { center: { latitude: lat, longitude: lon }, radius: radiusKm * 1000 },
-    },
+    ...locationConfig,
   };
   if (openNow) reqBody.openNow = true;
   if (priceLevels && priceLevels.length > 0) reqBody.priceLevels = priceLevels;
