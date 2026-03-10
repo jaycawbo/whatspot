@@ -238,6 +238,16 @@ export default function Spots() {
               </div>
             </div>
 
+            {/* Label search bar */}
+            {labelSearchOpen && (
+              <LabelSearchBar
+                allLabels={allLabels}
+                spots={spots}
+                onResults={setLabelSearchResults}
+                onClose={() => { setLabelSearchOpen(false); setLabelSearchResults(null); }}
+              />
+            )}
+
             {/* Custom label picker */}
             {customLabelPickerOpen && (
               <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-3">
