@@ -222,13 +222,17 @@ Deno.serve(async (req) => {
       category,
       query,
       radius_km,
-      lat,
-      lon,
-      location_name,
+      lat: originalLat,
+      lon: originalLon,
+      location_name: originalLocationName,
       relaxation_level = 0,
       open_now,
       price_levels,
     } = await req.json();
+
+    let lat = originalLat;
+    let lon = originalLon;
+    let location_name = originalLocationName;
 
     const GOOGLE_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY');
     const LOVABLE_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -292,6 +296,57 @@ Deno.serve(async (req) => {
       }
     } catch (e: any) {
       console.warn('⚠️ LLM refinement failed:', e.message);
+    }
+
+    // ─── STEP 1b: Neighbourhood / city detection ───
+    try {
+      console.log('📍 STEP 1b: Detecting neighbourhood/city in query...');
+      const locationDetection = await callLLM(
+        LOVABLE_KEY,
+        'You detect neighbourhood, district, or city names in search queries.',
+        `Given the search query "${searchTerm}" and current location "${location_name}", identify if the query mentions a specific neighbourhood, district, or city name that is different from or more specific than the current location. Return the detected location string or "NONE" if no specific location is mentioned.`,
+        [
+          {
+            type: 'function',
+            function: {
+              name: 'detect_location',
+              description: 'Return detected location or NONE',
+              parameters: {
+                type: 'object',
+                properties: {
+                  detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' },
+                },
+                required: ['detected_location'],
+                additionalProperties: false,
+              },
+            },
+          },
+        ],
+        { type: 'function', function: { name: 'detect_location' } },
+      );
+
+      const detectedLocation = locationDetection.detected_location;
+      if (detectedLocation && detectedLocation !== 'NONE') {
+        console.log(`📍 Detected location: "${detectedLocation}", geocoding...`);
+        const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+        const geocodeResp = await fetch(`${SUPABASE_URL}/functions/v1/geocode-address`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: detectedLocation, city_name: 'Toronto' }),
+        });
+        if (geocodeResp.ok) {
+          const geocodeData = await geocodeResp.json();
+          if (geocodeData.lat && geocodeData.lon) {
+            lat = geocodeData.lat;
+            lon = geocodeData.lon;
+            location_name = detectedLocation;
+            admission.maxRadius = 2;
+            console.log(`📍 Location override: ${detectedLocation} (${lat}, ${lon})`);
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn('⚠️ Neighbourhood detection failed:', e.message);
     }
 
     // ─── STEP 2: Google Places broad search ───
