@@ -208,6 +208,18 @@ export default function Spots() {
 
               <div className="flex gap-1 shrink-0">
                 <Button
+                  variant={labelSearchOpen ? 'secondary' : 'ghost'}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => {
+                    setLabelSearchOpen((prev) => !prev);
+                    if (labelSearchOpen) setLabelSearchResults(null);
+                  }}
+                  title="Search by label"
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
+                <Button
                   variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                   size="icon"
                   className="h-8 w-8"
