@@ -15,6 +15,7 @@ const DEFAULT_FILTERS = [
   { id: 'all', label: 'All Spots' },
   { id: 'Top Spot', label: 'Top Spots' },
   { id: 'Want to Go', label: 'Want to Go' },
+  { id: 'custom', label: 'Custom Labels' },
 ];
 
 export default function Spots() {
