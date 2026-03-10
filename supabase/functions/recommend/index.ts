@@ -337,6 +337,53 @@ Deno.serve(async (req) => {
     }
     console.log('✅ STEPS 1 & 1b complete');
 
+    // ─── STEP 1c: Refinement intent detection ───
+    let refinementIntent: { is_refinement: boolean; keep_results: string[]; replace_count: number; refined_query: string } | null = null;
+
+    if (Array.isArray(session_context) && session_context.length > 0) {
+      console.log('🔄 STEP 1c: Checking for refinement intent...');
+      try {
+        const lastSearch = session_context[session_context.length - 1];
+        const previousResultNames = (lastSearch?.results || []).map((r: any) => r.name);
+
+        refinementIntent = await callLLM(
+          LOVABLE_KEY,
+          'You detect whether a search query is asking to modify/replace specific results from a previous search, or is a fresh new search.',
+          `Given the query "${searchTerm}" and the session history, determine if this query is asking to modify previous results rather than start a fresh search. Specifically detect phrases like "replace", "swap", "different option", "something else", "instead of", "change #[number]", or "not that one".\n\nPrevious search query: "${lastSearch?.query || ''}"\nPrevious results: ${previousResultNames.map((n: string, i: number) => `#${i + 1} ${n}`).join(', ')}\n\nReturn a JSON object.${sessionContextString}`,
+          [{
+            type: 'function',
+            function: {
+              name: 'detect_refinement',
+              description: 'Detect if query is a refinement of previous results',
+              parameters: {
+                type: 'object',
+                properties: {
+                  is_refinement: { type: 'boolean', description: 'True if the query asks to modify/replace previous results' },
+                  keep_results: { type: 'array', items: { type: 'string' }, description: 'Venue names from previous search to keep unchanged' },
+                  replace_count: { type: 'number', description: 'Number of venues to replace' },
+                  refined_query: { type: 'string', description: 'The underlying search intent stripped of refinement language' },
+                },
+                required: ['is_refinement', 'keep_results', 'replace_count', 'refined_query'],
+                additionalProperties: false,
+              },
+            },
+          }],
+          { type: 'function', function: { name: 'detect_refinement' } },
+        );
+
+        if (refinementIntent?.is_refinement) {
+          console.log(`✅ STEP 1c: Refinement detected — keep ${refinementIntent.keep_results.length} venues, replace ${refinementIntent.replace_count}, refined query: "${refinementIntent.refined_query}"`);
+          refinedSearchTerm = refinementIntent.refined_query;
+        } else {
+          console.log('⏩ STEP 1c: Not a refinement, proceeding normally');
+          refinementIntent = null;
+        }
+      } catch (e: any) {
+        console.warn('⚠️ STEP 1c: Refinement detection failed:', e.message);
+        refinementIntent = null;
+      }
+    }
+
     // ─── STEP 2: Google Places broad search ───
     const reversePriceLevelMap: Record<string, string[]> = {
       '$': ['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE'],
@@ -566,6 +613,56 @@ Deno.serve(async (req) => {
           .slice(0, TARGET - finalResults.length);
         finalResults = [...finalResults, ...fillers];
       }
+    }
+
+    // ─── STEP 4c: Apply refinement post-processing ───
+    if (refinementIntent) {
+      console.log('🔄 STEP 4c: Applying refinement post-processing...');
+
+      // Collect all previous venue names from session context to exclude
+      const allPreviousNames = new Set<string>();
+      for (const s of session_context) {
+        for (const r of (s.results || [])) {
+          allPreviousNames.add(r.name.toLowerCase().trim());
+        }
+      }
+
+      // Filter out venues that appeared in any previous search or in keep_results
+      const keepNamesLower = new Set(refinementIntent.keep_results.map((n: string) => n.toLowerCase().trim()));
+      const newCandidates = finalResults.filter((v: any) => {
+        const nameLower = v.name.toLowerCase().trim();
+        return !allPreviousNames.has(nameLower) && !keepNamesLower.has(nameLower);
+      });
+
+      // Take only replace_count new venues
+      const replacements = newCandidates.slice(0, refinementIntent.replace_count);
+
+      // Retrieve kept venues from previous session results (preserving original order)
+      const lastSearch = session_context[session_context.length - 1];
+      const previousResults = lastSearch?.results || [];
+      const keptVenues: any[] = [];
+      for (const prev of previousResults) {
+        if (keepNamesLower.has(prev.name.toLowerCase().trim())) {
+          // Build a venue object from session context data
+          const matchInCurrent = finalResults.find((v: any) => v.name.toLowerCase().trim() === prev.name.toLowerCase().trim());
+          if (matchInCurrent) {
+            keptVenues.push(matchInCurrent);
+          } else {
+            // Use previous result data as fallback
+            keptVenues.push({
+              name: prev.name,
+              cuisine_type: prev.cuisine_type,
+              descriptors: prev.descriptors || [],
+              reasoning_explanation: prev.reasoning_explanation,
+              // These will be missing but photos step will handle gracefully
+              image_urls: [],
+            });
+          }
+        }
+      }
+
+      finalResults = [...keptVenues, ...replacements];
+      console.log(`✅ STEP 4c: Kept ${keptVenues.length} venues, added ${replacements.length} replacements`);
     }
 
     // ─── STEP 5: Photo enrichment ───
