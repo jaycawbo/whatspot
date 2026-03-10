@@ -201,7 +201,13 @@ export default function Home() {
               <FilterSummary filters={state.filters} onOpenFilters={() => setFilterDialogOpen(true)} />
             </div>
 
-            {state.tileBaseQuery && (
+            {state.isLoading && (
+              <div className="w-full max-w-xl">
+                <LoadingMessages />
+              </div>
+            )}
+
+            {state.tileBaseQuery && !state.isLoading && (
               <div className="w-full max-w-xl">
                 <RefinementChips baseQuery={state.tileBaseQuery} onAppendChip={handleAppendChip} />
               </div>
