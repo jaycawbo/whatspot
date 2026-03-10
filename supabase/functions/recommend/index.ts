@@ -366,8 +366,8 @@ Deno.serve(async (req) => {
       // Extract base name (e.g. "college" from "College Street")
       detectedStreetBase = streetSource.replace(/\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/gi, '').trim().toLowerCase();
       console.log(`📍 On-street search detected: "${detectedStreetName}" (base: "${detectedStreetBase}") — strict address filtering applied`);
-      // Use 1km radius to gather enough candidates on the street
-      admission.maxRadius = Math.max(admission.maxRadius, 1);
+      // Use 3km radius to gather enough candidates along the full street length
+      admission.maxRadius = 3;
     } else if (hasProximityWords) {
       console.log(`📍 Proximity words detected in query — using standard radius logic`);
     }
@@ -463,13 +463,13 @@ Deno.serve(async (req) => {
     
     let googleResults: any[];
     if (isOnStreetSearch && detectedStreetName) {
-      // Use locationRestriction (not locationBias) for on-street searches — 300m tight circle
+      // Use locationBias (not locationRestriction) with 3km radius centered on geocoded street coords
       googleResults = await googlePlacesBroadSearch(
         GOOGLE_KEY,
         `${googleSearchQuery} on ${detectedStreetName}, ${location_name}`,
-        lat, lon, 0.3, open_now, googlePriceLevels, true // useRestriction = true
+        lat, lon, 3, open_now, googlePriceLevels, false // locationBias, 3km radius
       );
-      console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationRestriction 300m)`);
+      console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationBias 3km)`);
     } else {
       googleResults = await googlePlacesBroadSearch(
         GOOGLE_KEY,
@@ -549,14 +549,12 @@ Deno.serve(async (req) => {
       const streetNameLower = detectedStreetName.toLowerCase();
       const baseLower = detectedStreetBase.toLowerCase();
 
-      const streetValidated = filteredVenues.filter((v: any) => {
+      const streetValidated = filteredVenues.map((v: any) => {
         const addrLower = (v.address || '').toLowerCase();
 
-        // Primary check: address contains the full street name (e.g., "college street" or "college st")
-        if (addrLower.includes(streetNameLower)) return true;
-
-        // Check common abbreviation variants (e.g. "College St" vs "College Street")
+        // Tier 1 — Address match: venue address contains the detected street name
         const streetVariants = [
+          streetNameLower,
           `${baseLower} street`, `${baseLower} st`,
           `${baseLower} avenue`, `${baseLower} ave`,
           `${baseLower} road`, `${baseLower} rd`,
@@ -564,24 +562,30 @@ Deno.serve(async (req) => {
           `${baseLower} drive`, `${baseLower} dr`,
           `${baseLower} lane`, `${baseLower} ln`,
         ];
-        if (streetVariants.some(variant => addrLower.includes(variant))) return true;
+        if (streetVariants.some(variant => addrLower.includes(variant))) {
+          console.log(`  ✅ Tier 1 (address match): "${v.name}" — ${v.address}`);
+          return { ...v, streetTier: 1 };
+        }
 
-        // Cross-street proximity: venue must be within 50m of the geocoded street centerline
+        // Tier 2 — Proximity match: within 50m of geocoded street centerline
         const distFromStreet = calculateDistance(lat, lon, v.lat, v.lon);
-        if (distFromStreet <= 0.05) return true;
+        if (distFromStreet <= 0.05) {
+          console.log(`  ✅ Tier 2 (proximity ${(distFromStreet * 1000).toFixed(0)}m): "${v.name}" — ${v.address}`);
+          return { ...v, streetTier: 2 };
+        }
 
-        return false;
-      });
+        console.log(`  ❌ Failed both tiers: "${v.name}" — ${v.address} (dist: ${(distFromStreet * 1000).toFixed(0)}m)`);
+        return null;
+      }).filter((v: any) => v !== null);
 
       if (streetValidated.length >= 3) {
         streetFilteredVenues = streetValidated;
         streetFilterApplied = true;
         console.log(`📍 Street filter kept ${streetFilteredVenues.length}/${filteredVenues.length} venues on "${detectedStreetName}"`);
       } else {
-        // Even with fallback, still prefer street-validated venues first
         console.warn(`⚠️ Street filter returned too few results (${streetValidated.length}), falling back to radius search`);
         // Put street-validated venues first, then others
-        const nonStreet = filteredVenues.filter((v: any) => !streetValidated.includes(v));
+        const nonStreet = filteredVenues.filter((v: any) => !streetValidated.find((sv: any) => sv.place_id === v.place_id));
         streetFilteredVenues = [...streetValidated, ...nonStreet];
       }
     }
