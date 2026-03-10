@@ -453,17 +453,46 @@ Deno.serve(async (req) => {
       if (!googleSearchQuery) googleSearchQuery = 'restaurant';
       console.log(`📍 On-street: cleaned query "${refinedSearchTerm}" → "${googleSearchQuery}"`);
     }
-    console.log(`🌍 STEP 2: Google Places search for "${googleSearchQuery}"...`);
-    const googleResults = await googlePlacesBroadSearch(
-      GOOGLE_KEY,
-      `${googleSearchQuery} in ${location_name}`,
-      lat,
-      lon,
-      admission.maxRadius,
-      open_now,
-      googlePriceLevels
-    );
-    console.log(`📊 Google returned ${googleResults.length} venues`);
+    // For on-street searches, include the street name in the Google query to bias toward that street
+    let googleLocationContext = location_name;
+    if (isOnStreetSearch && detectedStreetName) {
+      googleLocationContext = `${detectedStreetName}, ${location_name}`;
+    }
+    console.log(`🌍 STEP 2: Google Places search for "${googleSearchQuery}" in "${googleLocationContext}"...`);
+    
+    // For on-street searches, do two parallel searches: one street-specific, one broader
+    let googleResults: any[];
+    if (isOnStreetSearch && detectedStreetName) {
+      const [streetResults, broadResults] = await Promise.all([
+        googlePlacesBroadSearch(
+          GOOGLE_KEY,
+          `${googleSearchQuery} on ${detectedStreetName}, ${location_name}`,
+          lat, lon, 2, open_now, googlePriceLevels
+        ),
+        googlePlacesBroadSearch(
+          GOOGLE_KEY,
+          `${googleSearchQuery} in ${location_name}`,
+          lat, lon, admission.maxRadius, open_now, googlePriceLevels
+        ),
+      ]);
+      // Deduplicate by place_id, preferring street results first
+      const seen = new Set<string>();
+      googleResults = [];
+      for (const v of [...streetResults, ...broadResults]) {
+        if (!seen.has(v.place_id)) {
+          seen.add(v.place_id);
+          googleResults.push(v);
+        }
+      }
+      console.log(`📊 Google returned ${streetResults.length} street-targeted + ${broadResults.length} broad = ${googleResults.length} unique venues`);
+    } else {
+      googleResults = await googlePlacesBroadSearch(
+        GOOGLE_KEY,
+        `${googleSearchQuery} in ${googleLocationContext}`,
+        lat, lon, admission.maxRadius, open_now, googlePriceLevels
+      );
+      console.log(`📊 Google returned ${googleResults.length} venues`);
+    }
 
     if (googleResults.length === 0) {
       return new Response(
