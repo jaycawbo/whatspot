@@ -727,14 +727,23 @@ Deno.serve(async (req) => {
           if (matchInCurrent) {
             keptVenues.push(matchInCurrent);
           } else {
-            // Use previous result data as fallback
+            // Use full venue data from session context (now includes all fields)
             keptVenues.push({
               name: prev.name,
+              address: prev.address || '',
+              lat: prev.lat,
+              lon: prev.lon,
+              distance_km: prev.distance_km,
+              rating: prev.rating,
+              review_count: prev.review_count,
+              price_level: prev.price_level,
+              place_id: prev.place_id,
+              category: prev.category,
               cuisine_type: prev.cuisine_type,
               descriptors: prev.descriptors || [],
               reasoning_explanation: prev.reasoning_explanation,
-              // These will be missing but photos step will handle gracefully
-              image_urls: [],
+              image_urls: prev.image_urls || [],
+              score: prev.score,
             });
           }
         }
