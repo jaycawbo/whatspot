@@ -7,7 +7,8 @@ import SpotsMapView from '@/components/spots/SpotsMapView';
 import ShareListDialog from '@/components/spots/ShareListDialog';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
-import { List, Map, Share2, Heart, X, Plus } from 'lucide-react';
+import { List, Map, Share2, Heart, X, Plus, Search } from 'lucide-react';
+import LabelSearchBar from '@/components/spots/LabelSearchBar';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -30,6 +31,8 @@ export default function Spots() {
   const [customInput, setCustomInput] = useState('');
   const [shareOpen, setShareOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [labelSearchOpen, setLabelSearchOpen] = useState(false);
+  const [labelSearchResults, setLabelSearchResults] = useState(null);
 
   // All unique custom labels from saved spots
   const existingCustomLabels = useMemo(() => {
@@ -87,6 +90,9 @@ export default function Spots() {
     if (activeFilter === 'all') return spots;
     return spots.filter((s) => s.labels?.includes(activeFilter));
   }, [spots, activeFilter]);
+
+  // When label search is active, its results override tab filtering
+  const displaySpots = labelSearchResults !== null ? labelSearchResults : filteredSpots;
 
   const spotCount = (label) => spots.filter((s) => s.labels?.includes(label)).length;
 
@@ -152,7 +158,7 @@ export default function Spots() {
                   ].map((f) => (
                     <button
                       key={f.id}
-                      onClick={() => { setActiveFilter(f.id); setCustomLabelPickerOpen(false); }}
+                      onClick={() => { setActiveFilter(f.id); setCustomLabelPickerOpen(false); setLabelSearchOpen(false); setLabelSearchResults(null); }}
                       className={cn(
                         'shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap',
                         activeFilter === f.id
@@ -175,7 +181,7 @@ export default function Spots() {
                           : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
                       )}
                     >
-                      <button onClick={() => { setActiveFilter(label); setCustomLabelPickerOpen(false); }}>
+                      <button onClick={() => { setActiveFilter(label); setCustomLabelPickerOpen(false); setLabelSearchOpen(false); setLabelSearchResults(null); }}>
                         {label} ({spotCount(label)})
                       </button>
                       <button
@@ -205,6 +211,18 @@ export default function Spots() {
 
               <div className="flex gap-1 shrink-0">
                 <Button
+                  variant={labelSearchOpen ? 'secondary' : 'ghost'}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => {
+                    setLabelSearchOpen((prev) => !prev);
+                    if (labelSearchOpen) setLabelSearchResults(null);
+                  }}
+                  title="Search by label"
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
+                <Button
                   variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                   size="icon"
                   className="h-8 w-8"
@@ -222,6 +240,16 @@ export default function Spots() {
                 </Button>
               </div>
             </div>
+
+            {/* Label search bar */}
+            {labelSearchOpen && (
+              <LabelSearchBar
+                allLabels={allLabels}
+                spots={spots}
+                onResults={setLabelSearchResults}
+                onClose={() => { setLabelSearchOpen(false); setLabelSearchResults(null); }}
+              />
+            )}
 
             {/* Custom label picker */}
             {customLabelPickerOpen && (
@@ -283,11 +311,13 @@ export default function Spots() {
             )}
 
             {/* Empty state */}
-            {!isLoading && filteredSpots.length === 0 && (
+            {!isLoading && displaySpots.length === 0 && (
               <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
                 <Heart className="h-10 w-10 text-muted-foreground" />
                 <p className="text-muted-foreground text-sm">
-                  {activeFilter === 'all'
+                  {labelSearchResults !== null
+                    ? 'No venues match all selected labels.'
+                    : activeFilter === 'all'
                     ? 'No spots saved yet. Search for venues and tap the heart to save them!'
                     : `No spots with the "${activeFilter}" label.`}
                 </p>
@@ -295,19 +325,19 @@ export default function Spots() {
             )}
 
             {/* List view */}
-            {!isLoading && viewMode === 'list' && filteredSpots.length > 0 && (
+            {!isLoading && viewMode === 'list' && displaySpots.length > 0 && (
               <div className="space-y-3">
-                {filteredSpots.map((spot) => (
+                {displaySpots.map((spot) => (
                   <SpotCard key={spot.favoriteId} spot={spot} onRemove={handleRemove} />
                 ))}
               </div>
             )}
 
             {/* Map view */}
-            {!isLoading && viewMode === 'map' && filteredSpots.length > 0 && (
+            {!isLoading && viewMode === 'map' && displaySpots.length > 0 && (
               <div className="h-[60vh] md:h-[70vh]">
                 <SpotsMapView
-                  spots={filteredSpots}
+                  spots={displaySpots}
                   center={[state.userLocation.lat, state.userLocation.lon]}
                   onRemove={handleRemove}
                 />
