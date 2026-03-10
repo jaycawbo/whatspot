@@ -91,6 +91,9 @@ export default function Spots() {
     return spots.filter((s) => s.labels?.includes(activeFilter));
   }, [spots, activeFilter]);
 
+  // When label search is active, its results override tab filtering
+  const displaySpots = labelSearchResults !== null ? labelSearchResults : filteredSpots;
+
   const spotCount = (label) => spots.filter((s) => s.labels?.includes(label)).length;
 
   const handleRemove = async (placeId) => {
