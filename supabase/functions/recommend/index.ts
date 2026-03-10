@@ -240,8 +240,8 @@ Deno.serve(async (req) => {
 
     // ─── Admission thresholds ───
     const admission = {
-      minRating: 4.0,
-      minReviewCount: 25,
+      minRating: 4.4,
+      minReviewCount: 50,
       minScore: 1.2,
       maxRadius: radius_km || 5,
     };
