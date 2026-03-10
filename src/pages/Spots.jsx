@@ -8,8 +8,10 @@ import ShareListDialog from '@/components/spots/ShareListDialog';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { List, Map, Share2, Heart } from 'lucide-react';
+import { List, Map, Share2, Heart, X } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
 const DEFAULT_FILTERS = [
   { id: 'all', label: 'All Spots' },
@@ -18,30 +20,72 @@ const DEFAULT_FILTERS = [
   { id: 'custom', label: 'Custom Labels' },
 ];
 
+const SUGGESTED_LABELS = [
+  'Special Occasion',
+  'Date Night',
+  'Business Meal',
+  'Hidden Gem',
+  'Best Cocktails',
+  'Good for Groups',
+  'Neighbourhood Gem',
+  'Underrated',
+  'Worth the Wait',
+  'Would Not Go Back',
+];
+
 export default function Spots() {
   const { spots, isLoading, removeSpot, isAuthenticated, allLabels } = useSpots();
   const { state } = useGlobalState();
   const [viewMode, setViewMode] = useState('list');
   const [activeFilter, setActiveFilter] = useState('all');
+  const [selectedCustomLabel, setSelectedCustomLabel] = useState(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
-  // Build dynamic filters: defaults + any custom labels not already in defaults
-  const defaultIds = DEFAULT_FILTERS.map((f) => f.id);
-  const customFilters = allLabels
-    .filter((l) => !defaultIds.includes(l))
-    .map((l) => ({ id: l, label: l }));
-  const allFilters = [...DEFAULT_FILTERS, ...customFilters];
+  // Collect all unique custom labels from saved spots
+  const existingCustomLabels = useMemo(() => {
+    const custom = new Set();
+    spots.forEach((s) => {
+      s.labels?.forEach((l) => {
+        if (!['Top Spot', 'Want to Go'].includes(l)) custom.add(l);
+      });
+    });
+    return Array.from(custom);
+  }, [spots]);
+
+  // Merge suggested + existing for display
+  const allCustomChips = useMemo(() => {
+    const merged = [...SUGGESTED_LABELS];
+    existingCustomLabels.forEach((l) => {
+      if (!merged.includes(l)) merged.push(l);
+    });
+    return merged;
+  }, [existingCustomLabels]);
+
+  const handleFilterChange = (value) => {
+    setActiveFilter(value);
+    if (value !== 'custom') setSelectedCustomLabel(null);
+  };
+
+  const handleCustomChipClick = (label) => {
+    setSelectedCustomLabel((prev) => (prev === label ? null : label));
+  };
 
   const filteredSpots = useMemo(() => {
     if (activeFilter === 'all') return spots;
     if (activeFilter === 'custom') {
+      if (selectedCustomLabel) {
+        return spots.filter((s) => s.labels?.includes(selectedCustomLabel));
+      }
       return spots.filter((s) =>
         s.labels?.some((l) => !['Top Spot', 'Want to Go'].includes(l))
       );
     }
     return spots.filter((s) => s.labels?.includes(activeFilter));
-  }, [spots, activeFilter]);
+  }, [spots, activeFilter, selectedCustomLabel]);
+
+  // Count for a custom chip
+  const chipCount = (label) => spots.filter((s) => s.labels?.includes(label)).length;
 
   const handleRemove = async (placeId) => {
     try {
@@ -96,13 +140,15 @@ export default function Spots() {
             {/* Filter tabs + view toggle */}
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="overflow-x-auto scrollbar-hide">
-                <Tabs value={activeFilter} onValueChange={setActiveFilter}>
+                <Tabs value={activeFilter} onValueChange={handleFilterChange}>
                   <TabsList>
-                    {allFilters.map((f) => (
+                    {DEFAULT_FILTERS.map((f) => (
                       <TabsTrigger key={f.id} value={f.id} className="text-xs">
                         {f.label}
                         {f.id === 'all'
                           ? ` (${spots.length})`
+                          : f.id === 'custom'
+                          ? ` (${spots.filter((s) => s.labels?.some((l) => !['Top Spot', 'Want to Go'].includes(l))).length})`
                           : ` (${spots.filter((s) => s.labels?.includes(f.id)).length})`}
                       </TabsTrigger>
                     ))}
@@ -130,6 +176,33 @@ export default function Spots() {
               </div>
             </div>
 
+            {/* Custom Labels expanded section */}
+            {activeFilter === 'custom' && (
+              <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Filter by custom label:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {allCustomChips.map((label) => {
+                    const count = chipCount(label);
+                    const active = selectedCustomLabel === label;
+                    return (
+                      <button
+                        key={label}
+                        onClick={() => handleCustomChipClick(label)}
+                        className={cn(
+                          'rounded-full px-2.5 py-1 text-xs font-medium transition-colors border',
+                          active
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-accent/50 text-accent-foreground border-transparent hover:bg-accent'
+                        )}
+                      >
+                        {label}{count > 0 ? ` (${count})` : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Loading state */}
             {isLoading && (
               <div className="space-y-3">
@@ -152,7 +225,9 @@ export default function Spots() {
                 <p className="text-muted-foreground text-sm">
                   {activeFilter === 'all'
                     ? 'No spots saved yet. Search for venues and tap the heart to save them!'
-                    : `No spots with the "${activeFilter}" label.`}
+                    : selectedCustomLabel
+                    ? `No spots with the "${selectedCustomLabel}" label.`
+                    : `No spots with custom labels.`}
                 </p>
               </div>
             )}
