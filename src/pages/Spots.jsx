@@ -8,18 +8,13 @@ import SpotsMapView from '@/components/spots/SpotsMapView';
 import ShareListDialog from '@/components/spots/ShareListDialog';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 import { List, Map, Share2, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 
-const LABEL_FILTERS = [
-  { id: 'all', label: 'All Spots' },
-  { id: 'Top Spot', label: 'Top Spots' },
-  { id: 'Want to Go', label: 'Want to Go' },
-];
 
 export default function Spots() {
-  const { spots, isLoading, removeSpot, isAuthenticated } = useSpots();
+  const { spots, isLoading, removeSpot, isAuthenticated, allLabels } = useSpots();
   const { state } = useGlobalState();
   const [viewMode, setViewMode] = useState('list');
   const [activeFilter, setActiveFilter] = useState('all');
@@ -84,21 +79,32 @@ export default function Spots() {
         {isAuthenticated && (
           <>
             {/* Filter tabs + view toggle */}
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <Tabs value={activeFilter} onValueChange={setActiveFilter}>
-                <TabsList>
-                  {LABEL_FILTERS.map((f) => (
-                    <TabsTrigger key={f.id} value={f.id} className="text-xs">
-                      {f.label}
-                      {f.id === 'all'
-                        ? ` (${spots.length})`
-                        : ` (${spots.filter((s) => s.labels?.includes(f.id)).length})`}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-1 min-w-0">
+                {['All Spots', ...allLabels].map((label) => {
+                  const isAll = label === 'All Spots';
+                  const filterId = isAll ? 'all' : label;
+                  const count = isAll
+                    ? spots.length
+                    : spots.filter((s) => s.labels?.includes(label)).length;
+                  return (
+                    <button
+                      key={label}
+                      onClick={() => setActiveFilter(filterId)}
+                      className={cn(
+                        'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium border transition-colors whitespace-nowrap',
+                        activeFilter === filterId
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-secondary text-secondary-foreground border-border hover:bg-accent'
+                      )}
+                    >
+                      {label} ({count})
+                    </button>
+                  );
+                })}
+              </div>
 
-              <div className="flex gap-1">
+              <div className="flex gap-1 shrink-0">
                 <Button
                   variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                   size="icon"
