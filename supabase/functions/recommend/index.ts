@@ -366,8 +366,8 @@ Deno.serve(async (req) => {
       // Extract base name (e.g. "college" from "College Street")
       detectedStreetBase = streetSource.replace(/\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/gi, '').trim().toLowerCase();
       console.log(`📍 On-street search detected: "${detectedStreetName}" (base: "${detectedStreetBase}") — strict address filtering applied`);
-      // Use 1km radius to gather enough candidates on the street
-      admission.maxRadius = Math.max(admission.maxRadius, 1);
+      // Use 3km radius to gather enough candidates along the full street length
+      admission.maxRadius = 3;
     } else if (hasProximityWords) {
       console.log(`📍 Proximity words detected in query — using standard radius logic`);
     }
