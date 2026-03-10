@@ -78,19 +78,29 @@ export default function Spots() {
         {isAuthenticated && (
           <>
             {/* Filter tabs + view toggle */}
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <Tabs value={activeFilter} onValueChange={setActiveFilter}>
-                <TabsList>
-                  {LABEL_FILTERS.map((f) => (
-                    <TabsTrigger key={f.id} value={f.id} className="text-xs">
-                      {f.label}
-                      {f.id === 'all'
-                        ? ` (${spots.length})`
-                        : ` (${spots.filter((s) => s.labels?.includes(f.id)).length})`}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-1 min-w-0">
+                {['All Spots', ...allLabels].map((label) => {
+                  const isAll = label === 'All Spots';
+                  const filterId = isAll ? 'all' : label;
+                  const count = isAll
+                    ? spots.length
+                    : spots.filter((s) => s.labels?.includes(label)).length;
+                  return (
+                    <button
+                      key={label}
+                      onClick={() => setActiveFilter(filterId)}
+                      className={cn(
+                        'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium border transition-colors whitespace-nowrap',
+                        activeFilter === filterId
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-secondary text-secondary-foreground border-border hover:bg-accent'
+                      )}
+                    >
+                      {label} ({count})
+                    </button>
+                  );
+                })}
 
               <div className="flex gap-1">
                 <Button
