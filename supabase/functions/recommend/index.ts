@@ -8,9 +8,9 @@ const SCORING = {
   RATING_FLOOR: 4.0,
   RATING_CEILING: 5.0,
   REVIEW_FLOOR: 25,
-  REVIEW_CAP: 2000,
-  RATING_WEIGHT: 0.5,
-  TRUST_WEIGHT: 0.5,
+  REVIEW_CAP: 500,
+  RATING_WEIGHT: 0.75,
+  TRUST_WEIGHT: 0.25,
 };
 
 // ─── Helpers ───
@@ -46,6 +46,7 @@ function isSimpleQuery(originalTerm: string, refinedTerm: string): boolean {
   ) {
     return true;
   }
+  if (originalTerm.toLowerCase().includes('best')) return false;
   return false;
 }
 
@@ -240,8 +241,8 @@ Deno.serve(async (req) => {
 
     // ─── Admission thresholds ───
     const admission = {
-      minRating: 4.0,
-      minReviewCount: 25,
+      minRating: 4.4,
+      minReviewCount: 50,
       minScore: 1.2,
       maxRadius: radius_km || 5,
     };
