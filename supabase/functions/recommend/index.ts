@@ -615,6 +615,56 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ─── STEP 4c: Apply refinement post-processing ───
+    if (refinementIntent) {
+      console.log('🔄 STEP 4c: Applying refinement post-processing...');
+
+      // Collect all previous venue names from session context to exclude
+      const allPreviousNames = new Set<string>();
+      for (const s of session_context) {
+        for (const r of (s.results || [])) {
+          allPreviousNames.add(r.name.toLowerCase().trim());
+        }
+      }
+
+      // Filter out venues that appeared in any previous search or in keep_results
+      const keepNamesLower = new Set(refinementIntent.keep_results.map((n: string) => n.toLowerCase().trim()));
+      const newCandidates = finalResults.filter((v: any) => {
+        const nameLower = v.name.toLowerCase().trim();
+        return !allPreviousNames.has(nameLower) && !keepNamesLower.has(nameLower);
+      });
+
+      // Take only replace_count new venues
+      const replacements = newCandidates.slice(0, refinementIntent.replace_count);
+
+      // Retrieve kept venues from previous session results (preserving original order)
+      const lastSearch = session_context[session_context.length - 1];
+      const previousResults = lastSearch?.results || [];
+      const keptVenues: any[] = [];
+      for (const prev of previousResults) {
+        if (keepNamesLower.has(prev.name.toLowerCase().trim())) {
+          // Build a venue object from session context data
+          const matchInCurrent = finalResults.find((v: any) => v.name.toLowerCase().trim() === prev.name.toLowerCase().trim());
+          if (matchInCurrent) {
+            keptVenues.push(matchInCurrent);
+          } else {
+            // Use previous result data as fallback
+            keptVenues.push({
+              name: prev.name,
+              cuisine_type: prev.cuisine_type,
+              descriptors: prev.descriptors || [],
+              reasoning_explanation: prev.reasoning_explanation,
+              // These will be missing but photos step will handle gracefully
+              image_urls: [],
+            });
+          }
+        }
+      }
+
+      finalResults = [...keptVenues, ...replacements];
+      console.log(`✅ STEP 4c: Kept ${keptVenues.length} venues, added ${replacements.length} replacements`);
+    }
+
     // ─── STEP 5: Photo enrichment ───
     console.log(`🖼️ STEP 5: Photos for ${finalResults.length} venues...`);
     const enriched = await Promise.all(
