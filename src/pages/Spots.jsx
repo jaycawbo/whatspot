@@ -15,6 +15,7 @@ const DEFAULT_FILTERS = [
   { id: 'all', label: 'All Spots' },
   { id: 'Top Spot', label: 'Top Spots' },
   { id: 'Want to Go', label: 'Want to Go' },
+  { id: 'custom', label: 'Custom Labels' },
 ];
 
 export default function Spots() {
@@ -34,6 +35,11 @@ export default function Spots() {
 
   const filteredSpots = useMemo(() => {
     if (activeFilter === 'all') return spots;
+    if (activeFilter === 'custom') {
+      return spots.filter((s) =>
+        s.labels?.some((l) => !['Top Spot', 'Want to Go'].includes(l))
+      );
+    }
     return spots.filter((s) => s.labels?.includes(activeFilter));
   }, [spots, activeFilter]);
 
