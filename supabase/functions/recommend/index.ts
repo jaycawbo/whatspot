@@ -577,8 +577,8 @@ Deno.serve(async (req) => {
       safe('step7-summary', () => callLLM(
         LOVABLE_KEY,
         'You are a knowledgeable local friend who knows the city\'s food and drink scene intimately. Write warm, specific, confident recommendations — never generic.',
-        `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescForSummary}\n\nWrite a 2-3 sentence conversational summary explaining why these specific venues were chosen. Sound like a trusted local friend making a personal recommendation, not a search engine. Be specific about what makes these places worth visiting for this particular query.`,
-        [{ type: 'function', function: { name: 'generate_summary', description: 'Return a conversational search summary', parameters: { type: 'object', properties: { summary: { type: 'string', description: '2-3 sentence conversational recommendation' } }, required: ['summary'], additionalProperties: false } } }],
+        `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescForSummary}\n\nReturn a short 1-sentence intro explaining the overall theme of these picks, then a bullet point for each venue (1 sentence each) explaining what makes it special for this query. Sound like a trusted local friend, not a search engine.`,
+        [{ type: 'function', function: { name: 'generate_summary', description: 'Return a conversational search summary with intro and per-venue bullets', parameters: { type: 'object', properties: { intro: { type: 'string', description: 'One sentence conversational intro about the overall picks' }, bullets: { type: 'array', items: { type: 'object', properties: { name: { type: 'string', description: 'Venue name' }, note: { type: 'string', description: 'One sentence about why this venue is great for the query' } }, required: ['name', 'note'] }, description: 'Per-venue bullet points' } }, required: ['intro', 'bullets'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'generate_summary' } },
       ), null),
       safe('chips', () => callLLM(
@@ -606,7 +606,7 @@ Deno.serve(async (req) => {
       resultsWithDescriptors = enriched.map((v: any) => ({ ...v, descriptors: [] }));
     }
 
-    const search_summary = summaryResult?.summary || null;
+    const search_summary = summaryResult && summaryResult.intro ? summaryResult : (summaryResult?.summary || null);
     if (search_summary) console.log('✅ STEP 7: Summary generated');
     const suggested_chips: string[] = chipResult?.chips || [];
     console.log('✅ STEPS 6 & 7 complete');
