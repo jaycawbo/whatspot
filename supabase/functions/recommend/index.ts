@@ -228,7 +228,17 @@ Deno.serve(async (req) => {
       relaxation_level = 0,
       open_now,
       price_levels,
+      session_context = [],
     } = await req.json();
+
+    // Build session context string for LLM prompts
+    let sessionContextString = '';
+    if (Array.isArray(session_context) && session_context.length > 0) {
+      sessionContextString = '\n\nPrevious searches this session:\n' + session_context.map((s: any) =>
+        `- Query: "${s.query}"\n  Top results: ${(s.results || []).map((r: any) => `${r.name}${r.cuisine_type ? ` (${r.cuisine_type})` : ''}`).join(', ')}${s.search_summary ? `\n  Summary: ${typeof s.search_summary === 'string' ? s.search_summary : s.search_summary?.intro || ''}` : ''}`
+      ).join('\n');
+      console.log(`📝 Session context: ${session_context.length} previous searches`);
+    }
 
     let lat = originalLat;
     let lon = originalLon;
