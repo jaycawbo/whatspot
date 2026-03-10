@@ -178,7 +178,7 @@ export default function Spots() {
                           : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
                       )}
                     >
-                      <button onClick={() => { setActiveFilter(label); setCustomLabelPickerOpen(false); }}>
+                      <button onClick={() => { setActiveFilter(label); setCustomLabelPickerOpen(false); setLabelSearchOpen(false); setLabelSearchResults(null); }}>
                         {label} ({spotCount(label)})
                       </button>
                       <button
