@@ -47,6 +47,13 @@ export default function Home() {
 
       const activeFilters = overrideFilters || filtersRef.current;
 
+      // Read session history for context
+      let session_context = [];
+      try {
+        const raw = sessionStorage.getItem('whatspot_session_history');
+        if (raw) session_context = JSON.parse(raw);
+      } catch {}
+
       try {
         const res = await recommend({
           mode: state.category ? 'browse_category' : 'query',
@@ -59,8 +66,28 @@ export default function Home() {
           relaxation_level: state.relaxationLevel,
           open_now: activeFilters.openNow || undefined,
           price_levels: activeFilters.priceLevels.length ? activeFilters.priceLevels : undefined,
+          session_context,
         });
         dispatch({ type: 'SET_RESULTS', payload: res });
+
+        // Store search context in sessionStorage
+        if (res?.results?.length) {
+          const entry = {
+            query: queryText,
+            timestamp: Date.now(),
+            results: res.results.map(r => ({
+              name: r.name,
+              cuisine_type: r.cuisine_type,
+              descriptors: r.descriptors,
+              reasoning_explanation: r.reasoning_explanation,
+            })),
+          };
+          try {
+            const history = session_context.length ? [...session_context] : [];
+            history.push(entry);
+            sessionStorage.setItem('whatspot_session_history', JSON.stringify(history.slice(-20)));
+          } catch {}
+        }
       } catch {
         dispatch({ type: 'SET_LOADING', payload: false });
       }
