@@ -308,11 +308,13 @@ export default function Spots() {
             )}
 
             {/* Empty state */}
-            {!isLoading && filteredSpots.length === 0 && (
+            {!isLoading && displaySpots.length === 0 && (
               <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
                 <Heart className="h-10 w-10 text-muted-foreground" />
                 <p className="text-muted-foreground text-sm">
-                  {activeFilter === 'all'
+                  {labelSearchResults !== null
+                    ? 'No venues match all selected labels.'
+                    : activeFilter === 'all'
                     ? 'No spots saved yet. Search for venues and tap the heart to save them!'
                     : `No spots with the "${activeFilter}" label.`}
                 </p>
@@ -320,19 +322,19 @@ export default function Spots() {
             )}
 
             {/* List view */}
-            {!isLoading && viewMode === 'list' && filteredSpots.length > 0 && (
+            {!isLoading && viewMode === 'list' && displaySpots.length > 0 && (
               <div className="space-y-3">
-                {filteredSpots.map((spot) => (
+                {displaySpots.map((spot) => (
                   <SpotCard key={spot.favoriteId} spot={spot} onRemove={handleRemove} />
                 ))}
               </div>
             )}
 
             {/* Map view */}
-            {!isLoading && viewMode === 'map' && filteredSpots.length > 0 && (
+            {!isLoading && viewMode === 'map' && displaySpots.length > 0 && (
               <div className="h-[60vh] md:h-[70vh]">
                 <SpotsMapView
-                  spots={filteredSpots}
+                  spots={displaySpots}
                   center={[state.userLocation.lat, state.userLocation.lon]}
                   onRemove={handleRemove}
                 />
