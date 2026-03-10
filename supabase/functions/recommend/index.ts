@@ -539,7 +539,7 @@ Deno.serve(async (req) => {
     }
 
     // ─── STEP 4: Score + sort ───
-    const scoredVenues = filteredVenues
+    const scoredVenues = streetFilteredVenues
       .map((venue: any) => {
         let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
         if (venue.unknownPrice) score *= 0.7; // Down-rank venues with unknown price when price filter is active
