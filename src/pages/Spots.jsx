@@ -7,6 +7,7 @@ import SpotsMapView from '@/components/spots/SpotsMapView';
 import ShareListDialog from '@/components/spots/ShareListDialog';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { List, Map, Share2, Heart, X, Plus, Search } from 'lucide-react';
 import LabelSearchBar from '@/components/spots/LabelSearchBar';
 import { Input } from '@/components/ui/input';
