@@ -293,22 +293,32 @@ Deno.serve(async (req) => {
     // Apply Step 1b result
     if (locationDetectionResult?.detected_location && locationDetectionResult.detected_location !== 'NONE') {
       const detectedLocation = locationDetectionResult.detected_location;
-      console.log(`📍 STEP 1b: Detected location: "${detectedLocation}", geocoding...`);
+      const geocodeQuery = location_name ? `${detectedLocation}, ${location_name}` : detectedLocation;
+      console.log(`📍 STEP 1b: Detected location: "${detectedLocation}", geocoding as "${geocodeQuery}"...`);
       try {
         const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
         const geocodeResp = await fetch(`${SUPABASE_URL}/functions/v1/geocode-address`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ address: detectedLocation, city_name: 'Toronto' }),
+          body: JSON.stringify({ address: geocodeQuery, city_name: location_name || undefined }),
         });
         if (geocodeResp.ok) {
           const geocodeData = await geocodeResp.json();
           if (geocodeData.lat && geocodeData.lon) {
-            lat = geocodeData.lat;
-            lon = geocodeData.lon;
-            location_name = detectedLocation;
-            admission.maxRadius = 2;
-            console.log(`📍 STEP 1b: Location override: ${detectedLocation} (${lat}, ${lon})`);
+            // Sanity check: distance between geocoded result and original user location
+            const dLat = (geocodeData.lat - lat) * Math.PI / 180;
+            const dLon = (geocodeData.lon - lon) * Math.PI / 180;
+            const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180) * Math.cos(geocodeData.lat*Math.PI/180) * Math.sin(dLon/2)**2;
+            const distKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            if (distKm > 100) {
+              console.warn(`⚠️ STEP 1b: Geocode result too far from user location (${distKm.toFixed(1)}km), discarding override`);
+            } else {
+              lat = geocodeData.lat;
+              lon = geocodeData.lon;
+              location_name = detectedLocation;
+              admission.maxRadius = 2;
+              console.log(`📍 STEP 1b: Location override: ${detectedLocation} (${lat}, ${lon}), ${distKm.toFixed(1)}km from user`);
+            }
           }
         }
       } catch (e: any) {
