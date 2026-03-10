@@ -337,6 +337,22 @@ Deno.serve(async (req) => {
     }
     console.log('✅ STEPS 1 & 1b complete');
 
+    // ─── Street-level precision detection ───
+    const STREET_IDENTIFIERS = /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i;
+    const PROXIMITY_WORDS = /\b(near|around|by|close to|nearby|near me|off of|around the corner)\b/i;
+    let isOnStreetSearch = false;
+    let detectedStreetName = '';
+
+    if (STREET_IDENTIFIERS.test(location_name || '') && !PROXIMITY_WORDS.test(searchTerm || '')) {
+      isOnStreetSearch = true;
+      // Extract the street name (e.g. "College Street" from "College Street, Toronto")
+      const locParts = (location_name || '').split(',')[0].trim();
+      detectedStreetName = locParts;
+      console.log(`📍 On-street search detected: ${detectedStreetName} — strict address filtering applied`);
+      // Widen radius slightly so we get enough candidates to filter from
+      admission.maxRadius = Math.max(admission.maxRadius, 1);
+    }
+
     // ─── STEP 1c: Refinement intent detection ───
     let refinementIntent: { is_refinement: boolean; keep_results: string[]; replace_count: number; refined_query: string } | null = null;
 
