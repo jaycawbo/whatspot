@@ -491,6 +491,39 @@ Deno.serve(async (req) => {
 
     console.log(`✅ ${filteredVenues.length} passed filters`);
 
+    // ─── STEP 3b: Street-level address validation ───
+    let streetFilterApplied = false;
+    let streetFilteredVenues = filteredVenues;
+
+    if (isOnStreetSearch && filteredVenues.length > 0) {
+      const streetNameLower = detectedStreetName.toLowerCase();
+      // Extract just the street name words without the suffix for flexible matching
+      const streetWords = streetNameLower.replace(/\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/gi, '').trim();
+
+      const streetValidated = filteredVenues.filter((v: any) => {
+        const addrLower = (v.address || '').toLowerCase();
+        // Check if venue address contains the detected street name
+        if (addrLower.includes(streetNameLower) || (streetWords && addrLower.includes(streetWords))) {
+          return true;
+        }
+        // Cross-street proximity check: within ~50m of geocoded street center
+        const distFromStreet = calculateDistance(lat, lon, v.lat, v.lon);
+        if (distFromStreet <= 0.05) {
+          return true;
+        }
+        return false;
+      });
+
+      if (streetValidated.length >= 3) {
+        streetFilteredVenues = streetValidated;
+        streetFilterApplied = true;
+        console.log(`📍 Street filter kept ${streetFilteredVenues.length}/${filteredVenues.length} venues on ${detectedStreetName}`);
+      } else {
+        console.warn(`⚠️ Street filter returned too few results (${streetValidated.length}), falling back to radius search`);
+        streetFilteredVenues = filteredVenues;
+      }
+    }
+
     if (filteredVenues.length === 0) {
       return new Response(
         JSON.stringify({
