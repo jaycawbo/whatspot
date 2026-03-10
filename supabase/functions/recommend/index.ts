@@ -339,18 +339,36 @@ Deno.serve(async (req) => {
 
     // ─── Street-level precision detection ───
     const STREET_IDENTIFIERS = /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i;
-    const PROXIMITY_WORDS = /\b(near|around|by|close to|nearby|near me|off of|around the corner)\b/i;
+    const PROXIMITY_WORDS = /\b(near|around|by|close\s+to|nearby|near\s+me|off\s+of|around\s+the\s+corner)\b/i;
     let isOnStreetSearch = false;
     let detectedStreetName = '';
+    let detectedStreetBase = ''; // Just the name part without suffix, e.g. "college"
 
-    if (STREET_IDENTIFIERS.test(location_name || '') && !PROXIMITY_WORDS.test(searchTerm || '')) {
+    // Check both searchTerm AND location_name for street identifiers
+    const hasProximityWords = PROXIMITY_WORDS.test(searchTerm || '');
+    const streetSourceText = `${searchTerm || ''} ${location_name || ''} ${refinedSearchTerm || ''}`;
+
+    if (!hasProximityWords && STREET_IDENTIFIERS.test(streetSourceText)) {
       isOnStreetSearch = true;
-      // Extract the street name (e.g. "College Street" from "College Street, Toronto")
-      const locParts = (location_name || '').split(',')[0].trim();
-      detectedStreetName = locParts;
-      console.log(`📍 On-street search detected: ${detectedStreetName} — strict address filtering applied`);
-      // Widen radius slightly so we get enough candidates to filter from
+      // Extract street name — prefer location_name if it has a street identifier, else from searchTerm
+      let streetSource = '';
+      if (STREET_IDENTIFIERS.test(location_name || '')) {
+        streetSource = (location_name || '').split(',')[0].trim();
+      } else {
+        // Extract from searchTerm — find the word before the street identifier
+        const match = streetSourceText.match(/(\w+)\s+(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i);
+        if (match) {
+          streetSource = `${match[1]} ${match[2]}`;
+        }
+      }
+      detectedStreetName = streetSource;
+      // Extract base name (e.g. "college" from "College Street")
+      detectedStreetBase = streetSource.replace(/\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/gi, '').trim().toLowerCase();
+      console.log(`📍 On-street search detected: "${detectedStreetName}" (base: "${detectedStreetBase}") — strict address filtering applied`);
+      // Use 1km radius to gather enough candidates on the street
       admission.maxRadius = Math.max(admission.maxRadius, 1);
+    } else if (hasProximityWords) {
+      console.log(`📍 Proximity words detected in query — using standard radius logic`);
     }
 
     // ─── STEP 1c: Refinement intent detection ───
@@ -491,36 +509,48 @@ Deno.serve(async (req) => {
 
     console.log(`✅ ${filteredVenues.length} passed filters`);
 
-    // ─── STEP 3b: Street-level address validation ───
+    // ─── STEP 3b: Street-level address validation (STRICT) ───
     let streetFilterApplied = false;
     let streetFilteredVenues = filteredVenues;
 
-    if (isOnStreetSearch && filteredVenues.length > 0) {
+    if (isOnStreetSearch && filteredVenues.length > 0 && detectedStreetBase) {
       const streetNameLower = detectedStreetName.toLowerCase();
-      // Extract just the street name words without the suffix for flexible matching
-      const streetWords = streetNameLower.replace(/\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/gi, '').trim();
+      const baseLower = detectedStreetBase.toLowerCase();
 
       const streetValidated = filteredVenues.filter((v: any) => {
         const addrLower = (v.address || '').toLowerCase();
-        // Check if venue address contains the detected street name
-        if (addrLower.includes(streetNameLower) || (streetWords && addrLower.includes(streetWords))) {
-          return true;
-        }
-        // Cross-street proximity check: within ~50m of geocoded street center
+
+        // Primary check: address contains the full street name (e.g., "college street" or "college st")
+        if (addrLower.includes(streetNameLower)) return true;
+
+        // Check common abbreviation variants (e.g. "College St" vs "College Street")
+        const streetVariants = [
+          `${baseLower} street`, `${baseLower} st`,
+          `${baseLower} avenue`, `${baseLower} ave`,
+          `${baseLower} road`, `${baseLower} rd`,
+          `${baseLower} boulevard`, `${baseLower} blvd`,
+          `${baseLower} drive`, `${baseLower} dr`,
+          `${baseLower} lane`, `${baseLower} ln`,
+        ];
+        if (streetVariants.some(variant => addrLower.includes(variant))) return true;
+
+        // Cross-street proximity: venue must be within 50m of the geocoded street centerline
         const distFromStreet = calculateDistance(lat, lon, v.lat, v.lon);
-        if (distFromStreet <= 0.05) {
-          return true;
-        }
+        if (distFromStreet <= 0.05) return true;
+
         return false;
       });
 
       if (streetValidated.length >= 3) {
         streetFilteredVenues = streetValidated;
         streetFilterApplied = true;
-        console.log(`📍 Street filter kept ${streetFilteredVenues.length}/${filteredVenues.length} venues on ${detectedStreetName}`);
+        console.log(`📍 Street filter kept ${streetFilteredVenues.length}/${filteredVenues.length} venues on "${detectedStreetName}"`);
       } else {
+        // Even with fallback, still prefer street-validated venues first
         console.warn(`⚠️ Street filter returned too few results (${streetValidated.length}), falling back to radius search`);
-        streetFilteredVenues = filteredVenues;
+        // Put street-validated venues first, then others
+        const nonStreet = filteredVenues.filter((v: any) => !streetValidated.includes(v));
+        streetFilteredVenues = [...streetValidated, ...nonStreet];
       }
     }
 
@@ -697,14 +727,23 @@ Deno.serve(async (req) => {
           if (matchInCurrent) {
             keptVenues.push(matchInCurrent);
           } else {
-            // Use previous result data as fallback
+            // Use full venue data from session context (now includes all fields)
             keptVenues.push({
               name: prev.name,
+              address: prev.address || '',
+              lat: prev.lat,
+              lon: prev.lon,
+              distance_km: prev.distance_km,
+              rating: prev.rating,
+              review_count: prev.review_count,
+              price_level: prev.price_level,
+              place_id: prev.place_id,
+              category: prev.category,
               cuisine_type: prev.cuisine_type,
               descriptors: prev.descriptors || [],
               reasoning_explanation: prev.reasoning_explanation,
-              // These will be missing but photos step will handle gracefully
-              image_urls: [],
+              image_urls: prev.image_urls || [],
+              score: prev.score,
             });
           }
         }
