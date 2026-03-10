@@ -228,7 +228,17 @@ Deno.serve(async (req) => {
       relaxation_level = 0,
       open_now,
       price_levels,
+      session_context = [],
     } = await req.json();
+
+    // Build session context string for LLM prompts
+    let sessionContextString = '';
+    if (Array.isArray(session_context) && session_context.length > 0) {
+      sessionContextString = '\n\nPrevious searches this session:\n' + session_context.map((s: any) =>
+        `- Query: "${s.query}"\n  Top results: ${(s.results || []).map((r: any) => `${r.name}${r.cuisine_type ? ` (${r.cuisine_type})` : ''}`).join(', ')}${s.search_summary ? `\n  Summary: ${typeof s.search_summary === 'string' ? s.search_summary : s.search_summary?.intro || ''}` : ''}`
+      ).join('\n');
+      console.log(`📝 Session context: ${session_context.length} previous searches`);
+    }
 
     let lat = originalLat;
     let lon = originalLon;
@@ -271,7 +281,7 @@ Deno.serve(async (req) => {
       safe('step1-refinement', () => callLLM(
         LOVABLE_KEY,
         'You extract cuisine keywords from search queries for Google Places API.',
-        `The user is searching for "${searchTerm}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return the original query.\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise keywords/phrases suitable for a Google Places search, or the original query if no specific culinary focus is detected.`,
+        `The user is searching for "${searchTerm}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return the original query.\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise keywords/phrases suitable for a Google Places search, or the original query if no specific culinary focus is detected.${sessionContextString}`,
         [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined keywords or original query' } }, required: ['keywords'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'refine_query' } },
       ), null),
@@ -491,7 +501,7 @@ Deno.serve(async (req) => {
         const batchResult = await callLLM(
           LOVABLE_KEY,
           'You assess how well venues match a user search query. Evaluate ALL venues and return confidence scores.',
-          `The user searched for "${searchTerm}" in ${location_name}.\n\nHere are the venues to evaluate:\n${venueListText}\n\nFor EACH venue, assess how well it matches the search query. Consider occasion suitability, culinary style, ambiance, and dietary needs. Return confidence scores for ALL venues.`,
+          `The user searched for "${searchTerm}" in ${location_name}.\n\nHere are the venues to evaluate:\n${venueListText}\n\nFor EACH venue, assess how well it matches the search query. Consider occasion suitability, culinary style, ambiance, and dietary needs. Return confidence scores for ALL venues.${sessionContextString}`,
           [
             {
               type: 'function',
@@ -587,7 +597,7 @@ Deno.serve(async (req) => {
       safe('step7-summary', () => callLLM(
         LOVABLE_KEY,
         'You are a knowledgeable local friend who knows the city\'s food and drink scene intimately. Write warm, specific, confident recommendations — never generic.',
-        `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescForSummary}\n\nReturn a short 1-sentence intro explaining the overall theme of these picks, then a bullet point for each venue (1 sentence each) explaining what makes it special for this query. Sound like a trusted local friend, not a search engine.`,
+        `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescForSummary}\n\nReturn a short 1-sentence intro explaining the overall theme of these picks, then a bullet point for each venue (1 sentence each) explaining what makes it special for this query. Sound like a trusted local friend, not a search engine.${sessionContextString}`,
         [{ type: 'function', function: { name: 'generate_summary', description: 'Return a conversational search summary with intro and per-venue bullets', parameters: { type: 'object', properties: { intro: { type: 'string', description: 'One sentence conversational intro about the overall picks' }, bullets: { type: 'array', items: { type: 'object', properties: { name: { type: 'string', description: 'Venue name' }, note: { type: 'string', description: 'One sentence about why this venue is great for the query' } }, required: ['name', 'note'] }, description: 'Per-venue bullet points' } }, required: ['intro', 'bullets'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'generate_summary' } },
       ), null),
