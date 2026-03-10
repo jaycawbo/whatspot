@@ -101,8 +101,9 @@ export default function Spots() {
                     </button>
                   );
                 })}
+              </div>
 
-              <div className="flex gap-1">
+              <div className="flex gap-1 shrink-0">
                 <Button
                   variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                   size="icon"
