@@ -120,6 +120,7 @@ function reducer(state, action) {
         appliedRelaxations: [],
         relaxationLevel: 0,
         noVenuesAtAll: false,
+        searchSummary: null,
         gated: false,
         isLoading: false,
         isQuerying: false,
