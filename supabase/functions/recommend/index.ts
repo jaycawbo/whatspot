@@ -558,129 +558,58 @@ Deno.serve(async (req) => {
       }),
     );
 
-    // ─── STEP 6: LLM descriptors ───
-    console.log('🤖 STEP 6: Generating descriptors...');
-    let resultsWithDescriptors = enriched;
-    try {
-      const venueList = enriched.map((v: any) => `- ${v.name}`).join('\n');
-      const descResult = await callLLM(
+    // ─── STEPS 6, 7 & chips: Parallel descriptors + summary + chips ───
+    console.log('🤖 STEPS 6 & 7: Generating descriptors, summary, and chips in parallel...');
+
+    const venueDescForSummary = enriched.map((v: any) =>
+      `${v.name} (${v.cuisine_type}, ${v.rating}★${v.reasoning_explanation ? ` — ${v.reasoning_explanation}` : ''})`
+    ).join('\n');
+    const venueListForDesc = enriched.map((v: any) => `- ${v.name}`).join('\n');
+
+    const [descriptorResult, summaryResult, chipResult] = await Promise.all([
+      safe('step6-descriptors', () => callLLM(
         LOVABLE_KEY,
         'You generate short descriptive tags for venues. Do NOT include generic words like restaurant, cafe, bar, eatery, dining, food, place.',
-        `For each venue in ${location_name}, generate 2-3 SHORT descriptive tags (max 3-4 words each) capturing unique characteristics like ambiance, vibe, or standout qualities.\n\nVenues:\n${venueList}`,
-        [
-          {
-            type: 'function',
-            function: {
-              name: 'generate_descriptors',
-              description: 'Return descriptors per venue',
-              parameters: {
-                type: 'object',
-                properties: {
-                  venues: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        name: { type: 'string' },
-                        descriptors: { type: 'array', items: { type: 'string' } },
-                      },
-                      required: ['name', 'descriptors'],
-                    },
-                  },
-                },
-                required: ['venues'],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
+        `For each venue in ${location_name}, generate 2-3 SHORT descriptive tags (max 3-4 words each) capturing unique characteristics like ambiance, vibe, or standout qualities.\n\nVenues:\n${venueListForDesc}`,
+        [{ type: 'function', function: { name: 'generate_descriptors', description: 'Return descriptors per venue', parameters: { type: 'object', properties: { venues: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, descriptors: { type: 'array', items: { type: 'string' } } }, required: ['name', 'descriptors'] } } }, required: ['venues'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'generate_descriptors' } },
-      );
+      ), null),
+      safe('step7-summary', () => callLLM(
+        LOVABLE_KEY,
+        'You are a knowledgeable local friend who knows the city\'s food and drink scene intimately. Write warm, specific, confident recommendations — never generic.',
+        `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescForSummary}\n\nWrite a 2-3 sentence conversational summary explaining why these specific venues were chosen. Sound like a trusted local friend making a personal recommendation, not a search engine. Be specific about what makes these places worth visiting for this particular query.`,
+        [{ type: 'function', function: { name: 'generate_summary', description: 'Return a conversational search summary', parameters: { type: 'object', properties: { summary: { type: 'string', description: '2-3 sentence conversational recommendation' } }, required: ['summary'], additionalProperties: false } } }],
+        { type: 'function', function: { name: 'generate_summary' } },
+      ), null),
+      safe('chips', () => callLLM(
+        LOVABLE_KEY,
+        'You suggest related search queries.',
+        `Based on the search "${searchTerm}", suggest 3-4 related search queries the user might want to try next.`,
+        [{ type: 'function', function: { name: 'suggest_chips', description: 'Return suggested search queries', parameters: { type: 'object', properties: { chips: { type: 'array', items: { type: 'string' } } }, required: ['chips'], additionalProperties: false } } }],
+        { type: 'function', function: { name: 'suggest_chips' } },
+      ), null),
+    ]);
 
+    // Apply descriptors
+    let resultsWithDescriptors = enriched;
+    if (descriptorResult?.venues) {
       const genericTerms = ['restaurant', 'cafe', 'bar', 'eatery', 'dining', 'food', 'place'];
       const descMap = new Map<string, string[]>();
-      for (const v of descResult.venues || []) {
+      for (const v of descriptorResult.venues) {
         const filtered = (v.descriptors || []).filter(
           (d: string) => !genericTerms.some((g) => d.toLowerCase() === g || d.toLowerCase() === `${g}s`),
         );
         descMap.set(v.name, filtered.slice(0, 4));
       }
-      resultsWithDescriptors = enriched.map((v: any) => ({
-        ...v,
-        descriptors: descMap.get(v.name) || [],
-      }));
-    } catch (e: any) {
-      console.warn('⚠️ Descriptor generation failed:', e.message);
+      resultsWithDescriptors = enriched.map((v: any) => ({ ...v, descriptors: descMap.get(v.name) || [] }));
+    } else {
       resultsWithDescriptors = enriched.map((v: any) => ({ ...v, descriptors: [] }));
     }
 
-    // ─── Suggested chips ───
-    let suggested_chips: string[] = [];
-    try {
-      const chipResult = await callLLM(
-        LOVABLE_KEY,
-        'You suggest related search queries.',
-        `Based on the search "${searchTerm}", suggest 3-4 related search queries the user might want to try next.`,
-        [
-          {
-            type: 'function',
-            function: {
-              name: 'suggest_chips',
-              description: 'Return suggested search queries',
-              parameters: {
-                type: 'object',
-                properties: {
-                  chips: { type: 'array', items: { type: 'string' } },
-                },
-                required: ['chips'],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
-        { type: 'function', function: { name: 'suggest_chips' } },
-      );
-      suggested_chips = chipResult.chips || [];
-    } catch (e: any) {
-      console.warn('⚠️ Chip generation failed:', e.message);
-    }
-
-    // ─── STEP 7: Conversational search summary ───
-    console.log('🤖 STEP 7: Generating search summary...');
-    let search_summary = null;
-    try {
-      const venueDescriptions = resultsWithDescriptors.map((v: any) =>
-        `${v.name} (${v.cuisine_type}, ${v.rating}★${v.reasoning_explanation ? ` — ${v.reasoning_explanation}` : ''})`
-      ).join('\n');
-
-      const summaryResult = await callLLM(
-        LOVABLE_KEY,
-        'You are a knowledgeable local friend who knows the city\'s food and drink scene intimately. Write warm, specific, confident recommendations — never generic.',
-        `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescriptions}\n\nWrite a 2-3 sentence conversational summary explaining why these specific venues were chosen. Sound like a trusted local friend making a personal recommendation, not a search engine. Be specific about what makes these places worth visiting for this particular query.`,
-        [
-          {
-            type: 'function',
-            function: {
-              name: 'generate_summary',
-              description: 'Return a conversational search summary',
-              parameters: {
-                type: 'object',
-                properties: {
-                  summary: { type: 'string', description: '2-3 sentence conversational recommendation' },
-                },
-                required: ['summary'],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
-        { type: 'function', function: { name: 'generate_summary' } },
-      );
-      search_summary = summaryResult.summary || null;
-      console.log('✅ STEP 7: Summary generated');
-    } catch (e: any) {
-      console.warn('⚠️ STEP 7: Summary generation failed:', e.message);
-    }
+    const search_summary = summaryResult?.summary || null;
+    if (search_summary) console.log('✅ STEP 7: Summary generated');
+    const suggested_chips: string[] = chipResult?.chips || [];
+    console.log('✅ STEPS 6 & 7 complete');
 
     // ─── Strip internal fields ───
     const resultsForFrontend = resultsWithDescriptors.map(({ isRelaxedAdmission, unknownPrice, ...rest }: any) => rest);
