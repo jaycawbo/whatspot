@@ -7,20 +7,15 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { Heart, Trash2, Star, Tag, Layers, X } from 'lucide-react';
+import { Heart, Trash2, Star, Tag, Layers, X, Check } from 'lucide-react';
 import { useSpots } from '@/hooks/useSpots';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
-const PREDEFINED_LABELS = [
-  { id: 'top-spot', label: 'Top Spot', icon: Star },
-  { id: 'want-to-go', label: 'Want to Go', icon: Tag },
-  { id: 'custom-label', label: 'Custom Label', icon: Layers },
-];
-
 const SUGGESTED_LABELS = [
+  'Top Spot',
+  'Want to Go',
   'Special Occasion',
   'Date Night',
   'Business Meal',
@@ -41,28 +36,16 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
   const currentLabels = getLabels(placeId);
 
   const [selectedLabels, setSelectedLabels] = useState([]);
-  const [customChecked, setCustomChecked] = useState(false);
   const [customInput, setCustomInput] = useState('');
 
-  // Custom labels = any selected label that is a suggested or typed custom one
-  const customSelectedLabels = selectedLabels.filter(
-    (l) => SUGGESTED_LABELS.includes(l) || (!['Top Spot', 'Want to Go'].includes(l))
-  );
-  // Typed custom labels = not predefined, not suggested
+  // Custom typed labels = not in suggested list
   const customTypedLabels = selectedLabels.filter(
-    (l) =>
-      !['Top Spot', 'Want to Go'].includes(l) &&
-      !SUGGESTED_LABELS.includes(l)
+    (l) => !SUGGESTED_LABELS.includes(l)
   );
 
   useEffect(() => {
     if (open) {
       setSelectedLabels(currentLabels);
-      // If any custom labels exist, auto-check the custom checkbox
-      const hasCustom = currentLabels.some(
-        (l) => !['Top Spot', 'Want to Go'].includes(l)
-      );
-      setCustomChecked(hasCustom);
       setCustomInput('');
     }
   }, [open, currentLabels.join(',')]);
@@ -71,17 +54,6 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
     setSelectedLabels((prev) =>
       prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]
     );
-  };
-
-  const handleCustomCheck = (checked) => {
-    setCustomChecked(checked);
-    if (!checked) {
-      // Remove all custom labels when unchecking
-      setSelectedLabels((prev) =>
-        prev.filter((l) => ['Top Spot', 'Want to Go'].includes(l))
-      );
-      setCustomInput('');
-    }
   };
 
   const addCustomLabel = () => {
@@ -104,7 +76,7 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
     }
   };
 
-  const handleSave = async () => {
+  const handleDone = async () => {
     try {
       if (saved) {
         await updateLabels({ placeId, labels: selectedLabels });
@@ -159,97 +131,62 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
             </div>
           </div>
 
-          {/* Labels */}
+          {/* Labels — select any/all that apply */}
           <div className="space-y-3">
-            <p className="text-sm font-medium text-foreground">Labels</p>
+            <p className="text-sm font-medium text-foreground">Labels <span className="text-muted-foreground font-normal">(select any that apply)</span></p>
 
-            {/* Top Spot */}
-            <label className="flex items-center gap-3 cursor-pointer rounded-lg border border-border p-3 hover:bg-muted/50 transition-colors">
-              <Checkbox
-                checked={selectedLabels.includes('Top Spot')}
-                onCheckedChange={() => toggleLabel('Top Spot')}
-              />
-              <Star className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm">Top Spot</span>
-            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {SUGGESTED_LABELS.map((label) => {
+                const active = selectedLabels.includes(label);
+                return (
+                  <button
+                    key={label}
+                    onClick={() => toggleLabel(label)}
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition-colors border',
+                      active
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-accent/50 text-accent-foreground border-transparent hover:bg-accent'
+                    )}
+                  >
+                    {active && <Check className="h-3 w-3" />}
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
 
-            {/* Want to Go */}
-            <label className="flex items-center gap-3 cursor-pointer rounded-lg border border-border p-3 hover:bg-muted/50 transition-colors">
-              <Checkbox
-                checked={selectedLabels.includes('Want to Go')}
-                onCheckedChange={() => toggleLabel('Want to Go')}
-              />
-              <Tag className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm">Want to Go</span>
-            </label>
-
-            {/* Custom Label */}
-            <label className="flex items-center gap-3 cursor-pointer rounded-lg border border-border p-3 hover:bg-muted/50 transition-colors">
-              <Checkbox
-                checked={customChecked}
-                onCheckedChange={handleCustomCheck}
-              />
-              <Layers className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm">Custom Label</span>
-            </label>
-
-            {/* Expanded custom label section */}
-            {customChecked && (
-              <div className="rounded-lg bg-accent/30 p-3 space-y-3">
-                {/* Custom typed labels (removable) */}
-                {customTypedLabels.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {customTypedLabels.map((label) => (
-                      <span
-                        key={label}
-                        className="inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground"
-                      >
-                        {label}
-                        <button onClick={() => removeCustomLabel(label)} className="hover:opacity-70">
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Suggested chips */}
-                <div className="flex flex-wrap gap-1.5">
-                  {SUGGESTED_LABELS.map((label) => {
-                    const active = selectedLabels.includes(label);
-                    return (
-                      <button
-                        key={label}
-                        onClick={() => toggleLabel(label)}
-                        className={cn(
-                          'rounded-full px-2.5 py-1 text-xs font-medium transition-colors border',
-                          active
-                            ? 'bg-primary text-primary-foreground border-primary'
-                            : 'bg-accent/50 text-accent-foreground border-transparent hover:bg-accent'
-                        )}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Custom input */}
-                <Input
-                  value={customInput}
-                  onChange={(e) => setCustomInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Or type your own..."
-                  className="h-8 text-xs bg-background"
-                />
+            {/* Custom typed labels */}
+            {customTypedLabels.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {customTypedLabels.map((label) => (
+                  <span
+                    key={label}
+                    className="inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground"
+                  >
+                    {label}
+                    <button onClick={() => removeCustomLabel(label)} className="hover:opacity-70">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
               </div>
             )}
+
+            {/* Custom input */}
+            <Input
+              value={customInput}
+              onChange={(e) => setCustomInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Or type your own label..."
+              className="h-8 text-xs bg-background"
+            />
           </div>
         </div>
 
         <DialogFooter className="flex-col gap-2 sm:flex-col">
-          <Button onClick={handleSave} disabled={isSaving} className="w-full">
-            {isSaving ? 'Saving...' : saved ? 'Update' : 'Save to Spots'}
+          <Button onClick={handleDone} disabled={isSaving} className="w-full">
+            {isSaving ? 'Saving...' : 'Done'}
           </Button>
           {saved && (
             <Button
