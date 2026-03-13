@@ -1,14 +1,22 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Star, MapPin, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export default function SpotCard({ spot, onRemove }) {
+  const navigate = useNavigate();
+  const placeId = spot.google_place_id || '';
+
+  const handleClick = () => {
+    if (!placeId) return;
+    navigate(`/venue/${placeId}`, { state: { venue: spot } });
+  };
   const imgUrl = spot.photo_url || '/placeholder.svg';
 
   return (
-    <div className="flex gap-3 rounded-xl border border-border bg-card p-3 shadow-sm hover:shadow-md transition-shadow group">
+    <div onClick={handleClick} className="flex gap-3 rounded-xl border border-border bg-card p-3 shadow-sm hover:shadow-md transition-shadow group cursor-pointer">
       <img
         src={imgUrl}
         alt={spot.name}
