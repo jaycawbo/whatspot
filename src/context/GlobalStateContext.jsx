@@ -124,6 +124,7 @@ function reducer(state, action) {
         relaxationLevel: 0,
         noVenuesAtAll: false,
         searchSummary: null,
+        searchError: null,
         gated: false,
         isLoading: false,
         isQuerying: false,
