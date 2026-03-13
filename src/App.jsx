@@ -6,6 +6,7 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { GlobalStateProvider } from '@/context/GlobalStateContext';
+import VenueDetails from '@/pages/VenueDetails';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -33,6 +34,7 @@ const AuthenticatedApp = () => {
           <MainPage />
         </LayoutWrapper>
       } />
+      <Route path="/venue/:placeId" element={<VenueDetails />} />
       {Object.entries(Pages).map(([path, Page]) => (
         <Route
           key={path}
