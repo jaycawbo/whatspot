@@ -46,6 +46,7 @@ function getInitialState() {
     relaxationLevel: 0,
     noVenuesAtAll: false,
     searchSummary: null,
+    searchError: null,
   };
 }
 
@@ -106,6 +107,8 @@ function reducer(state, action) {
       return { ...state, relaxationLevel: action.payload };
     case 'SET_NO_VENUES':
       return { ...state, noVenuesAtAll: action.payload };
+    case 'SET_SEARCH_ERROR':
+      return { ...state, searchError: action.payload };
     case 'CLEAR_SEARCH':
       return {
         ...state,
@@ -121,6 +124,7 @@ function reducer(state, action) {
         relaxationLevel: 0,
         noVenuesAtAll: false,
         searchSummary: null,
+        searchError: null,
         gated: false,
         isLoading: false,
         isQuerying: false,
