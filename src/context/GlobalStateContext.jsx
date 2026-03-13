@@ -46,6 +46,7 @@ function getInitialState() {
     relaxationLevel: 0,
     noVenuesAtAll: false,
     searchSummary: null,
+    searchError: null,
   };
 }
 
