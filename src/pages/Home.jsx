@@ -39,6 +39,7 @@ export default function Home() {
       abortRef.current = new AbortController();
 
       dispatch({ type: 'SET_LOADING', payload: true });
+      dispatch({ type: 'SET_SEARCH_ERROR', payload: null });
 
       // Add to history
       dispatch({
