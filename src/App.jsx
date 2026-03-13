@@ -33,6 +33,7 @@ const AuthenticatedApp = () => {
           <MainPage />
         </LayoutWrapper>
       } />
+      <Route path="/venue/:placeId" element={<VenueDetails />} />
       {Object.entries(Pages).map(([path, Page]) => (
         <Route
           key={path}

@@ -16,7 +16,7 @@ export default function SpotCard({ spot, onRemove }) {
   const imgUrl = spot.photo_url || '/placeholder.svg';
 
   return (
-    <div className="flex gap-3 rounded-xl border border-border bg-card p-3 shadow-sm hover:shadow-md transition-shadow group">
+    <div onClick={handleClick} className="flex gap-3 rounded-xl border border-border bg-card p-3 shadow-sm hover:shadow-md transition-shadow group cursor-pointer">
       <img
         src={imgUrl}
         alt={spot.name}
