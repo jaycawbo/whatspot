@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import LoadingMessages from '@/components/home/LoadingMessages';
 import whatspotLogo from '@/assets/whatspot_logo.svg';
 import { useGlobalState } from '@/context/GlobalStateContext';
@@ -38,6 +39,7 @@ export default function Home() {
       abortRef.current = new AbortController();
 
       dispatch({ type: 'SET_LOADING', payload: true });
+      dispatch({ type: 'SET_SEARCH_ERROR', payload: null });
 
       // Add to history
       dispatch({
@@ -55,19 +57,26 @@ export default function Home() {
       } catch {}
 
       try {
-        const res = await recommend({
-          mode: state.category ? 'browse_category' : 'query',
-          category: state.category,
-          query: queryText,
-          lat: state.userLocation.lat,
-          lon: state.userLocation.lon,
-          location_name: state.locationName,
-          radius_km: activeFilters.radius,
-          relaxation_level: state.relaxationLevel,
-          open_now: activeFilters.openNow || undefined,
-          price_levels: activeFilters.priceLevels.length ? activeFilters.priceLevels : undefined,
-          session_context,
-        });
+        const timeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('TIMEOUT')), 45000)
+        );
+
+        const res = await Promise.race([
+          recommend({
+            mode: state.category ? 'browse_category' : 'query',
+            category: state.category,
+            query: queryText,
+            lat: state.userLocation.lat,
+            lon: state.userLocation.lon,
+            location_name: state.locationName,
+            radius_km: activeFilters.radius,
+            relaxation_level: state.relaxationLevel,
+            open_now: activeFilters.openNow || undefined,
+            price_levels: activeFilters.priceLevels.length ? activeFilters.priceLevels : undefined,
+            session_context,
+          }),
+          timeout,
+        ]);
         dispatch({ type: 'SET_RESULTS', payload: res });
 
         // Store search context in sessionStorage
@@ -75,7 +84,7 @@ export default function Home() {
           const entry = {
             query: queryText,
             timestamp: Date.now(),
-          results: res.results.map(r => ({
+            results: res.results.map(r => ({
               name: r.name,
               cuisine_type: r.cuisine_type,
               descriptors: r.descriptors,
@@ -99,8 +108,14 @@ export default function Home() {
             sessionStorage.setItem('whatspot_session_history', JSON.stringify(history.slice(-20)));
           } catch {}
         }
-      } catch {
+      } catch (err) {
+        const isTimeout = err?.message === 'TIMEOUT';
+        const errorMsg = isTimeout
+          ? 'Search timed out. Try a simpler query or smaller radius.'
+          : 'Search failed. Please try again.';
+        dispatch({ type: 'SET_SEARCH_ERROR', payload: errorMsg });
         dispatch({ type: 'SET_LOADING', payload: false });
+        toast.error(errorMsg);
       }
     },
     [state.userLocation, state.locationName, state.anonymousId, state.relaxationLevel, state.sort, dispatch]
@@ -263,6 +278,7 @@ export default function Home() {
                     onRelax={handleRelax}
                     isRelaxing={state.isLoading}
                     noVenuesAtAll={state.noVenuesAtAll}
+                    searchError={state.searchError}
                   />
                 ) : (
                   <ResultsList results={displayResults} isLoading={state.isLoading} />
