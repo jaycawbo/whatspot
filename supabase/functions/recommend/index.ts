@@ -653,7 +653,7 @@ Deno.serve(async (req) => {
       }
     } else {
       console.log(`🧠 STEP 4b: Batched LLM intent re-ranking for "${searchTerm}"`);
-      const pool = dedup(scoredVenues).slice(0, LLM_BATCH * 2); // cap at 20 venues max
+      const pool = dedup(scoredVenues).slice(0, LLM_BATCH); // cap at 10 venues for speed
 
       try {
         const venueListText = pool.map((v: any, i: number) =>
