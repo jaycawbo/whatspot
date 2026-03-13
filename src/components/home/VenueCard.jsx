@@ -1,9 +1,17 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Star, MapPin, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import HeartButton from '@/components/spots/HeartButton';
 
 export default function VenueCard({ venue }) {
+  const navigate = useNavigate();
+  const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
+
+  const handleClick = () => {
+    if (!placeId) return;
+    navigate(`/venue/${placeId}`, { state: { venue } });
+  };
   const imgUrl = venue.image_urls?.[0] || '/placeholder.svg';
 
   return (
