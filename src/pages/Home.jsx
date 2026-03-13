@@ -278,6 +278,7 @@ export default function Home() {
                     onRelax={handleRelax}
                     isRelaxing={state.isLoading}
                     noVenuesAtAll={state.noVenuesAtAll}
+                    searchError={state.searchError}
                   />
                 ) : (
                   <ResultsList results={displayResults} isLoading={state.isLoading} />
