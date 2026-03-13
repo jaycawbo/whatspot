@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import LoadingMessages from '@/components/home/LoadingMessages';
 import whatspotLogo from '@/assets/whatspot_logo.svg';
 import { useGlobalState } from '@/context/GlobalStateContext';
