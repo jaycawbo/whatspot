@@ -107,6 +107,8 @@ function reducer(state, action) {
       return { ...state, relaxationLevel: action.payload };
     case 'SET_NO_VENUES':
       return { ...state, noVenuesAtAll: action.payload };
+    case 'SET_SEARCH_ERROR':
+      return { ...state, searchError: action.payload };
     case 'CLEAR_SEARCH':
       return {
         ...state,
