@@ -14,6 +14,107 @@ export type Database = {
   }
   public: {
     Tables: {
+      constellation_validations: {
+        Row: {
+          anonymous_id: string
+          confidence_delta: number
+          constellation_id: string
+          created_at: string
+          id: string
+          user_id: string | null
+          validation_type: string
+          venue_id: string
+        }
+        Insert: {
+          anonymous_id: string
+          confidence_delta?: number
+          constellation_id: string
+          created_at?: string
+          id?: string
+          user_id?: string | null
+          validation_type: string
+          venue_id: string
+        }
+        Update: {
+          anonymous_id?: string
+          confidence_delta?: number
+          constellation_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string | null
+          validation_type?: string
+          venue_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "constellation_validations_constellation_id_fkey"
+            columns: ["constellation_id"]
+            isOneToOne: false
+            referencedRelation: "constellations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      constellations: {
+        Row: {
+          city: string
+          created_at: string
+          created_by_user_id: string | null
+          credibility_score: number
+          description: string | null
+          id: string
+          is_public: boolean
+          is_visible: boolean
+          name: string
+          neighborhood: string | null
+          source: string
+          status: string
+          tag_vector: Json | null
+          type: string
+          updated_at: string
+          validation_count: number
+          venue_ids: string[]
+        }
+        Insert: {
+          city: string
+          created_at?: string
+          created_by_user_id?: string | null
+          credibility_score?: number
+          description?: string | null
+          id?: string
+          is_public?: boolean
+          is_visible?: boolean
+          name: string
+          neighborhood?: string | null
+          source: string
+          status?: string
+          tag_vector?: Json | null
+          type: string
+          updated_at?: string
+          validation_count?: number
+          venue_ids?: string[]
+        }
+        Update: {
+          city?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          credibility_score?: number
+          description?: string | null
+          id?: string
+          is_public?: boolean
+          is_visible?: boolean
+          name?: string
+          neighborhood?: string | null
+          source?: string
+          status?: string
+          tag_vector?: Json | null
+          type?: string
+          updated_at?: string
+          validation_count?: number
+          venue_ids?: string[]
+        }
+        Relationships: []
+      }
       favorites: {
         Row: {
           created_at: string | null
@@ -70,6 +171,57 @@ export type Database = {
         }
         Relationships: []
       }
+      user_events: {
+        Row: {
+          anonymous_id: string
+          created_at: string
+          day_of_week: number | null
+          event_type: string
+          id: string
+          metadata: Json | null
+          neighborhood_context: string | null
+          position_in_results: number | null
+          results_returned: number | null
+          search_query: string | null
+          session_id: string
+          time_of_day_hour: number | null
+          user_id: string | null
+          venue_id: string | null
+        }
+        Insert: {
+          anonymous_id: string
+          created_at?: string
+          day_of_week?: number | null
+          event_type: string
+          id?: string
+          metadata?: Json | null
+          neighborhood_context?: string | null
+          position_in_results?: number | null
+          results_returned?: number | null
+          search_query?: string | null
+          session_id: string
+          time_of_day_hour?: number | null
+          user_id?: string | null
+          venue_id?: string | null
+        }
+        Update: {
+          anonymous_id?: string
+          created_at?: string
+          day_of_week?: number | null
+          event_type?: string
+          id?: string
+          metadata?: Json | null
+          neighborhood_context?: string | null
+          position_in_results?: number | null
+          results_returned?: number | null
+          search_query?: string | null
+          session_id?: string
+          time_of_day_hour?: number | null
+          user_id?: string | null
+          venue_id?: string | null
+        }
+        Relationships: []
+      }
       user_profiles: {
         Row: {
           created_at: string | null
@@ -97,6 +249,57 @@ export type Database = {
           preferences?: Json | null
           spots_is_public?: boolean | null
           spots_share_token?: string | null
+        }
+        Relationships: []
+      }
+      venue_signals: {
+        Row: {
+          avg_result_position_at_save: number | null
+          constellation_ids: string[] | null
+          dismiss_count: number
+          last_signal_at: string | null
+          peak_day_of_week: number | null
+          peak_hour: number | null
+          save_count: number
+          save_rate: number | null
+          search_surface_count: number
+          top_neighborhoods_saved_from: Json | null
+          top_query_contexts: Json | null
+          updated_at: string
+          venue_id: string
+          view_count: number
+        }
+        Insert: {
+          avg_result_position_at_save?: number | null
+          constellation_ids?: string[] | null
+          dismiss_count?: number
+          last_signal_at?: string | null
+          peak_day_of_week?: number | null
+          peak_hour?: number | null
+          save_count?: number
+          save_rate?: number | null
+          search_surface_count?: number
+          top_neighborhoods_saved_from?: Json | null
+          top_query_contexts?: Json | null
+          updated_at?: string
+          venue_id: string
+          view_count?: number
+        }
+        Update: {
+          avg_result_position_at_save?: number | null
+          constellation_ids?: string[] | null
+          dismiss_count?: number
+          last_signal_at?: string | null
+          peak_day_of_week?: number | null
+          peak_hour?: number | null
+          save_count?: number
+          save_rate?: number | null
+          search_surface_count?: number
+          top_neighborhoods_saved_from?: Json | null
+          top_query_contexts?: Json | null
+          updated_at?: string
+          venue_id?: string
+          view_count?: number
         }
         Relationships: []
       }
