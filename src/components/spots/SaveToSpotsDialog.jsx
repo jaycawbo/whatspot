@@ -85,6 +85,10 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
       } else {
         await saveSpot({ venue, labels: selectedLabels });
         toast.success(`${venue.name} added to Spots`);
+        logEvent('save', {
+          venue_id: venue.place_id || venue.google_place_id,
+          neighborhood_context: venue.address,
+        });
       }
       onOpenChange(false);
     } catch (err) {
