@@ -2,6 +2,7 @@ import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import HeartButton from '@/components/spots/HeartButton';
+import { logEvent } from '@/lib/logEvent';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
