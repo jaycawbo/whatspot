@@ -2,7 +2,7 @@ import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import VenueCard from './VenueCard';
 
-export default function ResultsList({ results, isLoading }) {
+export default function ResultsList({ results, isLoading, currentQuery }) {
   if (isLoading) {
     return (
       <div className="space-y-3">
