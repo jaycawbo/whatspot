@@ -37,7 +37,7 @@ export default function VenueCard({ venue, index, currentQuery }) {
   const imgUrl = venue.image_urls?.[0] || '/placeholder.svg';
 
   return (
-    <div onClick={handleClick} className="relative flex gap-3 rounded-xl border border-border bg-card p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+    <div ref={cardRef} onClick={handleClick} className="relative flex gap-3 rounded-xl border border-border bg-card p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
       <div className="relative shrink-0">
         <img
           src={imgUrl}

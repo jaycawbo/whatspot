@@ -26,7 +26,9 @@ function MapContent({ results }) {
         const lng = v.lon ?? v.lng;
         if (lat == null || lng == null) return null;
         return (
-          <Marker key={v.name + i} position={[lat, lng]}>
+          <Marker key={v.name + i} position={[lat, lng]} eventHandlers={{
+            click: () => logEvent('click_map', { venue_id: v.place_id || v.google_place_id }),
+          }}>
             <Popup>
               <div className="text-sm min-w-[160px]">
                 <div className="flex items-start justify-between gap-2">

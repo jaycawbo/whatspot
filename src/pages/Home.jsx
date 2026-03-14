@@ -80,6 +80,15 @@ export default function Home() {
         ]);
         dispatch({ type: 'SET_RESULTS', payload: res });
 
+        // Log search event passively
+        if (res?.results?.length) {
+          logEvent('search', {
+            search_query: queryText,
+            results_returned: res.results.length,
+            neighborhood_context: state.locationName,
+          });
+        }
+
         // Store search context in sessionStorage
         if (res?.results?.length) {
           const entry = {
