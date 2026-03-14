@@ -291,7 +291,7 @@ export default function Home() {
                     searchError={state.searchError}
                   />
                 ) : (
-                  <ResultsList results={displayResults} isLoading={state.isLoading} />
+                  <ResultsList results={displayResults} isLoading={state.isLoading} currentQuery={state.query} />
                 )}
               </div>
             ) : (
