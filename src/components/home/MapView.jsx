@@ -2,6 +2,7 @@ import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import HeartButton from '@/components/spots/HeartButton';
+import { logEvent } from '@/lib/logEvent';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -25,7 +26,9 @@ function MapContent({ results }) {
         const lng = v.lon ?? v.lng;
         if (lat == null || lng == null) return null;
         return (
-          <Marker key={v.name + i} position={[lat, lng]}>
+          <Marker key={v.name + i} position={[lat, lng]} eventHandlers={{
+            click: () => logEvent('click_map', { venue_id: v.place_id || v.google_place_id }),
+          }}>
             <Popup>
               <div className="text-sm min-w-[160px]">
                 <div className="flex items-start justify-between gap-2">
