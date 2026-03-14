@@ -31,7 +31,7 @@ export default function ResultsList({ results, isLoading, currentQuery }) {
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.2, delay: i * 0.04 }}
           >
-            <VenueCard venue={venue} />
+            <VenueCard venue={venue} index={i} currentQuery={currentQuery} />
           </motion.div>
         ))}
       </AnimatePresence>
