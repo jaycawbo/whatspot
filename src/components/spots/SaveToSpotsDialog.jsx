@@ -12,6 +12,7 @@ import { Heart, Trash2, Star, Tag, Layers, X, Check } from 'lucide-react';
 import { useSpots } from '@/hooks/useSpots';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { logEvent } from '@/lib/logEvent';
 
 const SUGGESTED_LABELS = [
   'Top Spot',
