@@ -22,6 +22,7 @@ import MobileBottomSheet from '@/components/home/MobileBottomSheet';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { logEvent } from '@/lib/logEvent';
 
 export default function Home() {
   const { state, dispatch } = useGlobalState();
@@ -78,6 +79,15 @@ export default function Home() {
           timeout,
         ]);
         dispatch({ type: 'SET_RESULTS', payload: res });
+
+        // Log search event passively
+        if (res?.results?.length) {
+          logEvent('search', {
+            search_query: queryText,
+            results_returned: res.results.length,
+            neighborhood_context: state.locationName,
+          });
+        }
 
         // Store search context in sessionStorage
         if (res?.results?.length) {
@@ -281,7 +291,7 @@ export default function Home() {
                     searchError={state.searchError}
                   />
                 ) : (
-                  <ResultsList results={displayResults} isLoading={state.isLoading} />
+                  <ResultsList results={displayResults} isLoading={state.isLoading} currentQuery={state.query} />
                 )}
               </div>
             ) : (

@@ -2,7 +2,7 @@ import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import VenueCard from './VenueCard';
 
-export default function ResultsList({ results, isLoading }) {
+export default function ResultsList({ results, isLoading, currentQuery }) {
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -31,7 +31,7 @@ export default function ResultsList({ results, isLoading }) {
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.2, delay: i * 0.04 }}
           >
-            <VenueCard venue={venue} />
+            <VenueCard venue={venue} index={i} currentQuery={currentQuery} />
           </motion.div>
         ))}
       </AnimatePresence>

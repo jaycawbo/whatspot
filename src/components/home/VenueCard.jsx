@@ -1,10 +1,32 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, MapPin, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import HeartButton from '@/components/spots/HeartButton';
+import { logEvent } from '@/lib/logEvent';
 
-export default function VenueCard({ venue }) {
+export default function VenueCard({ venue, index, currentQuery }) {
+  const cardRef = useRef(null);
+
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          logEvent('view', {
+            venue_id: venue.place_id || venue.google_place_id,
+            search_query: currentQuery,
+            position_in_results: index,
+          });
+          observer.unobserve(el);
+        }
+      },
+      { threshold: 0.5 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [venue.place_id, venue.google_place_id, currentQuery, index]);
   const navigate = useNavigate();
   const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
 
@@ -15,7 +37,7 @@ export default function VenueCard({ venue }) {
   const imgUrl = venue.image_urls?.[0] || '/placeholder.svg';
 
   return (
-    <div onClick={handleClick} className="relative flex gap-3 rounded-xl border border-border bg-card p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+    <div ref={cardRef} onClick={handleClick} className="relative flex gap-3 rounded-xl border border-border bg-card p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
       <div className="relative shrink-0">
         <img
           src={imgUrl}

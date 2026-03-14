@@ -12,6 +12,7 @@ import { Heart, Trash2, Star, Tag, Layers, X, Check } from 'lucide-react';
 import { useSpots } from '@/hooks/useSpots';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { logEvent } from '@/lib/logEvent';
 
 const SUGGESTED_LABELS = [
   'Top Spot',
@@ -84,6 +85,10 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
       } else {
         await saveSpot({ venue, labels: selectedLabels });
         toast.success(`${venue.name} added to Spots`);
+        logEvent('save', {
+          venue_id: venue.place_id || venue.google_place_id,
+          neighborhood_context: venue.address,
+        });
       }
       onOpenChange(false);
     } catch (err) {
