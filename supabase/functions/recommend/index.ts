@@ -775,6 +775,20 @@ Deno.serve(async (req) => {
         finalVenues.push(...backfill);
       }
 
+      // Separate overflow venues (>2km) from finalVenues
+      const overflowVenues = finalVenues
+        .filter((v: any) => v.distance_km > 2.0)
+        .slice(0, 3)
+        .map((v: any) => ({
+          name: v.name,
+          address: v.address,
+          distance_km: v.distance_km,
+          rating: v.rating,
+          cuisine_type: v.cuisine_type,
+          descriptors: v.descriptors || [],
+        }));
+      finalVenues = finalVenues.filter((v: any) => !(v.distance_km > 2.0));
+
       search_summary = comprehensiveResult.summary || null;
       suggested_chips = comprehensiveResult.chips || [];
     }
