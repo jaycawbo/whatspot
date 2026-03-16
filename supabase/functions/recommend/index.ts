@@ -831,7 +831,7 @@ Deno.serve(async (req) => {
     console.log('📊 Venues sent to Steps 6/7/chips:', venueList.length);
 
     const consolidatedResult = await safe('steps-6-7-chips', () => callLLM(
-      LOVABLE_KEY,
+      OPENAI_KEY,
       `You are a knowledgeable local friend who knows the city's food and drink scene intimately.`,
       `The user searched for "${searchTerm}" in ${location_name}.
 
@@ -885,7 +885,8 @@ Return a JSON object with exactly these fields:
           }
         }
       ],
-      { type: 'function', function: { name: 'generate_venue_content' } }
+      { type: 'function', function: { name: 'generate_venue_content' } },
+      { max_tokens: 500, temperature: 0 },
     ), { descriptors: [], summary: null, chips: [] });
 
     console.log('⏱️ Steps 6/7/chips LLM duration:', Date.now() - llmCallStart, 'ms');
