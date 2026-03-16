@@ -640,10 +640,10 @@ Deno.serve(async (req) => {
       });
     };
 
-    const TARGET = 5;
+    const TARGET = isDiscoveryMode ? 8 : 5;
     const LLM_THRESHOLD = 0.6;
     const LLM_BATCH = 10;
-    const skipLLM = isSimpleQuery(searchTerm, refinedSearchTerm) || scoredVenues.length < 3;
+    const skipLLM = isDiscoveryMode || isSimpleQuery(searchTerm, refinedSearchTerm) || scoredVenues.length < 3;
 
     let finalResults: any[] = [];
 
