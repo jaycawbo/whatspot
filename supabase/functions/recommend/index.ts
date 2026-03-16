@@ -708,6 +708,7 @@ Deno.serve(async (req) => {
             },
           ],
           { type: 'function', function: { name: 'assess_venues_batch' } },
+          { max_tokens: 400, temperature: 0 },
         );
 
         // Map LLM results back to venues
