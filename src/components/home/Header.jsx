@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Link, useNavigate } from 'react-router-dom';
-import whatspotLogo from '@/assets/whatspot_logo.svg';
+import WhatspotLogo from '@/components/brand/WhatspotLogo';
 import LocationSearch from '@/components/home/LocationSearch';
 import AuthModal from '@/components/auth/AuthModal';
 
@@ -72,8 +72,8 @@ export default function Header() {
       {/* Center: Logo — only in post-search */}
       {state.mode === 'post-search' && (
         <div className="flex items-center justify-center">
-          <a href="/" onClick={handleLogoClick} className="flex items-center">
-            <img src={whatspotLogo} alt="Whatspot" className="h-7" />
+            <a href="/" onClick={handleLogoClick} className="flex items-center">
+              <WhatspotLogo size="nav" />
           </a>
         </div>
       )}
