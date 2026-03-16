@@ -280,6 +280,8 @@ Deno.serve(async (req) => {
       admission.minReviewCount = 10;
     }
 
+    let refinedSearchTerm = searchTerm;
+
     // ─── STEPS 1, 1b, 1c: Skip entirely for discovery mode ───
     if (!isDiscoveryMode) {
     console.log('🤖 STEPS 1 & 1b: Running in parallel...');
