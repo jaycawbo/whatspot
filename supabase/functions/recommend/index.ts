@@ -250,8 +250,14 @@ Deno.serve(async (req) => {
     if (!GOOGLE_KEY) throw new Error('GOOGLE_PLACES_API_KEY not configured');
     if (!LOVABLE_KEY) throw new Error('LOVABLE_API_KEY not configured');
 
-    const searchTerm = mode === 'browse_category' && category ? category : query;
-    console.log(`🎯 recommend: "${searchTerm}" at (${lat}, ${lon}) relaxation=${relaxation_level}`);
+    const isDiscoveryMode = mode === 'discovery' || (!query && mode !== 'browse_category');
+    const searchTerm = isDiscoveryMode ? 'restaurant OR bar OR cafe' : (mode === 'browse_category' && category ? category : query);
+    
+    if (isDiscoveryMode) {
+      console.log(`🎯 DISCOVERY MODE: returning top venues near (${lat}, ${lon})`);
+    } else {
+      console.log(`🎯 recommend: "${searchTerm}" at (${lat}, ${lon}) relaxation=${relaxation_level}`);
+    }
     console.log(`🔧 Filters received — open_now: ${open_now}, price_levels: ${JSON.stringify(price_levels)}, radius_km: ${radius_km}`);
 
     // ─── Admission thresholds ───
