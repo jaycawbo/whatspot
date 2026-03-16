@@ -206,7 +206,7 @@ export default function Home() {
         <div className="flex flex-col items-center justify-center min-h-screen pt-14 pb-20 px-4 md:px-8">
           <div className="flex flex-col items-center justify-center w-full space-y-6">
             <a href="/" onClick={(e) => { e.preventDefault(); dispatch({ type: 'CLEAR_SEARCH' }); }} className="flex items-center cursor-pointer">
-              <img src={whatspotLogo} alt="Whatspot" className="h-10 md:h-12" />
+              <WhatspotLogo size="hero" />
             </a>
 
             <SearchBar
