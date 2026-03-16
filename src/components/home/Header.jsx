@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Link, useNavigate } from 'react-router-dom';
-import whatspotLogo from '@/assets/whatspot_logo.svg';
+import WhatspotLogo from '@/components/brand/WhatspotLogo';
 import LocationSearch from '@/components/home/LocationSearch';
 import AuthModal from '@/components/auth/AuthModal';
 
