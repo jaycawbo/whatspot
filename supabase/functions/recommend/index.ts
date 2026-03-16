@@ -882,6 +882,8 @@ Return a JSON object with exactly these fields:
       { type: 'function', function: { name: 'generate_venue_content' } }
     ), { descriptors: [], summary: null, chips: [] });
 
+    console.log('⏱️ Steps 6/7/chips LLM duration:', Date.now() - llmCallStart, 'ms');
+
     // Apply descriptors to venues
     const resultsWithDescriptors = enriched.map((v: any, i: number) => ({
       ...v,
