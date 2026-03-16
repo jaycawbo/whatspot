@@ -821,6 +821,9 @@ Deno.serve(async (req) => {
       reasoning_explanation: v.reasoning_explanation || null,
     }));
 
+    const llmCallStart = Date.now();
+    console.log('📊 Venues sent to Steps 6/7/chips:', venueList.length);
+
     const consolidatedResult = await safe('steps-6-7-chips', () => callLLM(
       LOVABLE_KEY,
       `You are a knowledgeable local friend who knows the city's food and drink scene intimately.`,
@@ -878,6 +881,8 @@ Return a JSON object with exactly these fields:
       ],
       { type: 'function', function: { name: 'generate_venue_content' } }
     ), { descriptors: [], summary: null, chips: [] });
+
+    console.log('⏱️ Steps 6/7/chips LLM duration:', Date.now() - llmCallStart, 'ms');
 
     // Apply descriptors to venues
     const resultsWithDescriptors = enriched.map((v: any, i: number) => ({
