@@ -280,9 +280,10 @@ Deno.serve(async (req) => {
       admission.minReviewCount = 10;
     }
 
-    // ─── STEPS 1 & 1b: Parallel query refinement + neighbourhood detection ───
+    // ─── STEPS 1, 1b, 1c: Skip entirely for discovery mode ───
+    if (!isDiscoveryMode) {
     console.log('🤖 STEPS 1 & 1b: Running in parallel...');
-    let refinedSearchTerm = searchTerm;
+    let refinedSearchTermResult = searchTerm;
 
     const [refinementResult, locationDetectionResult] = await Promise.all([
       safe('step1-refinement', () => callLLM(
@@ -303,9 +304,10 @@ Deno.serve(async (req) => {
 
     // Apply Step 1 result
     if (refinementResult?.keywords && refinementResult.keywords.toLowerCase() !== searchTerm.toLowerCase()) {
-      refinedSearchTerm = refinementResult.keywords;
-      console.log(`✅ STEP 1: Refined to: "${refinedSearchTerm}"`);
+      refinedSearchTermResult = refinementResult.keywords;
+      console.log(`✅ STEP 1: Refined to: "${refinedSearchTermResult}"`);
     }
+    refinedSearchTerm = refinedSearchTermResult;
 
     // Apply Step 1b result
     if (locationDetectionResult?.detected_location && locationDetectionResult.detected_location !== 'NONE') {
@@ -343,8 +345,11 @@ Deno.serve(async (req) => {
       }
     }
     console.log('✅ STEPS 1 & 1b complete');
+    } else {
+      console.log('⏩ DISCOVERY MODE: Skipping Steps 1, 1b (no query refinement needed)');
+    }
 
-    // ─── Street-level precision detection ───
+    // ─── Street-level precision detection (skip for discovery) ───
     const STREET_IDENTIFIERS = /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i;
     const PROXIMITY_WORDS = /\b(near|around|by|close\s+to|nearby|near\s+me|off\s+of|around\s+the\s+corner)\b/i;
     let isOnStreetSearch = false;
