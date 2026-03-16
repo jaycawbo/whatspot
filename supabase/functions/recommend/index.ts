@@ -395,7 +395,7 @@ Deno.serve(async (req) => {
         const previousResultNames = (lastSearch?.results || []).map((r: any) => r.name);
 
         refinementIntent = await callLLM(
-          LOVABLE_KEY,
+          OPENAI_KEY,
           'You detect whether a search query is asking to modify/replace specific results from a previous search, or is a fresh new search.',
           `Given the query "${searchTerm}" and the session history, determine if this query is asking to modify previous results rather than start a fresh search. Specifically detect phrases like "replace", "swap", "different option", "something else", "instead of", "change #[number]", or "not that one".\n\nPrevious search query: "${lastSearch?.query || ''}"\nPrevious results: ${previousResultNames.map((n: string, i: number) => `#${i + 1} ${n}`).join(', ')}\n\nReturn a JSON object.${sessionContextString}`,
           [{
@@ -417,6 +417,7 @@ Deno.serve(async (req) => {
             },
           }],
           { type: 'function', function: { name: 'detect_refinement' } },
+          { max_tokens: 100, temperature: 0 },
         );
 
         if (refinementIntent?.is_refinement) {
