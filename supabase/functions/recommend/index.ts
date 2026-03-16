@@ -874,6 +874,7 @@ Deno.serve(async (req) => {
         relaxation_applied: relaxation_level > 0,
         relaxation_level,
         gated: false,
+        nearby_overflow: overflowVenues || [],
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
