@@ -299,11 +299,12 @@ Deno.serve(async (req) => {
         { max_tokens: 100, temperature: 0 },
       ), null),
       safe('step1b-location', () => callLLM(
-        LOVABLE_KEY,
+        OPENAI_KEY,
         'You detect neighbourhood, district, or city names in search queries.',
         `Given the search query "${searchTerm}" and current location "${location_name}", identify if the query mentions a specific neighbourhood, district, or city name that is different from or more specific than the current location. Return the detected location string or "NONE" if no specific location is mentioned.`,
         [{ type: 'function', function: { name: 'detect_location', description: 'Return detected location or NONE', parameters: { type: 'object', properties: { detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' } }, required: ['detected_location'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'detect_location' } },
+        { max_tokens: 100, temperature: 0 },
       ), null),
     ]);
 
