@@ -645,112 +645,146 @@ Deno.serve(async (req) => {
       });
     };
 
-    const TARGET = isDiscoveryMode ? 8 : 5;
-    const LLM_THRESHOLD = 0.6;
-    const LLM_BATCH = 10;
-    const skipLLM = isDiscoveryMode || isSimpleQuery(searchTerm, refinedSearchTerm) || scoredVenues.length < 3;
+    // ─── STEP 4c: Apply refinement post-processing (needs finalResults, set below) ───
+    // First, select initial candidates for the comprehensive LLM or discovery path
+    const candidates = dedup(scoredVenues).slice(0, 8);
 
-    let finalResults: any[] = [];
+    // ─── COMPREHENSIVE LLM: Confidence scoring, descriptors, summary & chips ───
+    console.log('🤖 COMPREHENSIVE LLM: Scoring, descriptors, summary & chips...');
+    const llmCallStart = Date.now();
 
-    if (skipLLM) {
-      console.log('⏩ STEP 4b: Skipping LLM re-ranking');
-      let r = 1;
-      while (r <= admission.maxRadius && finalResults.length < TARGET) {
-        const inR = scoredVenues.filter((v: any) => v.distance_km <= r);
-        if (inR.length >= TARGET) {
-          finalResults = dedup(inR).slice(0, TARGET);
-          break;
-        }
-        r += 1;
-      }
-      if (finalResults.length < TARGET) {
-        finalResults = dedup(scoredVenues).slice(0, TARGET);
-      }
-    } else {
-      console.log(`🧠 STEP 4b: Batched LLM intent re-ranking for "${searchTerm}"`);
-      const pool = dedup(scoredVenues).slice(0, LLM_BATCH); // cap at 10 venues for speed
+    const candidateList = candidates.map((v: any, i: number) =>
+      `${i + 1}. ${v.name} (${v.cuisine_type || 'restaurant'}, ${v.rating}★, ${v.review_count} reviews, ${v.price_level || 'price unknown'}, ${v.distance_km?.toFixed(1)}km)`
+    ).join('\n');
 
-      try {
-        const venueListText = pool.map((v: any, i: number) =>
-          `${i + 1}. ${v.name} — ${v.address}. Category: ${v.category}. Cuisine: ${v.cuisine_type}. Price: ${v.price_level || 'Unknown'}. Rating: ${v.rating} (${v.review_count} reviews). Distance: ${v.distance_km?.toFixed(1)}km.`
-        ).join('\n');
+    let finalVenues: any[] = [];
+    let search_summary: any = null;
+    let suggested_chips: string[] = [];
 
-        const batchResult = await callLLM(
-          OPENAI_KEY,
-          'You assess how well venues match a user search query. Evaluate ALL venues and return confidence scores.',
-          `The user searched for "${searchTerm}" in ${location_name}.\n\nHere are the venues to evaluate:\n${venueListText}\n\nFor EACH venue, assess how well it matches the search query. Consider occasion suitability, culinary style, ambiance, and dietary needs. Return confidence scores for ALL venues.${sessionContextString}`,
-          [
-            {
-              type: 'function',
-              function: {
-                name: 'assess_venues_batch',
-                description: 'Return confidence scores and reasoning for all venues',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    venues: {
-                      type: 'array',
-                      items: {
-                        type: 'object',
-                        properties: {
-                          name: { type: 'string', description: 'Venue name' },
-                          confidence_score: { type: 'number', description: '0.0-1.0 match score' },
-                          reasoning: { type: 'string', description: '1-2 sentences starting with "This spot"' },
-                        },
-                        required: ['name', 'confidence_score', 'reasoning'],
-                      },
-                    },
-                  },
-                  required: ['venues'],
-                  additionalProperties: false,
+    if (isDiscoveryMode) {
+      // Discovery mode — skip confidence scoring, only generate descriptors and chips
+      const discoveryResult = await safe('discovery-llm', () => callLLM(
+        OPENAI_KEY,
+        `You are a knowledgeable local friend who knows the city's food and drink scene intimately.`,
+        `Here are nearby venues to describe:\n${candidateList}\n\nReturn a JSON object with:\n- "descriptors": array of ${candidates.length} arrays, one per venue in order, each containing exactly 3 short 2-4 word descriptor tags. Never use generic terms like "restaurant" or "cafe".\n- "chips": array of 3-4 short follow-up search suggestions for discovering more venues nearby.`,
+        [
+          {
+            type: 'function',
+            function: {
+              name: 'discovery_venue_content',
+              description: 'Generate descriptors and chips for discovery feed',
+              parameters: {
+                type: 'object',
+                properties: {
+                  descriptors: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
+                  chips: { type: 'array', items: { type: 'string' } }
                 },
-              },
-            },
-          ],
-          { type: 'function', function: { name: 'assess_venues_batch' } },
-          { max_tokens: 400, temperature: 0 },
-        );
-
-        // Map LLM results back to venues
-        const llmMap = new Map<string, { confidence_score: number; reasoning: string }>();
-        for (const v of batchResult.venues || []) {
-          llmMap.set(v.name.toLowerCase().trim(), { confidence_score: v.confidence_score, reasoning: v.reasoning });
-        }
-
-        const evaluated = pool.map((venue: any) => {
-          const llmResult = llmMap.get(venue.name.toLowerCase().trim());
-          if (llmResult) {
-            console.log(`🎯 ${venue.name}: confidence=${llmResult.confidence_score?.toFixed(2)}`);
-            return { ...venue, llm_confidence: llmResult.confidence_score, reasoning_explanation: llmResult.reasoning };
+                required: ['descriptors', 'chips'],
+                additionalProperties: false
+              }
+            }
           }
-          return { ...venue, llm_confidence: 1.0, reasoning_explanation: null };
-        });
+        ],
+        { type: 'function', function: { name: 'discovery_venue_content' } }
+      ), { descriptors: [], chips: [] });
 
-        const confident = evaluated
-          .filter((v: any) => v.llm_confidence >= LLM_THRESHOLD)
-          .sort((a: any, b: any) => b.llm_confidence - a.llm_confidence)
-          .slice(0, TARGET);
+      finalVenues = candidates.slice(0, 8).map((v: any, i: number) => ({
+        ...v,
+        descriptors: discoveryResult.descriptors?.[i] || [],
+      }));
+      suggested_chips = discoveryResult.chips || [];
 
-        finalResults = confident;
-      } catch (e: any) {
-        console.warn('⚠️ STEP 4b: Batch re-ranking failed:', e.message);
-        finalResults = pool.slice(0, TARGET);
+    } else {
+      // Normal search mode — full confidence scoring, descriptors, summary and chips
+      const comprehensiveResult = await safe('comprehensive-llm', () => callLLM(
+        OPENAI_KEY,
+        `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues honestly and only include genuinely suitable matches.`,
+        `The user searched for "${searchTerm}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.6. Order by confidence descending. Maximum 5 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short 2-4 word descriptor tags. Never use generic terms like "restaurant" or "cafe".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
+        [
+          {
+            type: 'function',
+            function: {
+              name: 'comprehensive_venue_analysis',
+              description: 'Score venues, generate descriptors, summary and chips',
+              parameters: {
+                type: 'object',
+                properties: {
+                  rankings: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        index: { type: 'number' },
+                        confidence: { type: 'number' },
+                        reasoning: { type: 'string' }
+                      },
+                      required: ['index', 'confidence', 'reasoning']
+                    }
+                  },
+                  descriptors: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
+                  summary: {
+                    type: 'object',
+                    properties: {
+                      intro: { type: 'string' },
+                      bullets: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: { name: { type: 'string' }, note: { type: 'string' } },
+                          required: ['name', 'note']
+                        }
+                      }
+                    },
+                    required: ['intro', 'bullets']
+                  },
+                  chips: { type: 'array', items: { type: 'string' } }
+                },
+                required: ['rankings', 'descriptors', 'chips'],
+                additionalProperties: false
+              }
+            }
+          }
+        ],
+        { type: 'function', function: { name: 'comprehensive_venue_analysis' } }
+      ), { rankings: [], descriptors: [], summary: null, chips: [] });
+
+      const rankings = comprehensiveResult.rankings || [];
+      finalVenues = rankings
+        .filter((r: any) => r.confidence >= 0.6)
+        .slice(0, 5)
+        .map((r: any, i: number) => {
+          const venue = candidates[r.index - 1];
+          if (!venue) return null;
+          return {
+            ...venue,
+            descriptors: comprehensiveResult.descriptors?.[i] || [],
+            llm_confidence: r.confidence,
+            reasoning_explanation: r.reasoning,
+          };
+        })
+        .filter(Boolean);
+
+      // Backfill if fewer than 3 results passed confidence threshold
+      if (finalVenues.length < 3) {
+        const usedIndices = new Set(rankings.map((r: any) => r.index - 1));
+        const backfill = candidates
+          .filter((_: any, i: number) => !usedIndices.has(i))
+          .slice(0, 5 - finalVenues.length)
+          .map((v: any) => ({ ...v, descriptors: [] }));
+        finalVenues.push(...backfill);
       }
 
-      if (finalResults.length < TARGET) {
-        const ids = new Set(finalResults.map((v: any) => v.place_id));
-        const fillers = dedup(scoredVenues)
-          .filter((v: any) => !ids.has(v.place_id))
-          .slice(0, TARGET - finalResults.length);
-        finalResults = [...finalResults, ...fillers];
-      }
+      search_summary = comprehensiveResult.summary || null;
+      suggested_chips = comprehensiveResult.chips || [];
     }
+
+    console.log(`⏱️ Comprehensive LLM duration: ${Date.now() - llmCallStart}ms`);
+    console.log(`✅ COMPREHENSIVE LLM complete — ${finalVenues.length} venues selected`);
 
     // ─── STEP 4c: Apply refinement post-processing ───
     if (refinementIntent) {
       console.log('🔄 STEP 4c: Applying refinement post-processing...');
 
-      // Collect all previous venue names from session context to exclude
       const allPreviousNames = new Set<string>();
       for (const s of session_context) {
         for (const r of (s.results || [])) {
@@ -758,28 +792,23 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Filter out venues that appeared in any previous search or in keep_results
       const keepNamesLower = new Set(refinementIntent.keep_results.map((n: string) => n.toLowerCase().trim()));
-      const newCandidates = finalResults.filter((v: any) => {
+      const newCandidates = finalVenues.filter((v: any) => {
         const nameLower = v.name.toLowerCase().trim();
         return !allPreviousNames.has(nameLower) && !keepNamesLower.has(nameLower);
       });
 
-      // Take only replace_count new venues
       const replacements = newCandidates.slice(0, refinementIntent.replace_count);
 
-      // Retrieve kept venues from previous session results (preserving original order)
       const lastSearch = session_context[session_context.length - 1];
       const previousResults = lastSearch?.results || [];
       const keptVenues: any[] = [];
       for (const prev of previousResults) {
         if (keepNamesLower.has(prev.name.toLowerCase().trim())) {
-          // Build a venue object from session context data
-          const matchInCurrent = finalResults.find((v: any) => v.name.toLowerCase().trim() === prev.name.toLowerCase().trim());
+          const matchInCurrent = finalVenues.find((v: any) => v.name.toLowerCase().trim() === prev.name.toLowerCase().trim());
           if (matchInCurrent) {
             keptVenues.push(matchInCurrent);
           } else {
-            // Use full venue data from session context (now includes all fields)
             keptVenues.push({
               name: prev.name,
               address: prev.address || '',
@@ -801,107 +830,21 @@ Deno.serve(async (req) => {
         }
       }
 
-      finalResults = [...keptVenues, ...replacements];
+      finalVenues = [...keptVenues, ...replacements];
       console.log(`✅ STEP 4c: Kept ${keptVenues.length} venues, added ${replacements.length} replacements`);
     }
 
     // ─── STEP 5: Photo enrichment ───
-    console.log(`🖼️ STEP 5: Photos for ${finalResults.length} venues...`);
+    console.log(`🖼️ STEP 5: Photos for ${finalVenues.length} venues...`);
     const enriched = await Promise.all(
-      finalResults.map(async (venue: any) => {
+      finalVenues.map(async (venue: any) => {
         if (!venue.place_id) return { ...venue, image_urls: [] };
         const urls = await safe('photos', () => getPlacePhotos(GOOGLE_KEY, venue.place_id, 4), []);
         return { ...venue, image_urls: urls };
       }),
     );
 
-    // ─── STEPS 6, 7 & CHIPS: Single consolidated LLM call ───
-    console.log('🤖 STEPS 6, 7 & CHIPS: Consolidated LLM call...');
-
-    const venueList = enriched.map((v: any) => ({
-      name: v.name,
-      cuisine_type: v.cuisine_type,
-      rating: v.rating,
-      price_level: v.price_level,
-      distance_km: v.distance_km,
-      reasoning_explanation: v.reasoning_explanation || null,
-    }));
-
-    const llmCallStart = Date.now();
-    console.log('📊 Venues sent to Steps 6/7/chips:', venueList.length);
-
-    const consolidatedResult = await safe('steps-6-7-chips', () => callLLM(
-      OPENAI_KEY,
-      `You are a knowledgeable local friend who knows the city's food and drink scene intimately.`,
-      `The user searched for "${searchTerm}" in ${location_name}.
-
-Here are the top venues to describe:
-${venueList.map((v: any, i: number) => `${i + 1}. ${v.name} (${v.cuisine_type}, ${v.rating}★, ${v.price_level || 'price unknown'}, ${v.distance_km?.toFixed(1)}km away${v.reasoning_explanation ? ` — ${v.reasoning_explanation}` : ''})`).join('\n')}
-
-Return a JSON object with exactly these fields:
-- "descriptors": an array of ${venueList.length} arrays, one per venue in order, each containing exactly 3 short 2-4 word descriptor tags capturing vibe, food/drink style, or standout quality. Never use generic terms like "restaurant" or "cafe".
-- "summary": an object with "intro" (one warm sentence explaining why these venues match the query) and "bullets" (array of {name, note} objects, one per venue, each note being one specific compelling sentence about that venue for this query). Write like a trusted local friend, not a search engine.${isDiscoveryMode ? ' Skip summary since this is a discovery feed with no specific query.' : ''}
-- "chips": an array of 3-4 short follow-up search suggestions related to this query and location.`,
-      [
-        {
-          type: 'function',
-          function: {
-            name: 'generate_venue_content',
-            description: 'Generate descriptors, summary and chips for venue results',
-            parameters: {
-              type: 'object',
-              properties: {
-                descriptors: {
-                  type: 'array',
-                  items: { type: 'array', items: { type: 'string' } },
-                  description: 'Array of descriptor arrays, one per venue'
-                },
-                summary: {
-                  type: 'object',
-                  properties: {
-                    intro: { type: 'string' },
-                    bullets: {
-                      type: 'array',
-                      items: {
-                        type: 'object',
-                        properties: {
-                          name: { type: 'string' },
-                          note: { type: 'string' }
-                        },
-                        required: ['name', 'note']
-                      }
-                    }
-                  },
-                  required: ['intro', 'bullets']
-                },
-                chips: {
-                  type: 'array',
-                  items: { type: 'string' }
-                }
-              },
-              required: ['descriptors', 'chips'],
-              additionalProperties: false
-            }
-          }
-        }
-      ],
-      { type: 'function', function: { name: 'generate_venue_content' } },
-      { max_tokens: 1200, temperature: 0 },
-    ), { descriptors: [], summary: null, chips: [] });
-
-    console.log('⏱️ Steps 6/7/chips LLM duration:', Date.now() - llmCallStart, 'ms');
-
-    // Apply descriptors to venues
-    const resultsWithDescriptors = enriched.map((v: any, i: number) => ({
-      ...v,
-      descriptors: consolidatedResult.descriptors?.[i] || [],
-    }));
-
-    // Extract summary and chips
-    const search_summary = isDiscoveryMode ? null : (consolidatedResult.summary || null);
-    const suggested_chips: string[] = consolidatedResult.chips || [];
-
-    console.log('✅ STEPS 6, 7 & CHIPS complete');
+    const resultsWithDescriptors = enriched;
 
     // ─── Strip internal fields ───
     const resultsForFrontend = resultsWithDescriptors.map(({ isRelaxedAdmission, unknownPrice, ...rest }: any) => rest);
