@@ -777,7 +777,7 @@ Deno.serve(async (req) => {
       }
 
       // Separate overflow venues (>2km) from finalVenues
-      const overflowVenues = finalVenues
+      overflowVenues = finalVenues
         .filter((v: any) => v.distance_km > 2.0)
         .slice(0, 3)
         .map((v: any) => ({
