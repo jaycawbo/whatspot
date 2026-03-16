@@ -351,43 +351,39 @@ Deno.serve(async (req) => {
       console.log('⏩ DISCOVERY MODE: Skipping Steps 1, 1b (no query refinement needed)');
     }
 
-    // ─── Street-level precision detection (skip for discovery) ───
+    // ─── Street-level precision detection + Step 1c (skip for discovery) ───
     const STREET_IDENTIFIERS = /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i;
     const PROXIMITY_WORDS = /\b(near|around|by|close\s+to|nearby|near\s+me|off\s+of|around\s+the\s+corner)\b/i;
     let isOnStreetSearch = false;
     let detectedStreetName = '';
-    let detectedStreetBase = ''; // Just the name part without suffix, e.g. "college"
+    let detectedStreetBase = '';
+    let refinementIntent: { is_refinement: boolean; keep_results: string[]; replace_count: number; refined_query: string } | null = null;
 
+    if (!isDiscoveryMode) {
     // Check both searchTerm AND location_name for street identifiers
     const hasProximityWords = PROXIMITY_WORDS.test(searchTerm || '');
     const streetSourceText = `${searchTerm || ''} ${location_name || ''} ${refinedSearchTerm || ''}`;
 
     if (!hasProximityWords && STREET_IDENTIFIERS.test(streetSourceText)) {
       isOnStreetSearch = true;
-      // Extract street name — prefer location_name if it has a street identifier, else from searchTerm
       let streetSource = '';
       if (STREET_IDENTIFIERS.test(location_name || '')) {
         streetSource = (location_name || '').split(',')[0].trim();
       } else {
-        // Extract from searchTerm — find the word before the street identifier
         const match = streetSourceText.match(/(\w+)\s+(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i);
         if (match) {
           streetSource = `${match[1]} ${match[2]}`;
         }
       }
       detectedStreetName = streetSource;
-      // Extract base name (e.g. "college" from "College Street")
       detectedStreetBase = streetSource.replace(/\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/gi, '').trim().toLowerCase();
       console.log(`📍 On-street search detected: "${detectedStreetName}" (base: "${detectedStreetBase}") — strict address filtering applied`);
-      // Use 3km radius to gather enough candidates along the full street length
       admission.maxRadius = 3;
     } else if (hasProximityWords) {
       console.log(`📍 Proximity words detected in query — using standard radius logic`);
     }
 
     // ─── STEP 1c: Refinement intent detection ───
-    let refinementIntent: { is_refinement: boolean; keep_results: string[]; replace_count: number; refined_query: string } | null = null;
-
     if (Array.isArray(session_context) && session_context.length > 0) {
       console.log('🔄 STEP 1c: Checking for refinement intent...');
       try {
@@ -431,6 +427,7 @@ Deno.serve(async (req) => {
         refinementIntent = null;
       }
     }
+    } // end !isDiscoveryMode for street detection + step 1c
 
     // ─── STEP 2: Google Places broad search ───
     const reversePriceLevelMap: Record<string, string[]> = {
