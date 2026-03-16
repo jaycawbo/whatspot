@@ -75,10 +75,11 @@ async function fetchWithConcurrency<T, R>(items: T[], fn: (item: T) => Promise<R
 
 // ─── LLM helper ───
 
-const AI_GATEWAY = 'https://ai.gateway.lovable.dev/v1/chat/completions';
-const LLM_MODEL = 'openai/gpt-5-mini';
+const OPENAI_KEY = Deno.env.get('CHATGPT_API_KEY') ?? '';
+const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+const LLM_MODEL = 'gpt-4o-mini';
 
-async function callLLM(apiKey: string, systemPrompt: string, userPrompt: string, tools?: any[], toolChoice?: any): Promise<any> {
+async function callLLM(apiKey: string, systemPrompt: string, userPrompt: string, tools?: any[], toolChoice?: any, options?: { max_tokens?: number; temperature?: number }): Promise<any> {
   const body: any = {
     model: LLM_MODEL,
     messages: [
@@ -90,8 +91,10 @@ async function callLLM(apiKey: string, systemPrompt: string, userPrompt: string,
     body.tools = tools;
     body.tool_choice = toolChoice;
   }
+  if (options?.max_tokens !== undefined) body.max_tokens = options.max_tokens;
+  if (options?.temperature !== undefined) body.temperature = options.temperature;
 
-  const resp = await fetch(AI_GATEWAY, {
+  const resp = await fetch(OPENAI_ENDPOINT, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -246,9 +249,8 @@ Deno.serve(async (req) => {
     let location_name = originalLocationName;
 
     const GOOGLE_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY');
-    const LOVABLE_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!GOOGLE_KEY) throw new Error('GOOGLE_PLACES_API_KEY not configured');
-    if (!LOVABLE_KEY) throw new Error('LOVABLE_API_KEY not configured');
+    if (!OPENAI_KEY) throw new Error('CHATGPT_API_KEY not configured');
 
     const isDiscoveryMode = mode === 'discovery' || (!query && mode !== 'browse_category');
     const searchTerm = isDiscoveryMode ? 'restaurant OR bar OR cafe' : (mode === 'browse_category' && category ? category : query);
@@ -289,18 +291,20 @@ Deno.serve(async (req) => {
 
     const [refinementResult, locationDetectionResult] = await Promise.all([
       safe('step1-refinement', () => callLLM(
-        LOVABLE_KEY,
+        OPENAI_KEY,
         'You extract cuisine keywords from search queries for Google Places API. IMPORTANT: Do NOT include any location names, street names, city names, or neighbourhood names in your output. Only return food/cuisine/dining keywords.',
         `The user is searching for "${searchTerm}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "Toronto", etc.).\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise cuisine/food keywords suitable for a Google Places search.${sessionContextString}`,
         [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'refine_query' } },
+        { max_tokens: 100, temperature: 0 },
       ), null),
       safe('step1b-location', () => callLLM(
-        LOVABLE_KEY,
+        OPENAI_KEY,
         'You detect neighbourhood, district, or city names in search queries.',
         `Given the search query "${searchTerm}" and current location "${location_name}", identify if the query mentions a specific neighbourhood, district, or city name that is different from or more specific than the current location. Return the detected location string or "NONE" if no specific location is mentioned.`,
         [{ type: 'function', function: { name: 'detect_location', description: 'Return detected location or NONE', parameters: { type: 'object', properties: { detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' } }, required: ['detected_location'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'detect_location' } },
+        { max_tokens: 100, temperature: 0 },
       ), null),
     ]);
 
@@ -391,7 +395,7 @@ Deno.serve(async (req) => {
         const previousResultNames = (lastSearch?.results || []).map((r: any) => r.name);
 
         refinementIntent = await callLLM(
-          LOVABLE_KEY,
+          OPENAI_KEY,
           'You detect whether a search query is asking to modify/replace specific results from a previous search, or is a fresh new search.',
           `Given the query "${searchTerm}" and the session history, determine if this query is asking to modify previous results rather than start a fresh search. Specifically detect phrases like "replace", "swap", "different option", "something else", "instead of", "change #[number]", or "not that one".\n\nPrevious search query: "${lastSearch?.query || ''}"\nPrevious results: ${previousResultNames.map((n: string, i: number) => `#${i + 1} ${n}`).join(', ')}\n\nReturn a JSON object.${sessionContextString}`,
           [{
@@ -413,6 +417,7 @@ Deno.serve(async (req) => {
             },
           }],
           { type: 'function', function: { name: 'detect_refinement' } },
+          { max_tokens: 100, temperature: 0 },
         );
 
         if (refinementIntent?.is_refinement) {
@@ -671,7 +676,7 @@ Deno.serve(async (req) => {
         ).join('\n');
 
         const batchResult = await callLLM(
-          LOVABLE_KEY,
+          OPENAI_KEY,
           'You assess how well venues match a user search query. Evaluate ALL venues and return confidence scores.',
           `The user searched for "${searchTerm}" in ${location_name}.\n\nHere are the venues to evaluate:\n${venueListText}\n\nFor EACH venue, assess how well it matches the search query. Consider occasion suitability, culinary style, ambiance, and dietary needs. Return confidence scores for ALL venues.${sessionContextString}`,
           [
@@ -703,6 +708,7 @@ Deno.serve(async (req) => {
             },
           ],
           { type: 'function', function: { name: 'assess_venues_batch' } },
+          { max_tokens: 400, temperature: 0 },
         );
 
         // Map LLM results back to venues
@@ -825,7 +831,7 @@ Deno.serve(async (req) => {
     console.log('📊 Venues sent to Steps 6/7/chips:', venueList.length);
 
     const consolidatedResult = await safe('steps-6-7-chips', () => callLLM(
-      LOVABLE_KEY,
+      OPENAI_KEY,
       `You are a knowledgeable local friend who knows the city's food and drink scene intimately.`,
       `The user searched for "${searchTerm}" in ${location_name}.
 
@@ -879,7 +885,8 @@ Return a JSON object with exactly these fields:
           }
         }
       ],
-      { type: 'function', function: { name: 'generate_venue_content' } }
+      { type: 'function', function: { name: 'generate_venue_content' } },
+      { max_tokens: 500, temperature: 0 },
     ), { descriptors: [], summary: null, chips: [] });
 
     console.log('⏱️ Steps 6/7/chips LLM duration:', Date.now() - llmCallStart, 'ms');
