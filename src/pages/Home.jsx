@@ -94,6 +94,7 @@ export default function Home() {
           const entry = {
             query: queryText,
             timestamp: Date.now(),
+            search_summary: res.search_summary || null,
             results: res.results.map(r => ({
               name: r.name,
               cuisine_type: r.cuisine_type,
