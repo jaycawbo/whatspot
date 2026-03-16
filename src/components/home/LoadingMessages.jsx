@@ -11,7 +11,7 @@ const messages = [
 const longWaitMessages = [
   'Still working on it — hang tight...',
   'Digging a little deeper for the best spots...',
-  'This one's taking a moment — thanks for your patience...',
+  "This one's taking a moment — thanks for your patience...",
 ];
 
 export default function LoadingMessages() {
