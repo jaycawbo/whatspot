@@ -249,9 +249,8 @@ Deno.serve(async (req) => {
     let location_name = originalLocationName;
 
     const GOOGLE_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY');
-    const LOVABLE_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!GOOGLE_KEY) throw new Error('GOOGLE_PLACES_API_KEY not configured');
-    if (!LOVABLE_KEY) throw new Error('LOVABLE_API_KEY not configured');
+    if (!OPENAI_KEY) throw new Error('CHATGPT_API_KEY not configured');
 
     const isDiscoveryMode = mode === 'discovery' || (!query && mode !== 'browse_category');
     const searchTerm = isDiscoveryMode ? 'restaurant OR bar OR cafe' : (mode === 'browse_category' && category ? category : query);
