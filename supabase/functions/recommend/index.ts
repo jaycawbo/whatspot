@@ -809,61 +809,87 @@ Deno.serve(async (req) => {
       }),
     );
 
-    // ─── STEPS 6, 7 & chips: Parallel descriptors + summary + chips ───
-    console.log('🤖 STEPS 6 & 7: Generating descriptors, summary, and chips in parallel...');
+    // ─── STEPS 6, 7 & CHIPS: Single consolidated LLM call ───
+    console.log('🤖 STEPS 6, 7 & CHIPS: Consolidated LLM call...');
 
-    const venueDescForSummary = enriched.map((v: any) =>
-      `${v.name} (${v.cuisine_type}, ${v.rating}★${v.reasoning_explanation ? ` — ${v.reasoning_explanation}` : ''})`
-    ).join('\n');
-    const venueListForDesc = enriched.map((v: any) => `- ${v.name}`).join('\n');
+    const venueList = enriched.map((v: any) => ({
+      name: v.name,
+      cuisine_type: v.cuisine_type,
+      rating: v.rating,
+      price_level: v.price_level,
+      distance_km: v.distance_km,
+      reasoning_explanation: v.reasoning_explanation || null,
+    }));
 
-    const [descriptorResult, summaryResult, chipResult] = await Promise.all([
-      safe('step6-descriptors', () => callLLM(
-        LOVABLE_KEY,
-        'You generate short descriptive tags for venues. Do NOT include generic words like restaurant, cafe, bar, eatery, dining, food, place.',
-        `For each venue in ${location_name}, generate 2-3 SHORT descriptive tags (max 3-4 words each) capturing unique characteristics like ambiance, vibe, or standout qualities.\n\nVenues:\n${venueListForDesc}`,
-        [{ type: 'function', function: { name: 'generate_descriptors', description: 'Return descriptors per venue', parameters: { type: 'object', properties: { venues: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, descriptors: { type: 'array', items: { type: 'string' } } }, required: ['name', 'descriptors'] } } }, required: ['venues'], additionalProperties: false } } }],
-        { type: 'function', function: { name: 'generate_descriptors' } },
-      ), null),
-      // Skip Step 7 summary for discovery mode
-      isDiscoveryMode
-        ? Promise.resolve(null)
-        : safe('step7-summary', () => callLLM(
-            LOVABLE_KEY,
-            'You are a knowledgeable local friend who knows the city\'s food and drink scene intimately. Write warm, specific, confident recommendations — never generic.',
-            `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescForSummary}\n\nReturn a short 1-sentence intro explaining the overall theme of these picks, then a bullet point for each venue (1 sentence each) explaining what makes it special for this query. Sound like a trusted local friend, not a search engine.${sessionContextString}`,
-            [{ type: 'function', function: { name: 'generate_summary', description: 'Return a conversational search summary with intro and per-venue bullets', parameters: { type: 'object', properties: { intro: { type: 'string', description: 'One sentence conversational intro about the overall picks' }, bullets: { type: 'array', items: { type: 'object', properties: { name: { type: 'string', description: 'Venue name' }, note: { type: 'string', description: 'One sentence about why this venue is great for the query' } }, required: ['name', 'note'] }, description: 'Per-venue bullet points' } }, required: ['intro', 'bullets'], additionalProperties: false } } }],
-            { type: 'function', function: { name: 'generate_summary' } },
-          ), null),
-      safe('chips', () => callLLM(
-        LOVABLE_KEY,
-        'You suggest related search queries.',
-        `Based on the search "${searchTerm}", suggest 3-4 related search queries the user might want to try next.`,
-        [{ type: 'function', function: { name: 'suggest_chips', description: 'Return suggested search queries', parameters: { type: 'object', properties: { chips: { type: 'array', items: { type: 'string' } } }, required: ['chips'], additionalProperties: false } } }],
-        { type: 'function', function: { name: 'suggest_chips' } },
-      ), null),
-    ]);
+    const consolidatedResult = await safe('steps-6-7-chips', () => callLLM(
+      LOVABLE_KEY,
+      `You are a knowledgeable local friend who knows the city's food and drink scene intimately.`,
+      `The user searched for "${searchTerm}" in ${location_name}.
 
-    // Apply descriptors
-    let resultsWithDescriptors = enriched;
-    if (descriptorResult?.venues) {
-      const genericTerms = ['restaurant', 'cafe', 'bar', 'eatery', 'dining', 'food', 'place'];
-      const descMap = new Map<string, string[]>();
-      for (const v of descriptorResult.venues) {
-        const filtered = (v.descriptors || []).filter(
-          (d: string) => !genericTerms.some((g) => d.toLowerCase() === g || d.toLowerCase() === `${g}s`),
-        );
-        descMap.set(v.name, filtered.slice(0, 4));
-      }
-      resultsWithDescriptors = enriched.map((v: any) => ({ ...v, descriptors: descMap.get(v.name) || [] }));
-    } else {
-      resultsWithDescriptors = enriched.map((v: any) => ({ ...v, descriptors: [] }));
-    }
+Here are the top venues to describe:
+${venueList.map((v: any, i: number) => `${i + 1}. ${v.name} (${v.cuisine_type}, ${v.rating}★, ${v.price_level || 'price unknown'}, ${v.distance_km?.toFixed(1)}km away${v.reasoning_explanation ? ` — ${v.reasoning_explanation}` : ''})`).join('\n')}
 
-    const search_summary = summaryResult && summaryResult.intro ? summaryResult : (summaryResult?.summary || null);
-    if (search_summary) console.log('✅ STEP 7: Summary generated');
-    const suggested_chips: string[] = chipResult?.chips || [];
-    console.log('✅ STEPS 6 & 7 complete');
+Return a JSON object with exactly these fields:
+- "descriptors": an array of ${venueList.length} arrays, one per venue in order, each containing exactly 3 short 2-4 word descriptor tags capturing vibe, food/drink style, or standout quality. Never use generic terms like "restaurant" or "cafe".
+- "summary": an object with "intro" (one warm sentence explaining why these venues match the query) and "bullets" (array of {name, note} objects, one per venue, each note being one specific compelling sentence about that venue for this query). Write like a trusted local friend, not a search engine.${isDiscoveryMode ? ' Skip summary since this is a discovery feed with no specific query.' : ''}
+- "chips": an array of 3-4 short follow-up search suggestions related to this query and location.`,
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'generate_venue_content',
+            description: 'Generate descriptors, summary and chips for venue results',
+            parameters: {
+              type: 'object',
+              properties: {
+                descriptors: {
+                  type: 'array',
+                  items: { type: 'array', items: { type: 'string' } },
+                  description: 'Array of descriptor arrays, one per venue'
+                },
+                summary: {
+                  type: 'object',
+                  properties: {
+                    intro: { type: 'string' },
+                    bullets: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          name: { type: 'string' },
+                          note: { type: 'string' }
+                        },
+                        required: ['name', 'note']
+                      }
+                    }
+                  },
+                  required: ['intro', 'bullets']
+                },
+                chips: {
+                  type: 'array',
+                  items: { type: 'string' }
+                }
+              },
+              required: ['descriptors', 'chips'],
+              additionalProperties: false
+            }
+          }
+        }
+      ],
+      { type: 'function', function: { name: 'generate_venue_content' } }
+    ), { descriptors: [], summary: null, chips: [] });
+
+    // Apply descriptors to venues
+    const resultsWithDescriptors = enriched.map((v: any, i: number) => ({
+      ...v,
+      descriptors: consolidatedResult.descriptors?.[i] || [],
+    }));
+
+    // Extract summary and chips
+    const search_summary = isDiscoveryMode ? null : (consolidatedResult.summary || null);
+    const suggested_chips: string[] = consolidatedResult.chips || [];
+
+    console.log('✅ STEPS 6, 7 & CHIPS complete');
 
     // ─── Strip internal fields ───
     const resultsForFrontend = resultsWithDescriptors.map(({ isRelaxedAdmission, unknownPrice, ...rest }: any) => rest);
