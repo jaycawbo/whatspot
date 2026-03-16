@@ -59,7 +59,7 @@ export default function Home() {
 
       try {
         const timeout = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('TIMEOUT')), 45000)
+          setTimeout(() => reject(new Error('TIMEOUT')), 90000)
         );
 
         const res = await Promise.race([
