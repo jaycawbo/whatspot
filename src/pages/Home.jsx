@@ -279,7 +279,7 @@ export default function Home() {
             <RelaxationBanner relaxations={state.appliedRelaxations} />
 
             {/* Search summary */}
-            {!state.isLoading && <SearchSummary summary={state.searchSummary} />}
+            {!state.isLoading && state.results?.length > 0 && <SearchSummary summary={state.searchSummary} />}
 
             {/* Results */}
             {state.view === 'list' ? (
