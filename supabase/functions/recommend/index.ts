@@ -886,7 +886,7 @@ Return a JSON object with exactly these fields:
         }
       ],
       { type: 'function', function: { name: 'generate_venue_content' } },
-      { max_tokens: 500, temperature: 0 },
+      { max_tokens: 1200, temperature: 0 },
     ), { descriptors: [], summary: null, chips: [] });
 
     console.log('⏱️ Steps 6/7/chips LLM duration:', Date.now() - llmCallStart, 'ms');
