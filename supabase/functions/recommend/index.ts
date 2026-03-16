@@ -660,13 +660,14 @@ Deno.serve(async (req) => {
     let finalVenues: any[] = [];
     let search_summary: any = null;
     let suggested_chips: string[] = [];
+    let overflowVenues: any[] = [];
 
     if (isDiscoveryMode) {
       // Discovery mode — skip confidence scoring, only generate descriptors and chips
       const discoveryResult = await safe('discovery-llm', () => callLLM(
         OPENAI_KEY,
         `You are a knowledgeable local friend who knows the city's food and drink scene intimately.`,
-        `Here are nearby venues to describe:\n${candidateList}\n\nReturn a JSON object with:\n- "descriptors": array of ${candidates.length} arrays, one per venue in order, each containing exactly 3 short 2-4 word descriptor tags. Never use generic terms like "restaurant" or "cafe".\n- "chips": array of 3-4 short follow-up search suggestions for discovering more venues nearby.`,
+        `Here are nearby venues to describe:\n${candidateList}\n\nReturn a JSON object with:\n- "descriptors": array of ${candidates.length} arrays, one per venue in order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "chips": array of 3-4 short follow-up search suggestions for discovering more venues nearby.`,
         [
           {
             type: 'function',
@@ -699,7 +700,7 @@ Deno.serve(async (req) => {
       const comprehensiveResult = await safe('comprehensive-llm', () => callLLM(
         OPENAI_KEY,
         `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues honestly and only include genuinely suitable matches.`,
-        `The user searched for "${searchTerm}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.5. Order by confidence descending. Maximum 5 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short 2-4 word descriptor tags. Never use generic terms like "restaurant" or "cafe".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
+        `The user searched for "${searchTerm}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.5. Order by confidence descending. Maximum 5 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
         [
           {
             type: 'function',
@@ -745,7 +746,8 @@ Deno.serve(async (req) => {
             }
           }
         ],
-        { type: 'function', function: { name: 'comprehensive_venue_analysis' } }
+        { type: 'function', function: { name: 'comprehensive_venue_analysis' } },
+        { max_tokens: 1500, temperature: 0 }
       ), { rankings: [], descriptors: [], summary: null, chips: [] });
 
       const rankings = comprehensiveResult.rankings || [];
@@ -773,6 +775,20 @@ Deno.serve(async (req) => {
           .map((v: any) => ({ ...v, descriptors: [], reasoning_explanation: '' }));
         finalVenues.push(...backfill);
       }
+
+      // Separate overflow venues (>2km) from finalVenues
+      overflowVenues = finalVenues
+        .filter((v: any) => v.distance_km > 2.0)
+        .slice(0, 3)
+        .map((v: any) => ({
+          name: v.name,
+          address: v.address,
+          distance_km: v.distance_km,
+          rating: v.rating,
+          cuisine_type: v.cuisine_type,
+          descriptors: v.descriptors || [],
+        }));
+      finalVenues = finalVenues.filter((v: any) => !(v.distance_km > 2.0));
 
       search_summary = comprehensiveResult.summary || null;
       suggested_chips = comprehensiveResult.chips || [];
@@ -858,6 +874,7 @@ Deno.serve(async (req) => {
         relaxation_applied: relaxation_level > 0,
         relaxation_level,
         gated: false,
+        nearby_overflow: overflowVenues || [],
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
