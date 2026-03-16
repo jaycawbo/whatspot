@@ -250,8 +250,14 @@ Deno.serve(async (req) => {
     if (!GOOGLE_KEY) throw new Error('GOOGLE_PLACES_API_KEY not configured');
     if (!LOVABLE_KEY) throw new Error('LOVABLE_API_KEY not configured');
 
-    const searchTerm = mode === 'browse_category' && category ? category : query;
-    console.log(`🎯 recommend: "${searchTerm}" at (${lat}, ${lon}) relaxation=${relaxation_level}`);
+    const isDiscoveryMode = mode === 'discovery' || (!query && mode !== 'browse_category');
+    const searchTerm = isDiscoveryMode ? 'restaurant OR bar OR cafe' : (mode === 'browse_category' && category ? category : query);
+    
+    if (isDiscoveryMode) {
+      console.log(`🎯 DISCOVERY MODE: returning top venues near (${lat}, ${lon})`);
+    } else {
+      console.log(`🎯 recommend: "${searchTerm}" at (${lat}, ${lon}) relaxation=${relaxation_level}`);
+    }
     console.log(`🔧 Filters received — open_now: ${open_now}, price_levels: ${JSON.stringify(price_levels)}, radius_km: ${radius_km}`);
 
     // ─── Admission thresholds ───
@@ -274,9 +280,12 @@ Deno.serve(async (req) => {
       admission.minReviewCount = 10;
     }
 
-    // ─── STEPS 1 & 1b: Parallel query refinement + neighbourhood detection ───
-    console.log('🤖 STEPS 1 & 1b: Running in parallel...');
     let refinedSearchTerm = searchTerm;
+
+    // ─── STEPS 1, 1b, 1c: Skip entirely for discovery mode ───
+    if (!isDiscoveryMode) {
+    console.log('🤖 STEPS 1 & 1b: Running in parallel...');
+    let refinedSearchTermResult = searchTerm;
 
     const [refinementResult, locationDetectionResult] = await Promise.all([
       safe('step1-refinement', () => callLLM(
@@ -297,9 +306,10 @@ Deno.serve(async (req) => {
 
     // Apply Step 1 result
     if (refinementResult?.keywords && refinementResult.keywords.toLowerCase() !== searchTerm.toLowerCase()) {
-      refinedSearchTerm = refinementResult.keywords;
-      console.log(`✅ STEP 1: Refined to: "${refinedSearchTerm}"`);
+      refinedSearchTermResult = refinementResult.keywords;
+      console.log(`✅ STEP 1: Refined to: "${refinedSearchTermResult}"`);
     }
+    refinedSearchTerm = refinedSearchTermResult;
 
     // Apply Step 1b result
     if (locationDetectionResult?.detected_location && locationDetectionResult.detected_location !== 'NONE') {
@@ -337,44 +347,43 @@ Deno.serve(async (req) => {
       }
     }
     console.log('✅ STEPS 1 & 1b complete');
+    } else {
+      console.log('⏩ DISCOVERY MODE: Skipping Steps 1, 1b (no query refinement needed)');
+    }
 
-    // ─── Street-level precision detection ───
+    // ─── Street-level precision detection + Step 1c (skip for discovery) ───
     const STREET_IDENTIFIERS = /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i;
     const PROXIMITY_WORDS = /\b(near|around|by|close\s+to|nearby|near\s+me|off\s+of|around\s+the\s+corner)\b/i;
     let isOnStreetSearch = false;
     let detectedStreetName = '';
-    let detectedStreetBase = ''; // Just the name part without suffix, e.g. "college"
+    let detectedStreetBase = '';
+    let refinementIntent: { is_refinement: boolean; keep_results: string[]; replace_count: number; refined_query: string } | null = null;
 
+    if (!isDiscoveryMode) {
     // Check both searchTerm AND location_name for street identifiers
     const hasProximityWords = PROXIMITY_WORDS.test(searchTerm || '');
     const streetSourceText = `${searchTerm || ''} ${location_name || ''} ${refinedSearchTerm || ''}`;
 
     if (!hasProximityWords && STREET_IDENTIFIERS.test(streetSourceText)) {
       isOnStreetSearch = true;
-      // Extract street name — prefer location_name if it has a street identifier, else from searchTerm
       let streetSource = '';
       if (STREET_IDENTIFIERS.test(location_name || '')) {
         streetSource = (location_name || '').split(',')[0].trim();
       } else {
-        // Extract from searchTerm — find the word before the street identifier
         const match = streetSourceText.match(/(\w+)\s+(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i);
         if (match) {
           streetSource = `${match[1]} ${match[2]}`;
         }
       }
       detectedStreetName = streetSource;
-      // Extract base name (e.g. "college" from "College Street")
       detectedStreetBase = streetSource.replace(/\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/gi, '').trim().toLowerCase();
       console.log(`📍 On-street search detected: "${detectedStreetName}" (base: "${detectedStreetBase}") — strict address filtering applied`);
-      // Use 3km radius to gather enough candidates along the full street length
       admission.maxRadius = 3;
     } else if (hasProximityWords) {
       console.log(`📍 Proximity words detected in query — using standard radius logic`);
     }
 
     // ─── STEP 1c: Refinement intent detection ───
-    let refinementIntent: { is_refinement: boolean; keep_results: string[]; replace_count: number; refined_query: string } | null = null;
-
     if (Array.isArray(session_context) && session_context.length > 0) {
       console.log('🔄 STEP 1c: Checking for refinement intent...');
       try {
@@ -418,6 +427,7 @@ Deno.serve(async (req) => {
         refinementIntent = null;
       }
     }
+    } // end !isDiscoveryMode for street detection + step 1c
 
     // ─── STEP 2: Google Places broad search ───
     const reversePriceLevelMap: Record<string, string[]> = {
@@ -630,10 +640,10 @@ Deno.serve(async (req) => {
       });
     };
 
-    const TARGET = 5;
+    const TARGET = isDiscoveryMode ? 8 : 5;
     const LLM_THRESHOLD = 0.6;
     const LLM_BATCH = 10;
-    const skipLLM = isSimpleQuery(searchTerm, refinedSearchTerm) || scoredVenues.length < 3;
+    const skipLLM = isDiscoveryMode || isSimpleQuery(searchTerm, refinedSearchTerm) || scoredVenues.length < 3;
 
     let finalResults: any[] = [];
 
@@ -815,13 +825,16 @@ Deno.serve(async (req) => {
         [{ type: 'function', function: { name: 'generate_descriptors', description: 'Return descriptors per venue', parameters: { type: 'object', properties: { venues: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, descriptors: { type: 'array', items: { type: 'string' } } }, required: ['name', 'descriptors'] } } }, required: ['venues'], additionalProperties: false } } }],
         { type: 'function', function: { name: 'generate_descriptors' } },
       ), null),
-      safe('step7-summary', () => callLLM(
-        LOVABLE_KEY,
-        'You are a knowledgeable local friend who knows the city\'s food and drink scene intimately. Write warm, specific, confident recommendations — never generic.',
-        `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescForSummary}\n\nReturn a short 1-sentence intro explaining the overall theme of these picks, then a bullet point for each venue (1 sentence each) explaining what makes it special for this query. Sound like a trusted local friend, not a search engine.${sessionContextString}`,
-        [{ type: 'function', function: { name: 'generate_summary', description: 'Return a conversational search summary with intro and per-venue bullets', parameters: { type: 'object', properties: { intro: { type: 'string', description: 'One sentence conversational intro about the overall picks' }, bullets: { type: 'array', items: { type: 'object', properties: { name: { type: 'string', description: 'Venue name' }, note: { type: 'string', description: 'One sentence about why this venue is great for the query' } }, required: ['name', 'note'] }, description: 'Per-venue bullet points' } }, required: ['intro', 'bullets'], additionalProperties: false } } }],
-        { type: 'function', function: { name: 'generate_summary' } },
-      ), null),
+      // Skip Step 7 summary for discovery mode
+      isDiscoveryMode
+        ? Promise.resolve(null)
+        : safe('step7-summary', () => callLLM(
+            LOVABLE_KEY,
+            'You are a knowledgeable local friend who knows the city\'s food and drink scene intimately. Write warm, specific, confident recommendations — never generic.',
+            `The user searched for "${searchTerm}" in ${location_name}. These are the top results:\n${venueDescForSummary}\n\nReturn a short 1-sentence intro explaining the overall theme of these picks, then a bullet point for each venue (1 sentence each) explaining what makes it special for this query. Sound like a trusted local friend, not a search engine.${sessionContextString}`,
+            [{ type: 'function', function: { name: 'generate_summary', description: 'Return a conversational search summary with intro and per-venue bullets', parameters: { type: 'object', properties: { intro: { type: 'string', description: 'One sentence conversational intro about the overall picks' }, bullets: { type: 'array', items: { type: 'object', properties: { name: { type: 'string', description: 'Venue name' }, note: { type: 'string', description: 'One sentence about why this venue is great for the query' } }, required: ['name', 'note'] }, description: 'Per-venue bullet points' } }, required: ['intro', 'bullets'], additionalProperties: false } } }],
+            { type: 'function', function: { name: 'generate_summary' } },
+          ), null),
       safe('chips', () => callLLM(
         LOVABLE_KEY,
         'You suggest related search queries.',
