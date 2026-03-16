@@ -660,6 +660,7 @@ Deno.serve(async (req) => {
     let finalVenues: any[] = [];
     let search_summary: any = null;
     let suggested_chips: string[] = [];
+    let overflowVenues: any[] = [];
 
     if (isDiscoveryMode) {
       // Discovery mode — skip confidence scoring, only generate descriptors and chips
