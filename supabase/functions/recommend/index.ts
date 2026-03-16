@@ -75,10 +75,11 @@ async function fetchWithConcurrency<T, R>(items: T[], fn: (item: T) => Promise<R
 
 // ─── LLM helper ───
 
-const AI_GATEWAY = 'https://ai.gateway.lovable.dev/v1/chat/completions';
-const LLM_MODEL = 'openai/gpt-5-mini';
+const OPENAI_KEY = Deno.env.get('CHATGPT_API_KEY') ?? '';
+const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+const LLM_MODEL = 'gpt-4o-mini';
 
-async function callLLM(apiKey: string, systemPrompt: string, userPrompt: string, tools?: any[], toolChoice?: any): Promise<any> {
+async function callLLM(apiKey: string, systemPrompt: string, userPrompt: string, tools?: any[], toolChoice?: any, options?: { max_tokens?: number; temperature?: number }): Promise<any> {
   const body: any = {
     model: LLM_MODEL,
     messages: [
@@ -90,8 +91,10 @@ async function callLLM(apiKey: string, systemPrompt: string, userPrompt: string,
     body.tools = tools;
     body.tool_choice = toolChoice;
   }
+  if (options?.max_tokens !== undefined) body.max_tokens = options.max_tokens;
+  if (options?.temperature !== undefined) body.temperature = options.temperature;
 
-  const resp = await fetch(AI_GATEWAY, {
+  const resp = await fetch(OPENAI_ENDPOINT, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
