@@ -72,8 +72,8 @@ export default function Header() {
       {/* Center: Logo — only in post-search */}
       {state.mode === 'post-search' && (
         <div className="flex items-center justify-center">
-          <a href="/" onClick={handleLogoClick} className="flex items-center">
-            <img src={whatspotLogo} alt="Whatspot" className="h-7" />
+            <a href="/" onClick={handleLogoClick} className="flex items-center">
+              <WhatspotLogo size="nav" />
           </a>
         </div>
       )}
