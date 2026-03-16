@@ -666,7 +666,7 @@ Deno.serve(async (req) => {
       const discoveryResult = await safe('discovery-llm', () => callLLM(
         OPENAI_KEY,
         `You are a knowledgeable local friend who knows the city's food and drink scene intimately.`,
-        `Here are nearby venues to describe:\n${candidateList}\n\nReturn a JSON object with:\n- "descriptors": array of ${candidates.length} arrays, one per venue in order, each containing exactly 3 short 2-4 word descriptor tags. Never use generic terms like "restaurant" or "cafe".\n- "chips": array of 3-4 short follow-up search suggestions for discovering more venues nearby.`,
+        `Here are nearby venues to describe:\n${candidateList}\n\nReturn a JSON object with:\n- "descriptors": array of ${candidates.length} arrays, one per venue in order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "chips": array of 3-4 short follow-up search suggestions for discovering more venues nearby.`,
         [
           {
             type: 'function',
