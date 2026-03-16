@@ -699,7 +699,7 @@ Deno.serve(async (req) => {
       const comprehensiveResult = await safe('comprehensive-llm', () => callLLM(
         OPENAI_KEY,
         `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues honestly and only include genuinely suitable matches.`,
-        `The user searched for "${searchTerm}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.6. Order by confidence descending. Maximum 5 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short 2-4 word descriptor tags. Never use generic terms like "restaurant" or "cafe".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
+        `The user searched for "${searchTerm}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.5. Order by confidence descending. Maximum 5 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short 2-4 word descriptor tags. Never use generic terms like "restaurant" or "cafe".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
         [
           {
             type: 'function',
@@ -750,7 +750,7 @@ Deno.serve(async (req) => {
 
       const rankings = comprehensiveResult.rankings || [];
       finalVenues = rankings
-        .filter((r: any) => r.confidence >= 0.6)
+        .filter((r: any) => r.confidence >= 0.5)
         .slice(0, 5)
         .map((r: any, i: number) => {
           const venue = candidates[r.index - 1];
@@ -764,13 +764,13 @@ Deno.serve(async (req) => {
         })
         .filter(Boolean);
 
-      // Backfill if fewer than 3 results passed confidence threshold
-      if (finalVenues.length < 3) {
-        const usedIndices = new Set(rankings.map((r: any) => r.index - 1));
+      // Backfill to guarantee 5 results
+      if (finalVenues.length < 5) {
+        const usedIndices = new Set(rankings.filter((r: any) => r.confidence >= 0.5).map((r: any) => r.index - 1));
         const backfill = candidates
           .filter((_: any, i: number) => !usedIndices.has(i))
           .slice(0, 5 - finalVenues.length)
-          .map((v: any) => ({ ...v, descriptors: [] }));
+          .map((v: any) => ({ ...v, descriptors: [], reasoning_explanation: '' }));
         finalVenues.push(...backfill);
       }
 
