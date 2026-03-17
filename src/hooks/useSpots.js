@@ -84,12 +84,15 @@ export function useSpots() {
 
       if (venueError) throw venueError;
 
-      // 2. Create favorite
-      const { error: favError } = await supabase.from('favorites').insert({
-        user_id: user.id,
-        venue_id: venueRow.id,
-        labels,
-      });
+      // 2. Upsert favorite (prevents duplicate key errors)
+      const { error: favError } = await supabase.from('favorites').upsert(
+        {
+          user_id: user.id,
+          venue_id: venueRow.id,
+          labels,
+        },
+        { onConflict: 'user_id,venue_id' }
+      );
 
       if (favError) throw favError;
     },
