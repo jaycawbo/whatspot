@@ -13,6 +13,13 @@ const SWIPE_DOWN_THRESHOLD = 80;
 
 export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSearch, onNewSearch }) {
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Reset deck when venues change (new search / refresh)
+  useEffect(() => {
+    setCurrentIndex(0);
+    x.set(0);
+    y.set(0);
+  }, [venues]);
   const [exitDirection, setExitDirection] = useState(null); // 'left' | 'right' | 'down'
   const [hoveredButton, setHoveredButton] = useState(null); // 'left' | 'right'
   const [authModalOpen, setAuthModalOpen] = useState(false);
