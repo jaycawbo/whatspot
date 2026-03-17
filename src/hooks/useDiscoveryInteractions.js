@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useSpots } from '@/hooks/useSpots';
 
 /**
@@ -8,6 +8,7 @@ import { useSpots } from '@/hooks/useSpots';
 export function useDiscoveryInteractions() {
   const { saveSpot, removeSpot, updateLabels, isSaved, getLabels, isAuthenticated } = useSpots();
   const [pendingAction, setPendingAction] = useState(null);
+  const executingRef = useRef(false);
 
   const saveWithLabel = useCallback(async (venue, label) => {
     if (!venue) return;
@@ -101,10 +102,17 @@ export function useDiscoveryInteractions() {
 
   // Execute pending action after auth
   const executePending = useCallback(async () => {
-    if (!pendingAction) return;
-    await saveWithLabel(pendingAction.venue, pendingAction.label);
+    if (!pendingAction || executingRef.current) return;
+    executingRef.current = true;
+    try {
+      await saveWithLabel(pendingAction.venue, pendingAction.label);
+    } finally {
+      executingRef.current = false;
+    }
     setPendingAction(null);
   }, [pendingAction, saveWithLabel]);
+
+  const clearPending = useCallback(() => setPendingAction(null), []);
 
   return {
     handleInterested,
@@ -117,7 +125,7 @@ export function useDiscoveryInteractions() {
     logPhotoAdvance,
     pendingAction,
     executePending,
-    clearPending: () => setPendingAction(null),
+    clearPending,
     isAuthenticated,
   };
 }
