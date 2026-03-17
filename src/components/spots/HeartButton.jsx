@@ -11,7 +11,7 @@ import { toast } from 'sonner';
  * When used in the discovery feed, directly saves as "Favourite" (label hierarchy: Favourite supersedes all).
  * When already saved, opens SaveToSpotsDialog for label editing.
  */
-export default function HeartButton({ venue, size = 'md', className, directFavourite = false }) {
+export default function HeartButton({ venue, size = 'md', className, directFavourite = false, onFavouriteAdvance }) {
   const { isSaved, isAuthenticated, saveOrUpdateLabel } = useSpots();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -38,7 +38,9 @@ export default function HeartButton({ venue, size = 'md', className, directFavou
           venue_id: placeId,
           timestamp: Date.now(),
         });
-        toast.success(`${venue.name} favourited!`);
+        toast.success('Saved to Favourites');
+        // Trigger card advance after brief delay
+        onFavouriteAdvance?.();
       } catch (err) {
         console.error('Failed to favourite:', err);
         toast.error('Failed to save');
