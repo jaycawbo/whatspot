@@ -14,12 +14,20 @@ import { cn } from '@/lib/utils';
 
 // Standard filters — single-select, always visible
 const STANDARD_FILTERS = [
-  { id: 'all', label: 'All' },
-  { id: 'Want to Go', label: 'Want to Go' },
-  { id: 'Favourite', label: 'Favourites' },
-  { id: "I'll Pass", label: "I'll Pass" },
-  { id: 'Viewed', label: 'Viewed' },
+  { id: 'Not Interested', label: 'Not Interested' },
+  { id: 'Interested', label: 'Interested' },
+  { id: "Didn't Like It", label: "Didn't Like It" },
+  { id: 'Liked It', label: 'Liked It' },
+  { id: 'Favourites', label: 'Favourites' },
 ];
+
+const EMPTY_STATES = {
+  'Not Interested': "Nothing here yet — swipe left on venues that aren't for you",
+  'Interested': 'Nothing saved yet — swipe right on venues you want to explore',
+  "Didn't Like It": 'No venues rated here yet',
+  'Liked It': 'No venues rated here yet',
+  'Favourites': 'No favourites yet — swipe up and rate a venue you loved',
+};
 
 // TODO: label priority logic should be enforced at the database level
 // when the backend interactions table is wired up
@@ -28,7 +36,7 @@ export default function Spots() {
   const { spots, isLoading, removeSpot, isAuthenticated } = useSpots();
   const { state } = useGlobalState();
   const [viewMode, setViewMode] = useState('list');
-  const [activeStandardFilter, setActiveStandardFilter] = useState('all');
+  const [activeStandardFilter, setActiveStandardFilter] = useState('Interested');
   const [activeDynamicTags, setActiveDynamicTags] = useState([]);
   const [dynamicTags, setDynamicTags] = useState([]);
   const [dynamicTagsLoading, setDynamicTagsLoading] = useState(false);
@@ -43,7 +51,6 @@ export default function Spots() {
       return;
     }
 
-    // Check cache — invalidate only when spot count changes
     if (dynamicTagsCache.count === spots.length && dynamicTagsCache.tags.length > 0) {
       setDynamicTags(dynamicTagsCache.tags);
       return;
@@ -68,13 +75,10 @@ export default function Spots() {
     fetchDynamicTags();
   }, [fetchDynamicTags]);
 
-  // Standard filter: single-select
   const handleStandardFilter = useCallback((filterId) => {
     setActiveStandardFilter(filterId);
-    // Keep active dynamic tags when switching standard filter
   }, []);
 
-  // Dynamic tag: multi-select toggle
   const handleDynamicTagToggle = useCallback((tagLabel) => {
     setActiveDynamicTags((prev) =>
       prev.includes(tagLabel)
@@ -83,20 +87,13 @@ export default function Spots() {
     );
   }, []);
 
-  // Filter spots: standard filter AND dynamic tags (AND logic)
+  // Filter spots
   const filteredSpots = useMemo(() => {
-    let result = spots;
+    let result = spots.filter((s) => s.labels?.includes(activeStandardFilter));
 
-    // Apply standard filter
-    if (activeStandardFilter !== 'all') {
-      result = result.filter((s) => s.labels?.includes(activeStandardFilter));
-    }
-
-    // Apply dynamic tags (AND — venue must match ALL active tags)
     if (activeDynamicTags.length > 0) {
       result = result.filter((spot) => {
         return activeDynamicTags.every((tag) => {
-          // Check if tag matches address (geographic) or category (venue type)
           const addressMatch = spot.address?.includes(tag);
           const categoryMatch = spot.category
             ?.replace(/_/g, ' ')
@@ -110,7 +107,7 @@ export default function Spots() {
   }, [spots, activeStandardFilter, activeDynamicTags]);
 
   const spotCount = (label) =>
-    label === 'all' ? spots.length : spots.filter((s) => s.labels?.includes(label)).length;
+    spots.filter((s) => s.labels?.includes(label)).length;
 
   const handleRemove = async (placeId) => {
     try {
@@ -166,7 +163,6 @@ export default function Spots() {
             <div className="flex items-center justify-between gap-3">
               <div className="flex-1 min-w-0 overflow-x-auto scrollbar-hide">
                 <div className="flex items-center gap-1.5 pb-1 flex-wrap">
-                  {/* Standard filters — single-select */}
                   {STANDARD_FILTERS.map((f) => {
                     const count = spotCount(f.id);
                     return (
@@ -180,17 +176,15 @@ export default function Spots() {
                             : 'text-muted-foreground border-border hover:text-foreground hover:bg-accent'
                         )}
                       >
-                        {f.label} {f.id !== 'all' ? `(${count})` : `(${spots.length})`}
+                        {f.label} ({count})
                       </button>
                     );
                   })}
 
-                  {/* Separator between standard and dynamic */}
                   {dynamicTags.length > 0 && (
                     <div className="h-4 w-px bg-border shrink-0 mx-1" />
                   )}
 
-                  {/* Dynamic tags — multi-select */}
                   {dynamicTags.map((tag) => {
                     const active = activeDynamicTags.includes(tag.label);
                     return (
@@ -252,9 +246,7 @@ export default function Spots() {
               <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
                 <Heart className="h-10 w-10 text-muted-foreground" />
                 <p className="text-muted-foreground text-sm">
-                  {activeStandardFilter === 'all' && activeDynamicTags.length === 0
-                    ? 'No spots saved yet. Search for venues and swipe right to save them!'
-                    : 'No spots match the selected filters.'}
+                  {EMPTY_STATES[activeStandardFilter] || 'No spots match the selected filters.'}
                 </p>
               </div>
             )}
