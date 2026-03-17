@@ -213,31 +213,38 @@ export default function Home() {
   const isPreSearch = state.mode === 'pre-search';
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       <Header />
 
       {/* Pre-search state */}
       {isPreSearch && (
-        <div className="flex flex-col items-center justify-center min-h-screen pt-14 pb-20 px-4 md:px-8">
-          <div className="flex flex-col items-center justify-center w-full space-y-6">
-            <a href="/" onClick={(e) => { e.preventDefault(); dispatch({ type: 'CLEAR_SEARCH' }); }} className="flex items-center cursor-pointer">
-              <WhatspotLogo size="hero" />
-            </a>
+        <div className="flex flex-col flex-1 pt-14">
+          {/* Web: search bar + category chips above feed */}
+          {!isMobile && (
+            <div className="px-4 md:px-8 lg:px-12 py-4 space-y-3 max-w-7xl mx-auto w-full">
+              <div className="flex items-center gap-3">
+                <a href="/" onClick={(e) => { e.preventDefault(); dispatch({ type: 'CLEAR_SEARCH' }); }} className="shrink-0">
+                  <WhatspotLogo size="sm" />
+                </a>
+                <div className="flex-1">
+                  <SearchBar
+                    ref={searchBarRef}
+                    query={state.query}
+                    onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
+                    onSearch={handleSearch}
+                    isQuerying={state.isQuerying}
+                    onStopQuery={handleStopQuery}
+                    centered={false}
+                  />
+                </div>
+              </div>
+              <CategoryTiles onSelectCategory={handleSelectCategory} />
+            </div>
+          )}
 
-            {/* Search bar above card on desktop only */}
-            {!isMobile && (
-              <SearchBar
-                query={state.query}
-                onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
-                onSearch={handleSearch}
-                isQuerying={state.isQuerying}
-                onStopQuery={handleStopQuery}
-                centered
-              />
-            )}
-
-            {/* Discovery Feed */}
-            <div className="w-full max-w-sm mx-auto" style={{ height: '70vh', maxHeight: 600 }}>
+          {/* Feed fills remaining viewport */}
+          <div className={`flex-1 flex items-center justify-center px-4 ${isMobile ? 'pb-20' : ''}`}>
+            <div className="w-full max-w-sm mx-auto" style={{ height: isMobile ? 'calc(100vh - 120px)' : '70vh', maxHeight: 650 }}>
               {feedLoading ? (
                 <div className="flex items-center justify-center h-full">
                   <LoadingMessages />
@@ -253,39 +260,23 @@ export default function Home() {
                 />
               )}
             </div>
-
-            {/* Search bar below card on mobile */}
-            {isMobile && (
-              <SearchBar
-                query={state.query}
-                onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
-                onSearch={handleSearch}
-                isQuerying={state.isQuerying}
-                onStopQuery={handleStopQuery}
-                centered
-              />
-            )}
-
-            <div className="w-full max-w-xl">
-              <CategoryTiles onSelectCategory={handleSelectCategory} />
-            </div>
-
-            <div className="w-full max-w-xl">
-              <FilterSummary filters={state.filters} onOpenFilters={() => setFilterDialogOpen(true)} />
-            </div>
-
-            {state.isLoading && (
-              <div className="w-full max-w-xl">
-                <LoadingMessages />
-              </div>
-            )}
-
-            {state.tileBaseQuery && !state.isLoading && (
-              <div className="w-full max-w-xl">
-                <RefinementChips baseQuery={state.tileBaseQuery} onAppendChip={handleAppendChip} />
-              </div>
-            )}
           </div>
+
+          {/* Mobile: pinned bottom search drawer */}
+          {isMobile && (
+            <MobileSearchDrawer
+              query={state.query}
+              onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
+              onSearch={handleSearch}
+              isQuerying={state.isQuerying}
+              onStopQuery={handleStopQuery}
+              onSelectCategory={handleSelectCategory}
+              searchHistory={state.searchHistory}
+              suggestedChips={state.suggestedChips}
+              onAppendChip={handleAppendChip}
+              tileBaseQuery={state.tileBaseQuery}
+            />
+          )}
         </div>
       )}
 
