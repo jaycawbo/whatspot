@@ -8,15 +8,23 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Heart, Trash2, Star, Tag, Layers, X, Check } from 'lucide-react';
+import { Heart, Trash2, X, Check } from 'lucide-react';
 import { useSpots } from '@/hooks/useSpots';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { logEvent } from '@/lib/logEvent';
 
-const SUGGESTED_LABELS = [
-  'Top Spot',
+// Standard interaction labels from the discovery feed
+const STANDARD_LABELS = [
+  'Favourite',
   'Want to Go',
+  "I'll Pass",
+  'Viewed',
+];
+
+const SUGGESTED_LABELS = [
+  ...STANDARD_LABELS,
+  'Top Spot',
   'Special Occasion',
   'Date Night',
   'Business Meal',
@@ -39,7 +47,6 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
   const [selectedLabels, setSelectedLabels] = useState([]);
   const [customInput, setCustomInput] = useState('');
 
-  // Custom typed labels = not in suggested list
   const customTypedLabels = selectedLabels.filter(
     (l) => !SUGGESTED_LABELS.includes(l)
   );
@@ -136,7 +143,7 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
             </div>
           </div>
 
-          {/* Labels — select any/all that apply */}
+          {/* Labels */}
           <div className="space-y-3">
             <p className="text-sm font-medium text-foreground">Labels <span className="text-muted-foreground font-normal">(select any that apply)</span></p>
 
@@ -161,7 +168,6 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
               })}
             </div>
 
-            {/* Custom typed labels */}
             {customTypedLabels.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {customTypedLabels.map((label) => (
@@ -178,7 +184,6 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
               </div>
             )}
 
-            {/* Custom input */}
             <Input
               value={customInput}
               onChange={(e) => setCustomInput(e.target.value)}
