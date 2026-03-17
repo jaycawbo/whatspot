@@ -11,7 +11,7 @@ import { toast } from 'sonner';
  * When used in the discovery feed, directly saves as "Favourite" (label hierarchy: Favourite supersedes all).
  * When already saved, opens SaveToSpotsDialog for label editing.
  */
-export default function HeartButton({ venue, size = 'md', className, directFavourite = false }) {
+export default function HeartButton({ venue, size = 'md', className, directFavourite = false, onFavouriteAdvance }) {
   const { isSaved, isAuthenticated, saveOrUpdateLabel } = useSpots();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
