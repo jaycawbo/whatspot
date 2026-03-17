@@ -11,7 +11,7 @@ import AuthModal from '@/components/auth/AuthModal';
 const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
 
-export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSearch, onNewSearch }) {
+export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSearch, onNewSearch, onFavouriteAdvance }) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   // Reset deck when venues change (new search / refresh)
