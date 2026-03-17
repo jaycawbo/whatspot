@@ -304,13 +304,13 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
           <span className="text-2xl font-bold text-muted-foreground">Skip</span>
         </motion.div>
 
-        {/* Up — purple "Rate it" */}
+        {/* Up — blue "Been here" */}
         <motion.div
           className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none"
-          style={{ opacity: upOverlayOpacity, background: 'hsla(270, 60%, 55%, 0.2)' }}
+          style={{ opacity: upOverlayOpacity, background: 'hsla(210, 70%, 50%, 0.2)' }}
         >
-          <Star className="h-10 w-10 text-purple-500 fill-purple-500/30" />
-          <span className="text-2xl font-bold text-purple-600">Rate it</span>
+          <Heart className="h-10 w-10 text-blue-500 fill-blue-500/30" />
+          <span className="text-2xl font-bold text-blue-600">Been here</span>
         </motion.div>
 
         <DiscoveryCard
