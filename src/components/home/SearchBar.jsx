@@ -1,9 +1,13 @@
-import React, { useRef } from 'react';
+import React, { useRef, useImperativeHandle, forwardRef } from 'react';
 import { Search, X, ArrowUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export default function SearchBar({ query, onQueryChange, onSearch, isQuerying, onStopQuery, centered }) {
+const SearchBar = forwardRef(function SearchBar({ query, onQueryChange, onSearch, isQuerying, onStopQuery, centered }, ref) {
   const inputRef = useRef(null);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => inputRef.current?.focus(),
+  }));
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -17,7 +21,6 @@ export default function SearchBar({ query, onQueryChange, onSearch, isQuerying, 
         'w-full transition-all duration-300',
         centered ? 'max-w-xl mx-auto' : 'max-w-3xl'
       )}>
-      
       <div className="relative flex items-center">
         <Search className="absolute left-3 h-4 w-4 text-muted-foreground pointer-events-none" />
         <input
@@ -25,26 +28,28 @@ export default function SearchBar({ query, onQueryChange, onSearch, isQuerying, 
           type="text"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-
-          className="w-full h-11 pl-10 pr-10 rounded-full border border-input bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ring-offset-background transition-shadow" placeholder="Ask and you shall receive..." />
-        
-        {isQuerying ?
-        <button
-          type="button"
-          onClick={onStopQuery}
-          className="absolute right-2 h-7 w-7 flex items-center justify-center rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors">
-          
+          className="w-full h-11 pl-10 pr-10 rounded-full border border-input bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ring-offset-background transition-shadow"
+          placeholder="Ask and you shall receive..."
+        />
+        {isQuerying ? (
+          <button
+            type="button"
+            onClick={onStopQuery}
+            className="absolute right-2 h-7 w-7 flex items-center justify-center rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+          >
             <X className="h-3.5 w-3.5" />
-          </button> :
-        query.trim() ?
-        <button
-          type="submit"
-          className="absolute right-2 h-7 w-7 flex items-center justify-center rounded-full bg-green-600 text-white hover:bg-green-700 transition-colors">
-          
+          </button>
+        ) : query.trim() ? (
+          <button
+            type="submit"
+            className="absolute right-2 h-7 w-7 flex items-center justify-center rounded-full bg-green-600 text-white hover:bg-green-700 transition-colors"
+          >
             <ArrowUp className="h-4 w-4" />
-          </button> :
-        null}
+          </button>
+        ) : null}
       </div>
-    </form>);
+    </form>
+  );
+});
 
-}
+export default SearchBar;
