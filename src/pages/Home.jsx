@@ -19,10 +19,12 @@ import NoResultsPrompt from '@/components/home/NoResultsPrompt';
 import SearchSummary from '@/components/home/SearchSummary';
 import GatedModal from '@/components/home/GatedModal';
 import MobileBottomSheet from '@/components/home/MobileBottomSheet';
+import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { logEvent } from '@/lib/logEvent';
+import { mockVenues } from '@/data/mockVenues';
 
 export default function Home() {
   const { state, dispatch } = useGlobalState();
