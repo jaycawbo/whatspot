@@ -380,7 +380,7 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
                 hoveredButton === 'right' && 'bg-green-500/5',
                 hoveredButton === 'left' && 'bg-destructive/5',
                 hoveredButton === 'down' && 'bg-muted/10',
-                hoveredButton === 'up' && 'bg-purple-500/5',
+                hoveredButton === 'up' && 'bg-blue-500/5',
               )}
             />
           )}
