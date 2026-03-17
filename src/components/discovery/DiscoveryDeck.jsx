@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Star } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import DiscoveryCard from './DiscoveryCard';
 import ConstellationsSheet from './ConstellationsSheet';
@@ -304,13 +304,13 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
           <span className="text-2xl font-bold text-muted-foreground">Skip</span>
         </motion.div>
 
-        {/* Up — purple "Rate it" */}
+        {/* Up — blue "Been here" */}
         <motion.div
           className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none"
-          style={{ opacity: upOverlayOpacity, background: 'hsla(270, 60%, 55%, 0.2)' }}
+          style={{ opacity: upOverlayOpacity, background: 'hsla(210, 70%, 50%, 0.2)' }}
         >
-          <Star className="h-10 w-10 text-purple-500 fill-purple-500/30" />
-          <span className="text-2xl font-bold text-purple-600">Rate it</span>
+          <Heart className="h-10 w-10 text-blue-500 fill-blue-500/30" />
+          <span className="text-2xl font-bold text-blue-600">Been here</span>
         </motion.div>
 
         <DiscoveryCard
@@ -360,16 +360,16 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
             <span className="text-sm text-muted-foreground">Skip</span>
           </button>
 
-          {/* Top — Rate it */}
+          {/* Top — Been here */}
           <button
-            className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-14 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-purple-500/10 transition-colors"
+            className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-14 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-blue-500/10 transition-colors"
             onClick={() => performAction('up', currentVenue)}
             onMouseEnter={() => setHoveredButton('up')}
             onMouseLeave={() => setHoveredButton(null)}
-            aria-label="Rate it"
+            aria-label="Been here"
           >
-            <Star className="h-4 w-4 text-purple-500" />
-            <span className="text-sm text-purple-600">Rate it</span>
+            <Heart className="h-4 w-4 text-blue-500" />
+            <span className="text-sm text-blue-600">Been here</span>
           </button>
 
           {/* Hover tint overlay */}
@@ -380,7 +380,7 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
                 hoveredButton === 'right' && 'bg-green-500/5',
                 hoveredButton === 'left' && 'bg-destructive/5',
                 hoveredButton === 'down' && 'bg-muted/10',
-                hoveredButton === 'up' && 'bg-purple-500/5',
+                hoveredButton === 'up' && 'bg-blue-500/5',
               )}
             />
           )}
