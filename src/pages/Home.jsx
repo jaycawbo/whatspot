@@ -228,12 +228,22 @@ export default function Home() {
               />
             )}
 
-            {/* Discovery Feed — uses mock data until feed seeding is wired */}
+            {/* Discovery Feed */}
             <div className="w-full max-w-sm mx-auto" style={{ height: '70vh', maxHeight: 600 }}>
-              <DiscoveryDeck
-                venues={mockVenues}
-                onDescriptorTap={(tag) => handleSearch(tag)}
-              />
+              {feedLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <LoadingMessages />
+                </div>
+              ) : (
+                <DiscoveryDeck
+                  venues={feedVenues}
+                  onDescriptorTap={(tag) => {
+                    searchFeed(tag);
+                  }}
+                  onExpandSearch={expandSearch}
+                  onNewSearch={() => searchBarRef.current?.focus?.()}
+                />
+              )}
             </div>
 
             {/* Search bar below card on mobile */}
