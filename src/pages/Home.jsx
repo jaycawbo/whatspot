@@ -240,7 +240,7 @@ export default function Home() {
             className={`flex-1 flex items-center justify-center px-4 ${isMobile ? 'pb-20' : ''}`}
             style={{ '--deck-height': isMobile ? '85vh' : 'clamp(500px, 78vh, 800px)' }}
           >
-            <div className="w-full mx-auto" style={{ maxWidth: isMobile ? undefined : undefined }}>
+            <div className="w-full mx-auto">
               {feedLoading ? (
                 <div className="flex items-center justify-center h-full">
                   <LoadingMessages />
