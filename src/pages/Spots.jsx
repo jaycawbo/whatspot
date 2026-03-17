@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Header from '@/components/home/Header';
 import { useSpots } from '@/hooks/useSpots';
 import { useGlobalState } from '@/context/GlobalStateContext';
@@ -7,95 +7,110 @@ import SpotsMapView from '@/components/spots/SpotsMapView';
 import ShareListDialog from '@/components/spots/ShareListDialog';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { List, Map, Share2, Heart, X, Plus, Search } from 'lucide-react';
-import LabelSearchBar from '@/components/spots/LabelSearchBar';
-import { Input } from '@/components/ui/input';
+import { List, Map, Share2, Heart } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
-const BUILT_IN_FILTERS = ['all', 'Top Spot', 'Want to Go'];
-
-const SUGGESTED_LABELS = [
-  'Special Occasion', 'Date Night', 'Business Meal', 'Hidden Gem',
-  'Best Cocktails', 'Good for Groups', 'Neighbourhood Gem',
-  'Underrated', 'Worth the Wait', 'Would Not Go Back',
+// Standard filters — single-select, always visible
+const STANDARD_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'Want to Go', label: 'Want to Go' },
+  { id: 'Favourite', label: 'Favourites' },
+  { id: "I'll Pass", label: "I'll Pass" },
+  { id: 'Viewed', label: 'Viewed' },
 ];
 
+// TODO: label priority logic should be enforced at the database level
+// when the backend interactions table is wired up
+
 export default function Spots() {
-  const { spots, isLoading, removeSpot, isAuthenticated, allLabels } = useSpots();
+  const { spots, isLoading, removeSpot, isAuthenticated } = useSpots();
   const { state } = useGlobalState();
   const [viewMode, setViewMode] = useState('list');
-  const [activeFilter, setActiveFilter] = useState('all');
-  const [customLabelPickerOpen, setCustomLabelPickerOpen] = useState(false);
-  const [pinnedLabels, setPinnedLabels] = useState([]);
-  const [customInput, setCustomInput] = useState('');
+  const [activeStandardFilter, setActiveStandardFilter] = useState('all');
+  const [activeDynamicTags, setActiveDynamicTags] = useState([]);
+  const [dynamicTags, setDynamicTags] = useState([]);
+  const [dynamicTagsLoading, setDynamicTagsLoading] = useState(false);
+  const [dynamicTagsCache, setDynamicTagsCache] = useState({ count: 0, tags: [] });
   const [shareOpen, setShareOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [labelSearchOpen, setLabelSearchOpen] = useState(false);
-  const [labelSearchResults, setLabelSearchResults] = useState(null);
 
-  // All unique custom labels from saved spots
-  const existingCustomLabels = useMemo(() => {
-    const custom = new Set();
-    spots.forEach((s) => {
-      s.labels?.forEach((l) => {
-        if (!['Top Spot', 'Want to Go'].includes(l)) custom.add(l);
-      });
-    });
-    return Array.from(custom);
-  }, [spots]);
-
-  // Labels pinned to tab bar (union of pinned + those that exist on spots)
-  const visibleCustomTabs = useMemo(() => {
-    const merged = new Set([...pinnedLabels, ...existingCustomLabels]);
-    return Array.from(merged);
-  }, [pinnedLabels, existingCustomLabels]);
-
-  // All chips for the picker (suggested + any existing not in suggested)
-  const allChips = useMemo(() => {
-    const merged = [...SUGGESTED_LABELS];
-    existingCustomLabels.forEach((l) => {
-      if (!merged.includes(l)) merged.push(l);
-    });
-    pinnedLabels.forEach((l) => {
-      if (!merged.includes(l)) merged.push(l);
-    });
-    return merged;
-  }, [existingCustomLabels, pinnedLabels]);
-
-  const addLabelToTabs = (label) => {
-    const trimmed = label.trim();
-    if (!trimmed) return;
-    if (!pinnedLabels.includes(trimmed)) {
-      setPinnedLabels((prev) => [...prev, trimmed]);
+  // Fetch dynamic tags from edge function
+  const fetchDynamicTags = useCallback(async () => {
+    if (!isAuthenticated || spots.length < 10) {
+      setDynamicTags([]);
+      return;
     }
-    setActiveFilter(trimmed);
-    setCustomLabelPickerOpen(false);
-    setCustomInput('');
-  };
 
-  const removePinnedLabel = (label) => {
-    setPinnedLabels((prev) => prev.filter((l) => l !== label));
-    if (activeFilter === label) setActiveFilter('all');
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addLabelToTabs(customInput);
+    // Check cache — invalidate only when spot count changes
+    if (dynamicTagsCache.count === spots.length && dynamicTagsCache.tags.length > 0) {
+      setDynamicTags(dynamicTagsCache.tags);
+      return;
     }
-  };
 
+    setDynamicTagsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-spots-tags');
+      if (error) throw error;
+      const tags = data?.tags || [];
+      setDynamicTags(tags);
+      setDynamicTagsCache({ count: spots.length, tags });
+    } catch (err) {
+      console.error('Failed to fetch dynamic tags:', err);
+      setDynamicTags([]);
+    } finally {
+      setDynamicTagsLoading(false);
+    }
+  }, [isAuthenticated, spots.length, dynamicTagsCache.count, dynamicTagsCache.tags.length]);
+
+  useEffect(() => {
+    fetchDynamicTags();
+  }, [fetchDynamicTags]);
+
+  // Standard filter: single-select
+  const handleStandardFilter = useCallback((filterId) => {
+    setActiveStandardFilter(filterId);
+    // Keep active dynamic tags when switching standard filter
+  }, []);
+
+  // Dynamic tag: multi-select toggle
+  const handleDynamicTagToggle = useCallback((tagLabel) => {
+    setActiveDynamicTags((prev) =>
+      prev.includes(tagLabel)
+        ? prev.filter((t) => t !== tagLabel)
+        : [...prev, tagLabel]
+    );
+  }, []);
+
+  // Filter spots: standard filter AND dynamic tags (AND logic)
   const filteredSpots = useMemo(() => {
-    if (activeFilter === 'all') return spots;
-    return spots.filter((s) => s.labels?.includes(activeFilter));
-  }, [spots, activeFilter]);
+    let result = spots;
 
-  // When label search is active, its results override tab filtering
-  const displaySpots = labelSearchResults !== null ? labelSearchResults : filteredSpots;
+    // Apply standard filter
+    if (activeStandardFilter !== 'all') {
+      result = result.filter((s) => s.labels?.includes(activeStandardFilter));
+    }
 
-  const spotCount = (label) => spots.filter((s) => s.labels?.includes(label)).length;
+    // Apply dynamic tags (AND — venue must match ALL active tags)
+    if (activeDynamicTags.length > 0) {
+      result = result.filter((spot) => {
+        return activeDynamicTags.every((tag) => {
+          // Check if tag matches address (geographic) or category (venue type)
+          const addressMatch = spot.address?.includes(tag);
+          const categoryMatch = spot.category
+            ?.replace(/_/g, ' ')
+            .replace(/\b\w/g, (c) => c.toUpperCase()) === tag;
+          return addressMatch || categoryMatch;
+        });
+      });
+    }
+
+    return result;
+  }, [spots, activeStandardFilter, activeDynamicTags]);
+
+  const spotCount = (label) =>
+    label === 'all' ? spots.length : spots.filter((s) => s.labels?.includes(label)).length;
 
   const handleRemove = async (placeId) => {
     try {
@@ -147,90 +162,57 @@ export default function Spots() {
         {/* Authenticated content */}
         {isAuthenticated && (
           <>
-            {/* Filter tabs + view toggle */}
+            {/* Filter bar */}
             <div className="flex items-center justify-between gap-3">
               <div className="flex-1 min-w-0 overflow-x-auto scrollbar-hide">
-                <div className="flex items-center gap-1.5 pb-1">
-                  {/* Built-in tabs */}
-                  {[
-                    { id: 'all', label: 'All Spots' },
-                    { id: 'Top Spot', label: 'Top Spots' },
-                    { id: 'Want to Go', label: 'Want to Go' },
-                  ].map((f) => (
-                    <button
-                      key={f.id}
-                      onClick={() => { setActiveFilter(f.id); setCustomLabelPickerOpen(false); setLabelSearchOpen(false); setLabelSearchResults(null); }}
-                      className={cn(
-                        'shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap',
-                        activeFilter === f.id
-                          ? 'bg-background text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
-                      )}
-                    >
-                      {f.label} ({f.id === 'all' ? spots.length : spotCount(f.id)})
-                    </button>
-                  ))}
-
-                  {/* Custom label tabs */}
-                  {visibleCustomTabs.map((label) => (
-                    <span
-                      key={label}
-                      className={cn(
-                        'shrink-0 inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap group',
-                        activeFilter === label
-                          ? 'bg-background text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
-                      )}
-                    >
-                      <button onClick={() => { setActiveFilter(label); setCustomLabelPickerOpen(false); setLabelSearchOpen(false); setLabelSearchResults(null); }}>
-                        {label} ({spotCount(label)})
-                      </button>
+                <div className="flex items-center gap-1.5 pb-1 flex-wrap">
+                  {/* Standard filters — single-select */}
+                  {STANDARD_FILTERS.map((f) => {
+                    const count = spotCount(f.id);
+                    return (
                       <button
-                        onClick={(e) => { e.stopPropagation(); removePinnedLabel(label); }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive"
+                        key={f.id}
+                        onClick={() => handleStandardFilter(f.id)}
+                        className={cn(
+                          'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap border',
+                          activeStandardFilter === f.id
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'text-muted-foreground border-border hover:text-foreground hover:bg-accent'
+                        )}
                       >
-                        <X className="h-3 w-3" />
+                        {f.label} {f.id !== 'all' ? `(${count})` : `(${spots.length})`}
                       </button>
-                    </span>
-                  ))}
+                    );
+                  })}
 
-                  {/* Add custom label button */}
-                  <button
-                    onClick={() => setCustomLabelPickerOpen((prev) => !prev)}
-                    className={cn(
-                      'shrink-0 rounded-md p-1.5 transition-colors',
-                      customLabelPickerOpen
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
-                    )}
-                    title="Add custom label filter"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
+                  {/* Separator between standard and dynamic */}
+                  {dynamicTags.length > 0 && (
+                    <div className="h-4 w-px bg-border shrink-0 mx-1" />
+                  )}
+
+                  {/* Dynamic tags — multi-select */}
+                  {dynamicTags.map((tag) => {
+                    const active = activeDynamicTags.includes(tag.label);
+                    return (
+                      <button
+                        key={tag.label}
+                        onClick={() => handleDynamicTagToggle(tag.label)}
+                        className={cn(
+                          'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap border',
+                          active
+                            ? 'bg-secondary text-secondary-foreground border-secondary'
+                            : 'text-muted-foreground border-border hover:text-foreground hover:bg-accent'
+                        )}
+                      >
+                        {tag.label} ({tag.count})
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
+              {/* View toggle */}
               <div className="flex gap-1 shrink-0">
-                <TooltipProvider delayDuration={300}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant={labelSearchOpen ? 'secondary' : 'ghost'}
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => {
-                          setLabelSearchOpen((prev) => !prev);
-                          if (labelSearchOpen) setLabelSearchResults(null);
-                        }}
-                      >
-                        <Search className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Search by Label</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
                 <Button
                   variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                   size="icon"
@@ -250,60 +232,6 @@ export default function Spots() {
               </div>
             </div>
 
-            {/* Label search bar */}
-            {labelSearchOpen && (
-              <LabelSearchBar
-                allLabels={allLabels}
-                spots={spots}
-                onResults={setLabelSearchResults}
-                onClose={() => { setLabelSearchOpen(false); setLabelSearchResults(null); }}
-              />
-            )}
-
-            {/* Custom label picker */}
-            {customLabelPickerOpen && (
-              <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-3">
-                <p className="text-xs font-medium text-muted-foreground">Select or create a label filter:</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {allChips.map((label) => {
-                    const isPinned = visibleCustomTabs.includes(label);
-                    return (
-                      <button
-                        key={label}
-                        onClick={() => addLabelToTabs(label)}
-                        className={cn(
-                          'rounded-full px-2.5 py-1 text-xs font-medium transition-colors border',
-                          isPinned
-                            ? 'bg-primary/20 text-primary border-primary/30'
-                            : 'bg-accent/50 text-accent-foreground border-transparent hover:bg-accent'
-                        )}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="flex gap-2">
-                  <Input
-                    value={customInput}
-                    onChange={(e) => setCustomInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Type a custom label..."
-                    className="h-8 text-xs bg-background flex-1"
-                  />
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="h-8 text-xs"
-                    onClick={() => addLabelToTabs(customInput)}
-                    disabled={!customInput.trim()}
-                  >
-                    Add
-                  </Button>
-                </div>
-              </div>
-            )}
-
             {/* Loading state */}
             {isLoading && (
               <div className="space-y-3">
@@ -320,33 +248,31 @@ export default function Spots() {
             )}
 
             {/* Empty state */}
-            {!isLoading && displaySpots.length === 0 && (
+            {!isLoading && filteredSpots.length === 0 && (
               <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
                 <Heart className="h-10 w-10 text-muted-foreground" />
                 <p className="text-muted-foreground text-sm">
-                  {labelSearchResults !== null
-                    ? 'No venues match all selected labels.'
-                    : activeFilter === 'all'
-                    ? 'No spots saved yet. Search for venues and tap the heart to save them!'
-                    : `No spots with the "${activeFilter}" label.`}
+                  {activeStandardFilter === 'all' && activeDynamicTags.length === 0
+                    ? 'No spots saved yet. Search for venues and swipe right to save them!'
+                    : 'No spots match the selected filters.'}
                 </p>
               </div>
             )}
 
             {/* List view */}
-            {!isLoading && viewMode === 'list' && displaySpots.length > 0 && (
+            {!isLoading && viewMode === 'list' && filteredSpots.length > 0 && (
               <div className="space-y-3">
-                {displaySpots.map((spot) => (
+                {filteredSpots.map((spot) => (
                   <SpotCard key={spot.favoriteId} spot={spot} onRemove={handleRemove} />
                 ))}
               </div>
             )}
 
             {/* Map view */}
-            {!isLoading && viewMode === 'map' && displaySpots.length > 0 && (
+            {!isLoading && viewMode === 'map' && filteredSpots.length > 0 && (
               <div className="h-[60vh] md:h-[70vh]">
                 <SpotsMapView
-                  spots={displaySpots}
+                  spots={filteredSpots}
                   center={[state.userLocation.lat, state.userLocation.lon]}
                   onRemove={handleRemove}
                 />
