@@ -360,16 +360,16 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
             <span className="text-sm text-muted-foreground">Skip</span>
           </button>
 
-          {/* Top — Rate it */}
+          {/* Top — Been here */}
           <button
-            className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-14 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-purple-500/10 transition-colors"
+            className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-14 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-blue-500/10 transition-colors"
             onClick={() => performAction('up', currentVenue)}
             onMouseEnter={() => setHoveredButton('up')}
             onMouseLeave={() => setHoveredButton(null)}
-            aria-label="Rate it"
+            aria-label="Been here"
           >
-            <Star className="h-4 w-4 text-purple-500" />
-            <span className="text-sm text-purple-600">Rate it</span>
+            <Heart className="h-4 w-4 text-blue-500" />
+            <span className="text-sm text-blue-600">Been here</span>
           </button>
 
           {/* Hover tint overlay */}
