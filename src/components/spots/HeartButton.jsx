@@ -38,7 +38,9 @@ export default function HeartButton({ venue, size = 'md', className, directFavou
           venue_id: placeId,
           timestamp: Date.now(),
         });
-        toast.success(`${venue.name} favourited!`);
+        toast.success('Saved to Favourites');
+        // Trigger card advance after brief delay
+        onFavouriteAdvance?.();
       } catch (err) {
         console.error('Failed to favourite:', err);
         toast.error('Failed to save');

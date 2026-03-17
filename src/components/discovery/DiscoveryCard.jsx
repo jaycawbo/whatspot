@@ -177,7 +177,7 @@ export default function DiscoveryCard({
 
         {/* Heart button */}
         <div className="absolute top-3 right-3 z-10">
-          <HeartButton venue={venue} size="md" directFavourite />
+          <HeartButton venue={venue} size="md" directFavourite onFavouriteAdvance={onFavouriteAdvance} />
         </div>
 
         {/* Dot indicators */}

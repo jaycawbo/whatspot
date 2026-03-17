@@ -242,9 +242,12 @@ export default function Home() {
             </div>
           )}
 
-          {/* Feed fills remaining viewport */}
-          <div className={`flex-1 flex items-center justify-center px-4 ${isMobile ? 'pb-20' : ''}`}>
-            <div className="w-full max-w-sm mx-auto" style={{ height: isMobile ? 'calc(100vh - 120px)' : '70vh', maxHeight: 650 }}>
+          {/* Feed fills remaining viewport — responsive sizing via CSS custom property */}
+          <div
+            className={`flex-1 flex items-center justify-center px-4 ${isMobile ? 'pb-20' : ''}`}
+            style={{ '--deck-height': isMobile ? '85vh' : 'clamp(500px, 78vh, 800px)' }}
+          >
+            <div className="w-full mx-auto" style={{ maxWidth: isMobile ? undefined : undefined }}>
               {feedLoading ? (
                 <div className="flex items-center justify-center h-full">
                   <LoadingMessages />
