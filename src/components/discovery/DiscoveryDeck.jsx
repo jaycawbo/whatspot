@@ -210,7 +210,7 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
   }, [currentVenue, x, advanceCard]);
 
   return (
-    <div ref={containerRef} className="relative w-full mx-auto max-w-[calc(100vw-2rem)] sm:max-w-[480px] lg:max-w-[560px]" style={{ height: 'var(--deck-height, 78vh)' }}>
+    <div ref={containerRef} className="relative w-full mx-auto max-w-[calc(100vw-2rem)] sm:max-w-[560px] lg:max-w-[660px]" style={{ height: 'var(--deck-height, 78vh)' }}>
       {/* Ghost cards — scale relative to active card */}
       {venues[currentIndex + 2] && (
         <DiscoveryCard
@@ -274,7 +274,7 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
         <>
           <button
             className="absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-destructive/10 transition-colors"
-            style={{ left: '-4rem' }}
+            style={{ left: '-3rem' }}
             onClick={() => performAction('left', currentVenue)}
             onMouseEnter={() => setHoveredButton('left')}
             onMouseLeave={() => setHoveredButton(null)}
@@ -285,7 +285,7 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
 
           <button
             className="absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-green-500/10 transition-colors"
-            style={{ right: '-4rem' }}
+            style={{ right: '-3rem' }}
             onClick={() => performAction('right', currentVenue)}
             onMouseEnter={() => setHoveredButton('right')}
             onMouseLeave={() => setHoveredButton(null)}
