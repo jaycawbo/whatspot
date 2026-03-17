@@ -19,6 +19,7 @@ import NoResultsPrompt from '@/components/home/NoResultsPrompt';
 import SearchSummary from '@/components/home/SearchSummary';
 import GatedModal from '@/components/home/GatedModal';
 import MobileBottomSheet from '@/components/home/MobileBottomSheet';
+import MobileSearchDrawer from '@/components/home/MobileSearchDrawer';
 import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
