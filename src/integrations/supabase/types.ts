@@ -252,12 +252,50 @@ export type Database = {
         }
         Relationships: []
       }
+      user_venue_interactions: {
+        Row: {
+          anonymous_id: string
+          created_at: string
+          id: string
+          interaction_type: string
+          rating: string | null
+          updated_at: string
+          user_id: string | null
+          venue_id: string
+        }
+        Insert: {
+          anonymous_id: string
+          created_at?: string
+          id?: string
+          interaction_type: string
+          rating?: string | null
+          updated_at?: string
+          user_id?: string | null
+          venue_id: string
+        }
+        Update: {
+          anonymous_id?: string
+          created_at?: string
+          id?: string
+          interaction_type?: string
+          rating?: string | null
+          updated_at?: string
+          user_id?: string | null
+          venue_id?: string
+        }
+        Relationships: []
+      }
       venue_signals: {
         Row: {
           avg_result_position_at_save: number | null
           constellation_ids: string[] | null
+          disliked_count: number
           dismiss_count: number
+          interested_count: number
           last_signal_at: string | null
+          liked_count: number
+          loved_count: number
+          not_interested_count: number
           peak_day_of_week: number | null
           peak_hour: number | null
           save_count: number
@@ -272,8 +310,13 @@ export type Database = {
         Insert: {
           avg_result_position_at_save?: number | null
           constellation_ids?: string[] | null
+          disliked_count?: number
           dismiss_count?: number
+          interested_count?: number
           last_signal_at?: string | null
+          liked_count?: number
+          loved_count?: number
+          not_interested_count?: number
           peak_day_of_week?: number | null
           peak_hour?: number | null
           save_count?: number
@@ -288,8 +331,13 @@ export type Database = {
         Update: {
           avg_result_position_at_save?: number | null
           constellation_ids?: string[] | null
+          disliked_count?: number
           dismiss_count?: number
+          interested_count?: number
           last_signal_at?: string | null
+          liked_count?: number
+          loved_count?: number
+          not_interested_count?: number
           peak_day_of_week?: number | null
           peak_hour?: number | null
           save_count?: number
