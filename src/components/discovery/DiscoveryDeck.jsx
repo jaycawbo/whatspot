@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Star } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import DiscoveryCard from './DiscoveryCard';
 import ConstellationsSheet from './ConstellationsSheet';
