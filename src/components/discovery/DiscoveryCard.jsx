@@ -25,6 +25,7 @@ export default function DiscoveryCard({
   index = 0,
   onDescriptorTap,
   onCardBodyTap,
+  onFavouriteAdvance,
   isGhost = false,
   ghostLevel = 0,
 }) {
@@ -129,7 +130,7 @@ export default function DiscoveryCard({
 
   if (isGhost) {
     const ghostScale = ghostLevel === 1 ? 'scale-[0.95]' : 'scale-[0.90]';
-    const ghostOffset = ghostLevel === 1 ? 'translate-y-2' : 'translate-y-4';
+    const ghostOffset = ghostLevel === 1 ? 'translate-y-[10px]' : 'translate-y-[20px]';
     return (
       <div
         className={cn(
@@ -176,7 +177,7 @@ export default function DiscoveryCard({
 
         {/* Heart button */}
         <div className="absolute top-3 right-3 z-10">
-          <HeartButton venue={venue} size="md" directFavourite />
+          <HeartButton venue={venue} size="md" directFavourite onFavouriteAdvance={onFavouriteAdvance} />
         </div>
 
         {/* Dot indicators */}

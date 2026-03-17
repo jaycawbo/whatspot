@@ -11,7 +11,7 @@ import AuthModal from '@/components/auth/AuthModal';
 const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
 
-export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSearch, onNewSearch }) {
+export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSearch, onNewSearch, onFavouriteAdvance }) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   // Reset deck when venues change (new search / refresh)
@@ -199,9 +199,19 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
     );
   }
 
+  // Handle favourite from HeartButton — animate card out after delay
+  const handleFavouriteAdvance = useCallback(async () => {
+    if (!currentVenue) return;
+    // Wait ~1s then fade-out + scale-down
+    await new Promise((r) => setTimeout(r, 1000));
+    setExitDirection('favourite');
+    await animate(x, 0, { duration: 0 }); // ensure x is 0
+    advanceCard();
+  }, [currentVenue, x, advanceCard]);
+
   return (
-    <div ref={containerRef} className="relative w-full max-w-sm mx-auto" style={{ height: '70vh', maxHeight: 600 }}>
-      {/* Ghost cards */}
+    <div ref={containerRef} className="relative w-full mx-auto max-w-[calc(100vw-2rem)] sm:max-w-[480px] lg:max-w-[560px]" style={{ height: 'var(--deck-height, 78vh)' }}>
+      {/* Ghost cards — scale relative to active card */}
       {venues[currentIndex + 2] && (
         <DiscoveryCard
           venue={venues[currentIndex + 2]}
@@ -227,6 +237,8 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
         dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
         dragElastic={0.8}
         onDragEnd={handleDragEnd}
+        animate={exitDirection === 'favourite' ? { opacity: 0, scale: 0.9 } : { opacity: 1, scale: 1 }}
+        transition={{ duration: 0.4 }}
       >
         {/* Swipe overlays */}
         <motion.div
@@ -253,15 +265,16 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
           index={currentIndex}
           onDescriptorTap={onDescriptorTap}
           onCardBodyTap={handleCardBodyTap}
+          onFavouriteAdvance={handleFavouriteAdvance}
         />
       </motion.div>
 
-      {/* Web-only action buttons */}
+      {/* Web-only action buttons — positioned just outside card edges */}
       {!isMobile && (
         <>
-          {/* Left arrow — I'll Pass */}
           <button
-            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-14 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-destructive/10 transition-colors"
+            className="absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-destructive/10 transition-colors"
+            style={{ left: '-4rem' }}
             onClick={() => performAction('left', currentVenue)}
             onMouseEnter={() => setHoveredButton('left')}
             onMouseLeave={() => setHoveredButton(null)}
@@ -270,9 +283,9 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
             <ChevronLeft className="h-6 w-6 text-destructive" />
           </button>
 
-          {/* Right arrow — Want to Go */}
           <button
-            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-14 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-green-500/10 transition-colors"
+            className="absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-green-500/10 transition-colors"
+            style={{ right: '-4rem' }}
             onClick={() => performAction('right', currentVenue)}
             onMouseEnter={() => setHoveredButton('right')}
             onMouseLeave={() => setHoveredButton(null)}
@@ -281,7 +294,6 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
             <ChevronRight className="h-6 w-6 text-green-600" />
           </button>
 
-          {/* Skip / Viewed button */}
           <button
             className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-14 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-accent transition-colors"
             onClick={() => performAction('down', currentVenue)}
@@ -291,7 +303,6 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
             <span className="text-sm text-muted-foreground">Skip</span>
           </button>
 
-          {/* Hover tint overlay for web buttons */}
           {hoveredButton && (
             <div
               className={cn(
