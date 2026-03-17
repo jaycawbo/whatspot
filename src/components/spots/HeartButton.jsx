@@ -1,32 +1,53 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSpots } from '@/hooks/useSpots';
 import SaveToSpotsDialog from './SaveToSpotsDialog';
 import AuthModal from '@/components/auth/AuthModal';
+import { toast } from 'sonner';
 
 /**
  * Heart button for saving/unsaving a venue.
- * Shows filled heart when saved, opens SaveToSpotsDialog on click.
+ * When used in the discovery feed, directly saves as "Favourite" (label hierarchy: Favourite supersedes all).
+ * When already saved, opens SaveToSpotsDialog for label editing.
  */
-export default function HeartButton({ venue, size = 'md', className }) {
-  const { isSaved, isAuthenticated } = useSpots();
+export default function HeartButton({ venue, size = 'md', className, directFavourite = false }) {
+  const { isSaved, isAuthenticated, saveOrUpdateLabel } = useSpots();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
   const placeId = venue?.place_id?.replace(/^places\//, '') || venue?.google_place_id;
   const saved = isSaved(placeId);
 
-  const handleClick = (e) => {
+  const handleClick = useCallback(async (e) => {
     e.stopPropagation();
     e.preventDefault();
-    
+
     if (!isAuthenticated) {
       setAuthModalOpen(true);
       return;
     }
-    setDialogOpen(true);
-  };
+
+    if (directFavourite) {
+      // Discovery card heart: save directly as Favourite
+      try {
+        await saveOrUpdateLabel({ venue, label: 'Favourite' });
+        // TODO: wire to user_interactions table
+        console.log('[TODO: wire to backend]', {
+          event: 'venue_favourited',
+          venue_id: placeId,
+          timestamp: Date.now(),
+        });
+        toast.success(`${venue.name} favourited!`);
+      } catch (err) {
+        console.error('Failed to favourite:', err);
+        toast.error('Failed to save');
+      }
+    } else {
+      // Standard heart: open dialog for label editing
+      setDialogOpen(true);
+    }
+  }, [isAuthenticated, directFavourite, venue, placeId, saveOrUpdateLabel]);
 
   const sizeClasses = {
     sm: 'h-7 w-7',
