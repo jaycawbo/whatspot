@@ -102,10 +102,17 @@ export function useDiscoveryInteractions() {
 
   // Execute pending action after auth
   const executePending = useCallback(async () => {
-    if (!pendingAction) return;
-    await saveWithLabel(pendingAction.venue, pendingAction.label);
+    if (!pendingAction || executingRef.current) return;
+    executingRef.current = true;
+    try {
+      await saveWithLabel(pendingAction.venue, pendingAction.label);
+    } finally {
+      executingRef.current = false;
+    }
     setPendingAction(null);
   }, [pendingAction, saveWithLabel]);
+
+  const clearPending = useCallback(() => setPendingAction(null), []);
 
   return {
     handleInterested,
