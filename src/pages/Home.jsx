@@ -24,12 +24,16 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { logEvent } from '@/lib/logEvent';
-import { mockVenues } from '@/data/mockVenues';
+import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
 
 export default function Home() {
   const { state, dispatch } = useGlobalState();
   const isMobile = useIsMobile();
   const abortRef = useRef(null);
+  const searchBarRef = useRef(null);
+
+  // Discovery feed
+  const { venues: feedVenues, isLoading: feedLoading, searchFeed, expandSearch } = useDiscoveryFeed();
 
   // Keep a ref to filters so runSearch always reads the latest values
   const filtersRef = useRef(state.filters);
@@ -137,9 +141,14 @@ export default function Home() {
   const handleSearch = useCallback(
     (q) => {
       dispatch({ type: 'SET_QUERY', payload: q });
+      // In pre-search mode, refresh the discovery feed instead of switching to post-search
+      if (state.mode === 'pre-search') {
+        searchFeed(q);
+        return;
+      }
       runSearch(q, filtersRef.current);
     },
-    [dispatch, runSearch]
+    [dispatch, runSearch, state.mode, searchFeed]
   );
 
   const handleStopQuery = useCallback(() => {
@@ -153,8 +162,10 @@ export default function Home() {
       dispatch({ type: 'SET_QUERY', payload: cat.prompt });
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: cat.prompt });
       dispatch({ type: 'SET_CATEGORY', payload: cat.label });
+      // Refresh discovery feed with category query
+      searchFeed(cat.prompt);
     },
-    [dispatch]
+    [dispatch, searchFeed]
   );
 
   // --- Chip append ---
@@ -224,12 +235,22 @@ export default function Home() {
               />
             )}
 
-            {/* Discovery Feed — uses mock data until feed seeding is wired */}
+            {/* Discovery Feed */}
             <div className="w-full max-w-sm mx-auto" style={{ height: '70vh', maxHeight: 600 }}>
-              <DiscoveryDeck
-                venues={mockVenues}
-                onDescriptorTap={(tag) => handleSearch(tag)}
-              />
+              {feedLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <LoadingMessages />
+                </div>
+              ) : (
+                <DiscoveryDeck
+                  venues={feedVenues}
+                  onDescriptorTap={(tag) => {
+                    searchFeed(tag);
+                  }}
+                  onExpandSearch={expandSearch}
+                  onNewSearch={() => searchBarRef.current?.focus?.()}
+                />
+              )}
             </div>
 
             {/* Search bar below card on mobile */}

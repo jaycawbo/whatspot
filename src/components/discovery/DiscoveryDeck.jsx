@@ -13,6 +13,13 @@ const SWIPE_DOWN_THRESHOLD = 80;
 
 export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSearch, onNewSearch }) {
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Reset deck when venues change (new search / refresh)
+  useEffect(() => {
+    setCurrentIndex(0);
+    x.set(0);
+    y.set(0);
+  }, [venues]);
   const [exitDirection, setExitDirection] = useState(null); // 'left' | 'right' | 'down'
   const [hoveredButton, setHoveredButton] = useState(null); // 'left' | 'right'
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -40,7 +47,18 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
   const leftOverlayOpacity = useTransform(x, [-SWIPE_THRESHOLD, 0], [0.8, 0]);
 
   const currentVenue = venues[currentIndex];
+  const nextVenue = venues[currentIndex + 1];
   const hasMore = currentIndex < venues.length;
+
+  // Preload next card's first 2-3 images
+  useEffect(() => {
+    if (!nextVenue) return;
+    const photos = nextVenue?.image_urls?.slice(0, 3) || [];
+    photos.forEach((src) => {
+      const img = new Image();
+      img.src = src;
+    });
+  }, [nextVenue]);
 
   // Advance to next card
   const advanceCard = useCallback(() => {
