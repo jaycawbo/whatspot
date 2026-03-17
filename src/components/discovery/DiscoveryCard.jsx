@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import HeartButton from '@/components/spots/HeartButton';
+// HeartButton removed — interactions now handled by swipe gestures
 
 const CROSSFADE_INTERVAL = 4000;
 
