@@ -221,23 +221,16 @@ export default function Home() {
         <div className="flex flex-col flex-1 pt-14">
           {/* Web: search bar + category chips above feed */}
           {!isMobile && (
-            <div className="px-4 md:px-8 lg:px-12 py-4 space-y-3 max-w-7xl mx-auto w-full">
-              <div className="flex items-center gap-3">
-                <a href="/" onClick={(e) => { e.preventDefault(); dispatch({ type: 'CLEAR_SEARCH' }); }} className="shrink-0">
-                  <WhatspotLogo size="sm" />
-                </a>
-                <div className="flex-1">
-                  <SearchBar
-                    ref={searchBarRef}
-                    query={state.query}
-                    onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
-                    onSearch={handleSearch}
-                    isQuerying={state.isQuerying}
-                    onStopQuery={handleStopQuery}
-                    centered={false}
-                  />
-                </div>
-              </div>
+            <div className="px-4 md:px-8 lg:px-12 py-4 space-y-3 max-w-2xl mx-auto w-full">
+              <SearchBar
+                ref={searchBarRef}
+                query={state.query}
+                onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
+                onSearch={handleSearch}
+                isQuerying={state.isQuerying}
+                onStopQuery={handleStopQuery}
+                centered={false}
+              />
               <CategoryTiles onSelectCategory={handleSelectCategory} />
             </div>
           )}
