@@ -30,6 +30,10 @@ export default function Home() {
   const { state, dispatch } = useGlobalState();
   const isMobile = useIsMobile();
   const abortRef = useRef(null);
+  const searchBarRef = useRef(null);
+
+  // Discovery feed
+  const { venues: feedVenues, isLoading: feedLoading, searchFeed, expandSearch } = useDiscoveryFeed();
 
   // Keep a ref to filters so runSearch always reads the latest values
   const filtersRef = useRef(state.filters);
