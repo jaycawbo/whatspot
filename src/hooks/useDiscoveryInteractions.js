@@ -125,7 +125,7 @@ export function useDiscoveryInteractions() {
     logPhotoAdvance,
     pendingAction,
     executePending,
-    clearPending: () => setPendingAction(null),
+    clearPending,
     isAuthenticated,
   };
 }
