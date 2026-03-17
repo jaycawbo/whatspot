@@ -350,7 +350,7 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
 
           {/* Bottom — Skip */}
           <button
-            className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-14 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-accent transition-colors"
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-20 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-accent transition-colors"
             onClick={() => performAction('down', currentVenue)}
             onMouseEnter={() => setHoveredButton('down')}
             onMouseLeave={() => setHoveredButton(null)}
@@ -362,7 +362,7 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
 
           {/* Top — Been here */}
           <button
-            className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-14 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-blue-500/10 transition-colors"
+            className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-20 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-blue-500/10 transition-colors"
             onClick={() => performAction('up', currentVenue)}
             onMouseEnter={() => setHoveredButton('up')}
             onMouseLeave={() => setHoveredButton(null)}
