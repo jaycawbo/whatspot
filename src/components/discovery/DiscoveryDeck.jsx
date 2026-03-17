@@ -285,7 +285,7 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
 
           <button
             className="absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-green-500/10 transition-colors"
-            style={{ right: '-4rem' }}
+            style={{ right: '-3rem' }}
             onClick={() => performAction('right', currentVenue)}
             onMouseEnter={() => setHoveredButton('right')}
             onMouseLeave={() => setHoveredButton(null)}
