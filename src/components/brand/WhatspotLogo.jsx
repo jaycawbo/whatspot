@@ -1,6 +1,11 @@
 import React from 'react';
 
 const logoSizes = {
+  sm: {
+    gap: 'gap-1.5',
+    icon: 'h-5 w-5',
+    text: 'text-lg',
+  },
   nav: {
     gap: 'gap-2',
     icon: 'h-6 w-6',
