@@ -1,114 +1,103 @@
 
 
-# Whatspot — Frontend Shell + PWA Build Plan
+## Updated Interactions & Constellations Rating System
 
-## Overview
+This is a large frontend-only change spanning 5 files (edit) and 2 new files. No backend changes.
 
-Build the complete Whatspot frontend UI with mock data, PWA support, and prepare the architecture for future Supabase Edge Function integration. The app is a single-page venue discovery tool with search, category browsing, filtering, and map/list views.
+---
 
-## Current State
+### Part A & B — Remove heart, update gestures
 
-- Empty shell: no pages besides `Index.tsx` placeholder and `NotFound.tsx`
-- Existing Base44 SDK setup (auth, vite plugin, edge functions for Google Places)
-- Existing edge functions for Google Places APIs (will be migrated to Supabase later)
-- No Home page, no components, no global state
+**Edit `src/components/discovery/DiscoveryCard.jsx`**
+- Remove the `HeartButton` import and its rendering in the photo zone
+- No replacement element in the top-right corner
 
-## Architecture Decisions
+**Edit `src/components/discovery/DiscoveryDeck.jsx`**
+- Add swipe-up detection: new `SWIPE_UP_THRESHOLD = 80`, check `offset.y < -SWIPE_UP_THRESHOLD` in `handleDragEnd`
+- Add `upOverlayOpacity` transform from `y` motion value
+- Add state: `ratingSheetOpen` (boolean), `ratingPendingVenue` (venue object)
+- Update `performAction` directions:
+  - `right` → logs `venue_interested`
+  - `left` → logs `venue_not_interested`
+  - `down` → logs `venue_skipped`, card exits, nothing saved
+  - `up` → opens rating sheet, card stays and dims (no exit)
+- Update drag overlay hints (4 overlays):
+  - Right: green with "Interested" label
+  - Left: red with "Not Interested" label  
+  - Down: grey with "Skip" label
+  - Up: blue/purple with star icon and "Rate it" label
+- Remove `handleFavourite`, `handleWantToGo`, `handlePass`, `handleViewed` usage from `useDiscoveryInteractions`
+- Remove `Heart`, add `Star`, `ChevronUp` imports from lucide
 
-- **Routing**: Use the existing `pages.config.js` system with `App.jsx` as the entry point
-- **State management**: React Context (`GlobalStateContext`) for app-wide state (location, search query, filters, sort, view mode)
-- **Styling**: Tailwind CSS with existing design tokens from `index.css`
-- **Maps**: `react-leaflet` for the map view (free, no API key needed)
-- **Mock data**: Hardcoded venue results for development; API service layer with easy swap-in points
-- **PWA**: `vite-plugin-pwa` for service worker, manifest, and installability
+**Update web controls (same file)**
+- Left arrow → "Not Interested" (red)
+- Right arrow → "Interested" (green)
+- Bottom-center Skip button → "Skip" (grey) — keep existing
+- Add top-center up-arrow button → "Rate it" (blue/purple)
+- Update hover tint overlays for all 4 buttons
+- Keyboard: ArrowUp/W → open rating sheet, Escape → cancel rating sheet, ArrowDown/S → skip
 
-## Build Phases (all frontend shell)
+**Rating sheet callback:**
+- On rating selected (`disliked`/`liked`/`loved`): dismiss sheet, animate card with upward fade-out (opacity→0, y→-100, scale→0.95), advance card, log `venue_rated`
+- On cancel: dismiss sheet, restore card opacity, log `rating_sheet_cancelled`
 
-### Phase 1: Foundation
+---
 
-1. **PWA setup** — Add `vite-plugin-pwa`, create `manifest.json` with Whatspot branding, configure service worker for offline caching
-2. **GlobalStateContext** — Context provider with: `query`, `category`, `mode` (pre-search/post-search), `sort`, `view` (list/map), `userLocation`, `locationName`, `filters`, `anonymousId`, `suggestedChips`, `searchHistory`
-3. **Mock API service** — `src/services/api.ts` with `recommend()` and `recommendPage()` returning realistic mock venue data, matching the spec's response shape
-4. **Update `pages.config.js`** — Register `Home` page as main page
+### Part C — Constellations Rating Sheet
 
-### Phase 2: Core Components
+**New file: `src/components/discovery/ConstellationsSheet.jsx`**
+- Uses the Drawer component from `vaul` (already in project)
+- Props: `open`, `onOpenChange`, `venueName`, `onRate(rating)`, `onCancel`
+- Content:
+  - Venue name label
+  - "How was it?" prompt
+  - Three horizontal rating buttons: 👎 "Didn't Like It", 👍 "Liked It", 👍👍 "Loved It"
+  - "Cancel" text link
+- On rating tap: calls `onRate('disliked' | 'liked' | 'loved')`
+- On cancel or drawer dismiss: calls `onCancel`
 
-5. **Header** — Fixed top bar with logo, location display (editable), clear-search button
-6. **SearchBar** — Text input with search/stop icons, centered (pre-search) vs left-aligned (post-search), Enter-to-submit
-7. **CategoryTiles** — Grid of emoji+label tiles (Pizza, Coffee, Bars, etc.), clicking populates search bar
-8. **RefinementChips** — Horizontal scrollable pills that appear after tile selection, click appends to query
-9. **Home page** — Compose Header + SearchBar + CategoryTiles + RefinementChips for pre-search state
+---
 
-### Phase 3: Post-Search UI
+### Part D — Update useDiscoveryInteractions
 
-10. **ResultsList** — Venue cards with name, address, distance, rating stars, price level, cuisine tag, open/closed badge, image
-11. **MapView** — react-leaflet map with venue markers and popups
-12. **ViewToggle** — List/map icon toggle
-13. **SortToggle** — Relevance/Distance inline toggle
-14. **FilterDialog** — Modal with Open Now toggle, price multi-select, cuisine filter, radius slider
-15. **SuggestedChips** — AI-generated refinement chips row (mock data)
-16. **RelaxationBanner** — Info banner when constraints were loosened
-17. **NoResultsPrompt** — Zero-results state with "Relax constraints" button
-18. **Pagination** — "More options" button when `has_more` is true
+**Edit `src/hooks/useDiscoveryInteractions.js`**
+- Replace all handler functions with the new interaction types:
+  - `handleInterested(venue)` — saves with label "Interested", logs `venue_interested`
+  - `handleNotInterested(venue)` — saves with label "Not Interested", logs `venue_not_interested`
+  - `handleSkip(venue)` — logs `venue_skipped` only, no save
+  - `handleRated(venue, rating)` — maps `disliked`→"Didn't Like It", `liked`→"Liked It", `loved`→"Favourites" label; logs `venue_rated`
+- All console logs include `TODO: Wire to Supabase user_venue_interactions table — do not implement yet.`
+- Remove old `handleWantToGo`, `handlePass`, `handleViewed`, `handleFavourite`
+- Keep `pendingAction`/`executePending` pattern for auth gating
 
-### Phase 4: Modals & Mobile
+---
 
-19. **GatedModal** — Sign-in prompt overlay
-20. **LocationConfirmModal** — Detected vs current location chooser
-21. **MobileBottomSheet** — Slide-up sheet for mobile post-search with search bar, categories, chips, history
-22. **Responsive layout** — Desktop side-by-side vs mobile stacked with bottom sheet
+### Part E — Updated Spots Page
 
-### Phase 5: User Flows & Polish
+**Edit `src/pages/Spots.jsx`**
+- Replace `STANDARD_FILTERS` with:
+  - `Not Interested` · `Interested` · `Didn't Like It` · `Liked It` · `Favourites`
+  - Remove "All" and "Viewed" filters
+- Default active filter: `Interested` (most useful default)
+- Update empty state messages per list as specified in the prompt
+- Filter logic: match on `labels` array containing the filter id
+- Keep dynamic tags, map view, share, and auth modal unchanged
 
-23. **Location detection** — Browser geolocation → reverse geocode (mock for now) → localStorage persistence
-24. **Search history** — localStorage-based, max 10 items, deduped
-25. **Cache restore** — Save/restore results from localStorage on navigation
-26. **Anonymous ID** — UUID generation and localStorage persistence
+---
 
-## New Dependencies
+### Part F — Console Logging
 
-- `react-leaflet` + `leaflet` — Map rendering
-- `vite-plugin-pwa` — PWA support (service worker, manifest)
-- `lodash.debounce` or inline debounce — Search debouncing
-- `framer-motion` — AnimatePresence for results transitions
-- `uuid` — Anonymous ID generation
+All interactions log to console with the exact event names and payloads specified. Every `console.log` call includes the TODO comment for future backend wiring. No Supabase writes, no edge function calls.
 
-## File Structure
+---
 
-```text
-src/
-├── pages/
-│   └── Home.jsx                    # Main (only) page
-├── components/
-│   └── home/
-│       ├── Header.jsx
-│       ├── SearchBar.jsx
-│       ├── CategoryTiles.jsx
-│       ├── RefinementChips.jsx
-│       ├── ResultsList.jsx
-│       ├── VenueCard.jsx
-│       ├── MapView.jsx
-│       ├── ViewToggle.jsx
-│       ├── SortToggle.jsx
-│       ├── FilterDialog.jsx
-│       ├── SuggestedChips.jsx
-│       ├── RelaxationBanner.jsx
-│       ├── NoResultsPrompt.jsx
-│       ├── GatedModal.jsx
-│       ├── LocationConfirmModal.jsx
-│       └── MobileBottomSheet.jsx
-├── context/
-│   └── GlobalStateContext.jsx
-├── services/
-│   └── api.js                      # Mock API, swap for real later
-└── data/
-    └── mockVenues.js               # Mock venue data
-```
+### Files changed summary
 
-## Technical Notes
-
-- The existing Base44 auth system in `AuthContext.jsx` will be preserved but the app will work without auth (anonymous mode)
-- Edge functions in `functions/` will remain as-is; they'll be migrated to Supabase Edge Functions in a later phase
-- The `recommend` API will initially return mock data; the service layer is designed so swapping in real API calls requires changing only `src/services/api.js`
-- PWA manifest will include app name "Whatspot", appropriate icons, theme color matching the design tokens, and `display: standalone`
+| File | Action |
+|------|--------|
+| `src/components/discovery/ConstellationsSheet.jsx` | **New** — rating bottom sheet |
+| `src/components/discovery/DiscoveryDeck.jsx` | Edit — new gestures, overlays, web controls, rating sheet integration |
+| `src/components/discovery/DiscoveryCard.jsx` | Edit — remove HeartButton |
+| `src/hooks/useDiscoveryInteractions.js` | Edit — new interaction handlers |
+| `src/pages/Spots.jsx` | Edit — new 5-list filter structure + empty states |
 
