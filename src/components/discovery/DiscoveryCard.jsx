@@ -25,6 +25,7 @@ export default function DiscoveryCard({
   index = 0,
   onDescriptorTap,
   onCardBodyTap,
+  onFavouriteAdvance,
   isGhost = false,
   ghostLevel = 0,
 }) {
