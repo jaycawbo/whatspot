@@ -174,10 +174,7 @@ export default function DiscoveryCard({
           />
         )}
 
-        {/* Heart button */}
-        <div className="absolute top-3 right-3 z-10">
-          <HeartButton venue={venue} size="md" directFavourite onFavouriteAdvance={onFavouriteAdvance} />
-        </div>
+        {/* Top-right corner intentionally empty — interactions handled by swipe gestures */}
 
         {/* Dot indicators */}
         {photos.length > 1 && (

@@ -1,8 +1,9 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
-import { Heart, X, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import DiscoveryCard from './DiscoveryCard';
+import ConstellationsSheet from './ConstellationsSheet';
 import { useDiscoveryInteractions } from '@/hooks/useDiscoveryInteractions';
 import { useNavigate } from 'react-router-dom';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -10,29 +11,26 @@ import AuthModal from '@/components/auth/AuthModal';
 
 const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
+const SWIPE_UP_THRESHOLD = 80;
 
-export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSearch, onNewSearch, onFavouriteAdvance }) {
+export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSearch, onNewSearch }) {
   const [currentIndex, setCurrentIndex] = useState(0);
-
-  // Reset deck when venues change (new search / refresh)
-  useEffect(() => {
-    setCurrentIndex(0);
-    x.set(0);
-    y.set(0);
-  }, [venues]);
-  const [exitDirection, setExitDirection] = useState(null); // 'left' | 'right' | 'down'
-  const [hoveredButton, setHoveredButton] = useState(null); // 'left' | 'right'
+  const [exitDirection, setExitDirection] = useState(null);
+  const [hoveredButton, setHoveredButton] = useState(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [viewedFromDetails, setViewedFromDetails] = useState(null);
+  const [ratingSheetOpen, setRatingSheetOpen] = useState(false);
+  const [ratingPendingVenue, setRatingPendingVenue] = useState(null);
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const containerRef = useRef(null);
 
   const {
-    handleWantToGo,
-    handlePass,
-    handleViewed,
-    handleFavourite,
+    handleInterested,
+    handleNotInterested,
+    handleSkip,
+    handleRated,
+    logRatingSheetOpened,
+    logRatingSheetCancelled,
     isAuthenticated,
     pendingAction,
     executePending,
@@ -42,15 +40,24 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
   const x = useMotionValue(0);
   const y = useMotionValue(0);
 
+  // Reset deck when venues change
+  useEffect(() => {
+    setCurrentIndex(0);
+    x.set(0);
+    y.set(0);
+  }, [venues]);
+
   // Overlay opacities based on drag distance
   const rightOverlayOpacity = useTransform(x, [0, SWIPE_THRESHOLD], [0, 0.8]);
   const leftOverlayOpacity = useTransform(x, [-SWIPE_THRESHOLD, 0], [0.8, 0]);
+  const downOverlayOpacity = useTransform(y, [0, SWIPE_DOWN_THRESHOLD], [0, 0.8]);
+  const upOverlayOpacity = useTransform(y, [-SWIPE_UP_THRESHOLD, 0], [0.8, 0]);
 
   const currentVenue = venues[currentIndex];
   const nextVenue = venues[currentIndex + 1];
   const hasMore = currentIndex < venues.length;
 
-  // Preload next card's first 2-3 images
+  // Preload next card's images
   useEffect(() => {
     if (!nextVenue) return;
     const photos = nextVenue?.image_urls?.slice(0, 3) || [];
@@ -68,19 +75,30 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
     y.set(0);
   }, [x, y]);
 
+  // Open rating sheet
+  const openRatingSheet = useCallback((venue) => {
+    setRatingPendingVenue(venue);
+    setRatingSheetOpen(true);
+    logRatingSheetOpened(venue);
+  }, [logRatingSheetOpened]);
+
   // Handle interaction + animate out
   const performAction = useCallback(async (direction, venue) => {
+    if (direction === 'up') {
+      openRatingSheet(venue);
+      return;
+    }
+
     let success = true;
     if (direction === 'right') {
-      success = await handleWantToGo(venue);
+      success = await handleInterested(venue);
     } else if (direction === 'left') {
-      success = await handlePass(venue);
+      success = await handleNotInterested(venue);
     } else if (direction === 'down') {
-      success = await handleViewed(venue);
+      success = handleSkip(venue);
     }
 
     if (success === false) {
-      // Not authenticated — show auth modal, don't advance
       setAuthModalOpen(true);
       return;
     }
@@ -91,7 +109,35 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
     await animate(x, exitX, { duration: 0.3 });
     if (direction === 'down') await animate(y, exitY, { duration: 0.3 });
     advanceCard();
-  }, [handleWantToGo, handlePass, handleViewed, x, y, advanceCard]);
+  }, [handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, advanceCard]);
+
+  // Handle rating from sheet
+  const handleRate = useCallback(async (rating) => {
+    setRatingSheetOpen(false);
+    if (!ratingPendingVenue) return;
+
+    const success = await handleRated(ratingPendingVenue, rating);
+    if (success === false) {
+      setAuthModalOpen(true);
+      setRatingPendingVenue(null);
+      return;
+    }
+
+    // Animate card with upward fade-out
+    setExitDirection('rated');
+    setRatingPendingVenue(null);
+    await new Promise((r) => setTimeout(r, 400));
+    advanceCard();
+  }, [ratingPendingVenue, handleRated, advanceCard]);
+
+  // Handle rating cancel
+  const handleRatingCancel = useCallback(() => {
+    if (ratingPendingVenue) {
+      logRatingSheetCancelled(ratingPendingVenue);
+    }
+    setRatingSheetOpen(false);
+    setRatingPendingVenue(null);
+  }, [ratingPendingVenue, logRatingSheetCancelled]);
 
   // Drag end handler
   const handleDragEnd = useCallback((event, info) => {
@@ -104,35 +150,33 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
       performAction('left', currentVenue);
     } else if (offset.y > SWIPE_DOWN_THRESHOLD) {
       performAction('down', currentVenue);
+    } else if (offset.y < -SWIPE_UP_THRESHOLD) {
+      performAction('up', currentVenue);
     } else {
-      // Snap back
       animate(x, 0, { type: 'spring', stiffness: 500, damping: 30 });
       animate(y, 0, { type: 'spring', stiffness: 500, damping: 30 });
     }
   }, [currentVenue, performAction, x, y]);
 
-  // Card body tap → open venue details
+  // Card body tap → venue details
   const handleCardBodyTap = useCallback((venue) => {
     const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
-    setViewedFromDetails(venue);
     navigate(`/venue/${placeId}`, { state: { venue } });
   }, [navigate]);
-
-  // On return from venue details, auto-save as Viewed if no other action taken
-  useEffect(() => {
-    if (viewedFromDetails && currentVenue === viewedFromDetails) {
-      // User came back — save as Viewed and advance
-      handleViewed(viewedFromDetails);
-      setViewedFromDetails(null);
-    }
-  }, []); // Only on mount/navigation back — this is simplified; full popstate handling deferred
 
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e) => {
       if (!currentVenue || !hasMore) return;
-      // Don't capture if focused on input
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      if (e.key === 'Escape' && ratingSheetOpen) {
+        e.preventDefault();
+        handleRatingCancel();
+        return;
+      }
+
+      if (ratingSheetOpen) return; // Don't process other keys while sheet is open
 
       switch (e.key) {
         case 'ArrowRight':
@@ -149,6 +193,12 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
           e.preventDefault();
           performAction('down', currentVenue);
           break;
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+          e.preventDefault();
+          performAction('up', currentVenue);
+          break;
         case 'Enter':
           e.preventDefault();
           handleCardBodyTap(currentVenue);
@@ -157,14 +207,14 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [currentVenue, hasMore, performAction, handleCardBodyTap]);
+  }, [currentVenue, hasMore, performAction, handleCardBodyTap, ratingSheetOpen, handleRatingCancel]);
 
-  // Auth modal: after successful auth, execute pending action
+  // Auth modal callback
   const handleAuthClose = useCallback((open) => {
     setAuthModalOpen(open);
     if (!open && isAuthenticated && pendingAction) {
       executePending().then(() => {
-        setExitDirection(pendingAction.label === 'Want to Go' ? 'right' : pendingAction.label === "I'll Pass" ? 'left' : 'down');
+        setExitDirection(pendingAction.label === 'Interested' ? 'right' : pendingAction.label === 'Not Interested' ? 'left' : 'rated');
         setTimeout(advanceCard, 300);
       });
     } else if (!open) {
@@ -199,65 +249,68 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
     );
   }
 
-  // Handle favourite from HeartButton — animate card out after delay
-  const handleFavouriteAdvance = useCallback(async () => {
-    if (!currentVenue) return;
-    // Wait ~1s then fade-out + scale-down
-    await new Promise((r) => setTimeout(r, 1000));
-    setExitDirection('favourite');
-    await animate(x, 0, { duration: 0 }); // ensure x is 0
-    advanceCard();
-  }, [currentVenue, x, advanceCard]);
+  // Determine if card should be dimmed (rating sheet open)
+  const isCardDimmed = ratingSheetOpen;
 
   return (
     <div ref={containerRef} className="relative w-full mx-auto max-w-[calc(100vw-2rem)] sm:max-w-[560px] lg:max-w-[660px]" style={{ height: 'var(--deck-height, 78vh)' }}>
-      {/* Ghost cards — scale relative to active card */}
+      {/* Ghost cards */}
       {venues[currentIndex + 2] && (
-        <DiscoveryCard
-          venue={venues[currentIndex + 2]}
-          index={currentIndex + 2}
-          isGhost
-          ghostLevel={2}
-        />
+        <DiscoveryCard venue={venues[currentIndex + 2]} index={currentIndex + 2} isGhost ghostLevel={2} />
       )}
       {venues[currentIndex + 1] && (
-        <DiscoveryCard
-          venue={venues[currentIndex + 1]}
-          index={currentIndex + 1}
-          isGhost
-          ghostLevel={1}
-        />
+        <DiscoveryCard venue={venues[currentIndex + 1]} index={currentIndex + 1} isGhost ghostLevel={1} />
       )}
 
       {/* Active card */}
       <motion.div
         className="absolute inset-0 z-10 touch-none"
         style={{ x, y }}
-        drag
+        drag={!ratingSheetOpen}
         dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
         dragElastic={0.8}
         onDragEnd={handleDragEnd}
-        animate={exitDirection === 'favourite' ? { opacity: 0, scale: 0.9 } : { opacity: 1, scale: 1 }}
+        animate={
+          exitDirection === 'rated'
+            ? { opacity: 0, y: -100, scale: 0.95 }
+            : isCardDimmed
+              ? { opacity: 0.5, scale: 1 }
+              : { opacity: 1, scale: 1 }
+        }
         transition={{ duration: 0.4 }}
       >
         {/* Swipe overlays */}
+        {/* Right — green "Interested" */}
         <motion.div
-          className="absolute inset-0 z-20 rounded-2xl flex items-center justify-center pointer-events-none"
-          style={{
-            opacity: rightOverlayOpacity,
-            background: 'hsla(142, 71%, 45%, 0.2)',
-          }}
+          className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
+          style={{ opacity: rightOverlayOpacity, background: 'hsla(142, 71%, 45%, 0.2)' }}
         >
-          <Heart className="h-20 w-20 text-green-500 fill-green-500/30" />
+          <span className="text-2xl font-bold text-green-600">Interested</span>
         </motion.div>
+
+        {/* Left — red "Not Interested" */}
         <motion.div
-          className="absolute inset-0 z-20 rounded-2xl flex items-center justify-center pointer-events-none"
-          style={{
-            opacity: leftOverlayOpacity,
-            background: 'hsla(0, 84%, 60%, 0.2)',
-          }}
+          className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
+          style={{ opacity: leftOverlayOpacity, background: 'hsla(0, 84%, 60%, 0.2)' }}
         >
-          <X className="h-20 w-20 text-destructive" />
+          <span className="text-2xl font-bold text-destructive">Not Interested</span>
+        </motion.div>
+
+        {/* Down — grey "Skip" */}
+        <motion.div
+          className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
+          style={{ opacity: downOverlayOpacity, background: 'hsla(0, 0%, 50%, 0.2)' }}
+        >
+          <span className="text-2xl font-bold text-muted-foreground">Skip</span>
+        </motion.div>
+
+        {/* Up — purple "Rate it" */}
+        <motion.div
+          className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none"
+          style={{ opacity: upOverlayOpacity, background: 'hsla(270, 60%, 55%, 0.2)' }}
+        >
+          <Star className="h-10 w-10 text-purple-500 fill-purple-500/30" />
+          <span className="text-2xl font-bold text-purple-600">Rate it</span>
         </motion.div>
 
         <DiscoveryCard
@@ -265,55 +318,83 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
           index={currentIndex}
           onDescriptorTap={onDescriptorTap}
           onCardBodyTap={handleCardBodyTap}
-          onFavouriteAdvance={handleFavouriteAdvance}
         />
       </motion.div>
 
-      {/* Web-only action buttons — positioned just outside card edges */}
+      {/* Web-only action buttons */}
       {!isMobile && (
         <>
+          {/* Left — Not Interested */}
           <button
             className="absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-destructive/10 transition-colors"
             style={{ left: '-3rem' }}
             onClick={() => performAction('left', currentVenue)}
             onMouseEnter={() => setHoveredButton('left')}
             onMouseLeave={() => setHoveredButton(null)}
-            aria-label="I'll Pass"
+            aria-label="Not Interested"
           >
             <ChevronLeft className="h-6 w-6 text-destructive" />
           </button>
 
+          {/* Right — Interested */}
           <button
             className="absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-green-500/10 transition-colors"
             style={{ right: '-3rem' }}
             onClick={() => performAction('right', currentVenue)}
             onMouseEnter={() => setHoveredButton('right')}
             onMouseLeave={() => setHoveredButton(null)}
-            aria-label="Want to Go"
+            aria-label="Interested"
           >
             <ChevronRight className="h-6 w-6 text-green-600" />
           </button>
 
+          {/* Bottom — Skip */}
           <button
             className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-14 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-accent transition-colors"
             onClick={() => performAction('down', currentVenue)}
-            aria-label="Skip (Viewed)"
+            onMouseEnter={() => setHoveredButton('down')}
+            onMouseLeave={() => setHoveredButton(null)}
+            aria-label="Skip"
           >
             <ChevronDown className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm text-muted-foreground">Skip</span>
           </button>
 
+          {/* Top — Rate it */}
+          <button
+            className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-14 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-purple-500/10 transition-colors"
+            onClick={() => performAction('up', currentVenue)}
+            onMouseEnter={() => setHoveredButton('up')}
+            onMouseLeave={() => setHoveredButton(null)}
+            aria-label="Rate it"
+          >
+            <Star className="h-4 w-4 text-purple-500" />
+            <span className="text-sm text-purple-600">Rate it</span>
+          </button>
+
+          {/* Hover tint overlay */}
           {hoveredButton && (
             <div
               className={cn(
                 'absolute inset-0 z-[15] rounded-2xl pointer-events-none transition-opacity',
                 hoveredButton === 'right' && 'bg-green-500/5',
                 hoveredButton === 'left' && 'bg-destructive/5',
+                hoveredButton === 'down' && 'bg-muted/10',
+                hoveredButton === 'up' && 'bg-purple-500/5',
               )}
             />
           )}
         </>
       )}
+
+      {/* Constellations rating sheet */}
+      <ConstellationsSheet
+        open={ratingSheetOpen}
+        onOpenChange={setRatingSheetOpen}
+        venueName={ratingPendingVenue?.name || ''}
+        onRate={handleRate}
+        onCancel={handleRatingCancel}
+      />
 
       <AuthModal open={authModalOpen} onOpenChange={handleAuthClose} />
     </div>
