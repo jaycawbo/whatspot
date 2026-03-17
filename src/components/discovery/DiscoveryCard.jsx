@@ -130,7 +130,7 @@ export default function DiscoveryCard({
 
   if (isGhost) {
     const ghostScale = ghostLevel === 1 ? 'scale-[0.95]' : 'scale-[0.90]';
-    const ghostOffset = ghostLevel === 1 ? 'translate-y-2' : 'translate-y-4';
+    const ghostOffset = ghostLevel === 1 ? 'translate-y-[10px]' : 'translate-y-[20px]';
     return (
       <div
         className={cn(
