@@ -1,379 +1,127 @@
-import React, { useCallback, useRef, useMemo, useState } from 'react';
-import { toast } from 'sonner';
+import React, { useCallback, useRef } from 'react';
 import LoadingMessages from '@/components/home/LoadingMessages';
-import WhatspotLogo from '@/components/brand/WhatspotLogo';
 import { useGlobalState } from '@/context/GlobalStateContext';
-import { recommend } from '@/services/api';
 import Header from '@/components/home/Header';
 import SearchBar from '@/components/home/SearchBar';
 import CategoryTiles from '@/components/home/CategoryTiles';
-import FilterSummary from '@/components/home/FilterSummary';
-import RefinementChips from '@/components/home/RefinementChips';
-import SuggestedChips from '@/components/home/SuggestedChips';
-import ResultsList from '@/components/home/ResultsList';
-import MapView from '@/components/home/MapView';
-import ViewToggle from '@/components/home/ViewToggle';
-import FilterDialog from '@/components/home/FilterDialog';
-import RelaxationBanner from '@/components/home/RelaxationBanner';
-import NoResultsPrompt from '@/components/home/NoResultsPrompt';
-import SearchSummary from '@/components/home/SearchSummary';
-import GatedModal from '@/components/home/GatedModal';
-import MobileBottomSheet from '@/components/home/MobileBottomSheet';
 import MobileSearchDrawer from '@/components/home/MobileSearchDrawer';
 import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
-import { Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { logEvent } from '@/lib/logEvent';
 import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
 
 export default function Home() {
   const { state, dispatch } = useGlobalState();
   const isMobile = useIsMobile();
-  const abortRef = useRef(null);
   const searchBarRef = useRef(null);
 
-  // Discovery feed
   const { venues: feedVenues, isLoading: feedLoading, searchFeed, expandSearch } = useDiscoveryFeed();
 
-  // Keep a ref to filters so runSearch always reads the latest values
-  const filtersRef = useRef(state.filters);
-  filtersRef.current = state.filters;
-
-  // --- Search ---
-  const runSearch = useCallback(
-    async (queryText, overrideFilters = null) => {
-      if (abortRef.current) abortRef.current.abort();
-      abortRef.current = new AbortController();
-
-      dispatch({ type: 'SET_LOADING', payload: true });
-      dispatch({ type: 'SET_SEARCH_ERROR', payload: null });
-
-      // Add to history
+  const addSearchHistory = useCallback(
+    (queryText) => {
+      if (!queryText?.trim()) return;
       dispatch({
         type: 'ADD_SEARCH_HISTORY',
-        payload: { query: queryText, location_name: state.locationName, timestamp: Date.now() },
+        payload: {
+          query: queryText,
+          location_name: state.locationName,
+          timestamp: Date.now(),
+        },
       });
-
-      const activeFilters = overrideFilters || filtersRef.current;
-
-      // Read session history for context
-      let session_context = [];
-      try {
-        const raw = sessionStorage.getItem('whatspot_session_history');
-        if (raw) session_context = JSON.parse(raw);
-      } catch {}
-
-      try {
-        const timeout = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('TIMEOUT')), 90000)
-        );
-
-        const res = await Promise.race([
-          recommend({
-            mode: state.category ? 'browse_category' : 'query',
-            category: state.category,
-            query: queryText,
-            lat: state.userLocation.lat,
-            lon: state.userLocation.lon,
-            location_name: state.locationName,
-            radius_km: activeFilters.radius,
-            relaxation_level: state.relaxationLevel,
-            open_now: activeFilters.openNow || undefined,
-            price_levels: activeFilters.priceLevels.length ? activeFilters.priceLevels : undefined,
-            session_context,
-          }),
-          timeout,
-        ]);
-        dispatch({ type: 'SET_RESULTS', payload: res });
-
-        // Log search event passively
-        if (res?.results?.length) {
-          logEvent('search', {
-            search_query: queryText,
-            results_returned: res.results.length,
-            neighborhood_context: state.locationName,
-          });
-        }
-
-        // Store search context in sessionStorage
-        if (res?.results?.length) {
-          const entry = {
-            query: queryText,
-            timestamp: Date.now(),
-            search_summary: res.search_summary || null,
-            results: res.results.map(r => ({
-              name: r.name,
-              cuisine_type: r.cuisine_type,
-              descriptors: r.descriptors,
-              reasoning_explanation: r.reasoning_explanation,
-              address: r.address,
-              lat: r.lat,
-              lon: r.lon,
-              rating: r.rating,
-              review_count: r.review_count,
-              price_level: r.price_level,
-              place_id: r.place_id,
-              image_urls: r.image_urls,
-              distance_km: r.distance_km,
-              category: r.category,
-              score: r.score,
-            })),
-          };
-          try {
-            const history = session_context.length ? [...session_context] : [];
-            history.push(entry);
-            sessionStorage.setItem('whatspot_session_history', JSON.stringify(history.slice(-20)));
-          } catch {}
-        }
-      } catch (err) {
-        const isTimeout = err?.message === 'TIMEOUT';
-        const errorMsg = isTimeout
-          ? 'Search timed out. Try a simpler query or smaller radius.'
-          : 'Search failed. Please try again.';
-        dispatch({ type: 'SET_SEARCH_ERROR', payload: errorMsg });
-        dispatch({ type: 'SET_LOADING', payload: false });
-        toast.error(errorMsg);
-      }
     },
-    [state.userLocation, state.locationName, state.anonymousId, state.relaxationLevel, state.sort, dispatch]
+    [dispatch, state.locationName]
   );
 
   const handleSearch = useCallback(
-    (q) => {
-      dispatch({ type: 'SET_QUERY', payload: q });
-      // In pre-search mode, refresh the discovery feed instead of switching to post-search
-      if (state.mode === 'pre-search') {
-        searchFeed(q);
-        return;
-      }
-      runSearch(q, filtersRef.current);
+    (queryText) => {
+      const nextQuery = queryText.trim();
+      if (!nextQuery) return;
+
+      dispatch({ type: 'SET_QUERY', payload: nextQuery });
+      dispatch({ type: 'SET_CATEGORY', payload: null });
+      dispatch({ type: 'SET_TILE_BASE_QUERY', payload: null });
+      addSearchHistory(nextQuery);
+      searchFeed(nextQuery);
     },
-    [dispatch, runSearch, state.mode, searchFeed]
+    [dispatch, addSearchHistory, searchFeed]
   );
 
-  const handleStopQuery = useCallback(() => {
-    if (abortRef.current) abortRef.current.abort();
-    dispatch({ type: 'SET_LOADING', payload: false });
-  }, [dispatch]);
-
-  // --- Category selection ---
   const handleSelectCategory = useCallback(
-    (cat) => {
-      dispatch({ type: 'SET_QUERY', payload: cat.prompt });
-      dispatch({ type: 'SET_TILE_BASE_QUERY', payload: cat.prompt });
-      dispatch({ type: 'SET_CATEGORY', payload: cat.label });
-      // Refresh discovery feed with category query
-      searchFeed(cat.prompt);
+    (category) => {
+      dispatch({ type: 'SET_QUERY', payload: category.prompt });
+      dispatch({ type: 'SET_TILE_BASE_QUERY', payload: category.prompt });
+      dispatch({ type: 'SET_CATEGORY', payload: category.label });
+      addSearchHistory(category.prompt);
+      searchFeed(category.prompt);
     },
-    [dispatch, searchFeed]
+    [dispatch, addSearchHistory, searchFeed]
   );
 
-  // --- Chip append ---
   const handleAppendChip = useCallback(
     (chipLabel, connector = ' ') => {
-      const newQuery = (state.query + connector + chipLabel).trim();
+      const newQuery = `${state.query || state.tileBaseQuery || ''}${connector}${chipLabel}`.trim();
       dispatch({ type: 'SET_QUERY', payload: newQuery });
     },
-    [state.query, dispatch]
+    [state.query, state.tileBaseQuery, dispatch]
   );
-
-  // --- Filters ---
-  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
-
-  const handleFilterChange = useCallback(
-    (f) => {
-      dispatch({ type: 'SET_FILTERS', payload: f });
-      // Re-run search if we're in post-search mode
-      if (state.mode === 'post-search' && state.query) {
-        runSearch(state.query, f);
-      }
-    },
-    [dispatch, state.mode, state.query, runSearch]
-  );
-
-  // --- Display results (sort only, filtering is server-side) ---
-  const displayResults = useMemo(() => {
-    let r = [...state.results];
-    if (state.sort === 'distance') r.sort((a, b) => a.distance_km - b.distance_km);
-    return r;
-  }, [state.results, state.sort]);
-
-  // --- Relaxation ---
-  const handleRelax = useCallback(() => {
-    const next = state.relaxationLevel + 1;
-    if (next > 3) {
-      dispatch({ type: 'SET_NO_VENUES', payload: true });
-      return;
-    }
-    dispatch({ type: 'SET_RELAXATION_LEVEL', payload: next });
-    runSearch(state.query);
-  }, [state.relaxationLevel, state.query, dispatch, runSearch]);
-
-  const isPreSearch = state.mode === 'pre-search';
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
 
-      {/* Pre-search state */}
-      {isPreSearch && (
-        <div className="flex flex-col flex-1 pt-14">
-          {/* Web: search bar + category chips above feed */}
-          {!isMobile && (
-            <div className="px-4 md:px-8 lg:px-12 py-4 space-y-3 max-w-2xl mx-auto w-full">
-              <SearchBar
-                ref={searchBarRef}
-                query={state.query}
-                onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
-                onSearch={handleSearch}
-                isQuerying={state.isQuerying}
-                onStopQuery={handleStopQuery}
-                centered={false}
-              />
-              <CategoryTiles onSelectCategory={handleSelectCategory} />
-            </div>
-          )}
-
-          {/* Feed fills remaining viewport — responsive sizing via CSS custom property */}
-          <div
-            className={`flex-1 flex items-center justify-center px-4 ${isMobile ? 'pb-20' : ''}`}
-            style={{ '--deck-height': isMobile ? '85vh' : 'clamp(500px, 78vh, 800px)' }}
-          >
-            <div className="w-full mx-auto">
-              {feedLoading ? (
-                <div className="flex items-center justify-center h-full">
-                  <LoadingMessages />
-                </div>
-              ) : (
-                <DiscoveryDeck
-                  venues={feedVenues}
-                  onDescriptorTap={(tag) => {
-                    searchFeed(tag);
-                  }}
-                  onExpandSearch={expandSearch}
-                  onNewSearch={() => searchBarRef.current?.focus?.()}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* Mobile: pinned bottom search drawer */}
-          {isMobile && (
-            <MobileSearchDrawer
+      <div className="flex flex-col flex-1 pt-14">
+        {!isMobile && (
+          <div className="px-4 md:px-8 lg:px-12 py-4 space-y-3 max-w-2xl mx-auto w-full">
+            <SearchBar
+              ref={searchBarRef}
               query={state.query}
-              onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
+              onQueryChange={(query) => dispatch({ type: 'SET_QUERY', payload: query })}
               onSearch={handleSearch}
-              isQuerying={state.isQuerying}
-              onStopQuery={handleStopQuery}
-              onSelectCategory={handleSelectCategory}
-              searchHistory={state.searchHistory}
-              suggestedChips={state.suggestedChips}
-              onAppendChip={handleAppendChip}
-              tileBaseQuery={state.tileBaseQuery}
+              isQuerying={feedLoading}
+              onStopQuery={() => {}}
+              centered={false}
             />
-          )}
-        </div>
-      )}
+            <CategoryTiles onSelectCategory={handleSelectCategory} />
+          </div>
+        )}
 
-      {/* Post-search state */}
-      {!isPreSearch && (
-        <div className="pt-14">
-          <div className="px-4 md:px-8 lg:px-12 py-4 space-y-4 max-w-7xl mx-auto">
-            {/* Search bar (left-aligned) */}
-            {!isMobile && (
-              <SearchBar
-                query={state.query}
-                onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
-                onSearch={handleSearch}
-                isQuerying={state.isQuerying}
-                onStopQuery={handleStopQuery}
-                centered={false}
-              />
-            )}
-
-            {/* Loading messages */}
-            {state.isLoading && <LoadingMessages />}
-
-            {/* Suggested chips */}
-            {!isMobile && !state.isLoading && (
-              <SuggestedChips chips={state.suggestedChips} onAppendChip={handleAppendChip} />
-            )}
-
-            {/* Controls row */}
-            <div className="flex items-center justify-between gap-2 flex-wrap mb-4">
-              <FilterSummary filters={state.filters} onOpenFilters={() => setFilterDialogOpen(true)} />
-              <ViewToggle
-                view={state.view}
-                setView={(v) => dispatch({ type: 'SET_VIEW', payload: v })}
-              />
-            </div>
-
-            {/* Relaxation banner */}
-            <RelaxationBanner relaxations={state.appliedRelaxations} />
-
-            {/* Search summary */}
-            {!state.isLoading && state.results?.length > 0 && <SearchSummary summary={state.searchSummary} />}
-
-            {/* Results */}
-            {state.view === 'list' ? (
-              <div>
-                {!state.isLoading && displayResults.length === 0 ? (
-                  <NoResultsPrompt
-                    onRelax={handleRelax}
-                    isRelaxing={state.isLoading}
-                    noVenuesAtAll={state.noVenuesAtAll}
-                    searchError={state.searchError}
-                  />
-                ) : (
-                  <ResultsList results={displayResults} isLoading={state.isLoading} currentQuery={state.query} />
-                )}
+        <div
+          className={`flex-1 flex items-center justify-center px-4 ${isMobile ? 'pb-20' : ''}`}
+          style={{ '--deck-height': isMobile ? '85vh' : 'clamp(500px, 78vh, 800px)' }}
+        >
+          <div className="w-full mx-auto">
+            {feedLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <LoadingMessages />
               </div>
             ) : (
-              <div className="h-[60vh] md:h-[70vh]">
-                <MapView results={displayResults} isLoading={state.isLoading} />
-              </div>
-            )}
-
-            {/* Pagination */}
-            {state.pagination?.has_more && !state.isLoading && (
-              <div className="flex justify-center pt-2">
-                <Button variant="outline" className="gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin hidden" />
-                  More options
-                </Button>
-              </div>
+              <DiscoveryDeck
+                venues={feedVenues}
+                onDescriptorTap={(tag) => {
+                  dispatch({ type: 'SET_QUERY', payload: tag });
+                  searchFeed(tag);
+                }}
+                onExpandSearch={expandSearch}
+                onNewSearch={() => searchBarRef.current?.focus?.()}
+              />
             )}
           </div>
-
-          {/* Mobile bottom sheet */}
-          {isMobile && (
-            <MobileBottomSheet
-              query={state.query}
-              onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
-              onSearch={handleSearch}
-              isQuerying={state.isQuerying}
-              onStopQuery={handleStopQuery}
-              suggestedChips={state.suggestedChips}
-              onAppendChip={handleAppendChip}
-              onSelectCategory={handleSelectCategory}
-              searchHistory={state.searchHistory}
-            />
-          )}
         </div>
-      )}
 
-      {/* Gated modal */}
-      <GatedModal isOpen={state.gated} onClose={() => {}} />
-
-      {/* Standalone filter dialog (triggered from pre-search icon) */}
-      <FilterDialog
-        filters={state.filters}
-        onFilterChange={handleFilterChange}
-        externalOpen={filterDialogOpen}
-        onExternalOpenChange={setFilterDialogOpen}
-        hideTrigger
-      />
+        {isMobile && (
+          <MobileSearchDrawer
+            query={state.query}
+            onQueryChange={(query) => dispatch({ type: 'SET_QUERY', payload: query })}
+            onSearch={handleSearch}
+            isQuerying={feedLoading}
+            onStopQuery={() => {}}
+            onSelectCategory={handleSelectCategory}
+            searchHistory={state.searchHistory}
+            suggestedChips={state.suggestedChips}
+            onAppendChip={handleAppendChip}
+            tileBaseQuery={state.tileBaseQuery}
+          />
+        )}
+      </div>
     </div>
   );
 }
