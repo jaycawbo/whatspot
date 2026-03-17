@@ -19,10 +19,12 @@ import NoResultsPrompt from '@/components/home/NoResultsPrompt';
 import SearchSummary from '@/components/home/SearchSummary';
 import GatedModal from '@/components/home/GatedModal';
 import MobileBottomSheet from '@/components/home/MobileBottomSheet';
+import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { logEvent } from '@/lib/logEvent';
+import { mockVenues } from '@/data/mockVenues';
 
 export default function Home() {
   const { state, dispatch } = useGlobalState();
@@ -218,6 +220,14 @@ export default function Home() {
               onStopQuery={handleStopQuery}
               centered
             />
+
+            {/* Discovery Feed — uses mock data until feed seeding is wired */}
+            <div className="w-full max-w-sm mx-auto" style={{ height: '70vh', maxHeight: 600 }}>
+              <DiscoveryDeck
+                venues={mockVenues}
+                onDescriptorTap={(tag) => handleSearch(tag)}
+              />
+            </div>
 
             <div className="w-full max-w-xl">
               <CategoryTiles onSelectCategory={handleSelectCategory} />

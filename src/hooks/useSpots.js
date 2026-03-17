@@ -126,6 +126,23 @@ export function useSpots() {
   // Get all unique labels across all spots
   const allLabels = [...new Set(spots.flatMap((s) => s.labels || []))];
 
+  // Save or update label with hierarchy: Favourite always supersedes
+  const saveOrUpdateLabel = async ({ venue, label }) => {
+    if (!user) throw new Error('Not authenticated');
+    const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
+    const currentLabels = getLabels(placeId);
+
+    // Don't downgrade from Favourite
+    if (currentLabels.includes('Favourite') && label !== 'Favourite') return;
+
+    if (isSaved(placeId)) {
+      const newLabels = [label];
+      await updateLabelsMutation.mutateAsync({ placeId, labels: newLabels });
+    } else {
+      await saveMutation.mutateAsync({ venue, labels: [label] });
+    }
+  };
+
   return {
     spots,
     isLoading,
@@ -135,6 +152,7 @@ export function useSpots() {
     saveSpot: saveMutation.mutateAsync,
     removeSpot: removeMutation.mutateAsync,
     updateLabels: updateLabelsMutation.mutateAsync,
+    saveOrUpdateLabel,
     isSaving: saveMutation.isPending,
     isRemoving: removeMutation.isPending,
     allLabels,
