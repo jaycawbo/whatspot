@@ -221,6 +221,14 @@ export default function Home() {
               centered
             />
 
+            {/* Discovery Feed — uses mock data until feed seeding is wired */}
+            <div className="w-full max-w-sm mx-auto" style={{ height: '70vh', maxHeight: 600 }}>
+              <DiscoveryDeck
+                venues={mockVenues}
+                onDescriptorTap={(tag) => handleSearch(tag)}
+              />
+            </div>
+
             <div className="w-full max-w-xl">
               <CategoryTiles onSelectCategory={handleSelectCategory} />
             </div>
