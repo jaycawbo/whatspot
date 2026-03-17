@@ -210,7 +210,7 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
   }, [currentVenue, x, advanceCard]);
 
   return (
-    <div ref={containerRef} className="relative w-full mx-auto max-w-[calc(100vw-2rem)] sm:max-w-[480px] lg:max-w-[560px]" style={{ height: 'var(--deck-height, 78vh)' }}>
+    <div ref={containerRef} className="relative w-full mx-auto max-w-[calc(100vw-2rem)] sm:max-w-[560px] lg:max-w-[660px]" style={{ height: 'var(--deck-height, 78vh)' }}>
       {/* Ghost cards — scale relative to active card */}
       {venues[currentIndex + 2] && (
         <DiscoveryCard
