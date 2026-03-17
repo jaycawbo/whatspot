@@ -1,114 +1,69 @@
 
 
-# Whatspot — Frontend Shell + PWA Build Plan
+## Discovery Card & Interactions — Implementation Plan
 
-## Overview
+### Overview
+Build a swipeable venue discovery card component with photo browsing, ghost card stack, drag/swipe interactions (mobile + web), keyboard shortcuts, and automatic Spots saving with the correct label per interaction type.
 
-Build the complete Whatspot frontend UI with mock data, PWA support, and prepare the architecture for future Supabase Edge Function integration. The app is a single-page venue discovery tool with search, category browsing, filtering, and map/list views.
+### New Files
 
-## Current State
+**1. `src/components/discovery/DiscoveryCard.jsx`** — The main card component
+- Full-bleed photo zone with left/right tap regions for photo navigation
+- Auto-advancing crossfade (4s interval) with dot indicators at top
+- Venue name (large, bold), neighbourhood text, 3 hardcoded descriptor pill chips
+- HeartButton in top-right corner of photo zone
+- Tapping card body (name/neighbourhood/tags area) navigates to `/venue/:placeId`
+- Preloads first 2-3 photos on mount via `<link rel="preload">`
 
-- Empty shell: no pages besides `Index.tsx` placeholder and `NotFound.tsx`
-- Existing Base44 SDK setup (auth, vite plugin, edge functions for Google Places)
-- Existing edge functions for Google Places APIs (will be migrated to Supabase later)
-- No Home page, no components, no global state
+**2. `src/components/discovery/DiscoveryDeck.jsx`** — The deck/stack manager
+- Renders active card + 2 ghost cards (scaled down, offset, non-interactive) behind it
+- Manages card index, advancing to next card on swipe/action completion
+- Uses Framer Motion for:
+  - Drag gesture handling (unified pointer events — works for touch + mouse)
+  - Drag overlay hints: green heart (drag right), red X (drag left), opacity proportional to drag distance
+  - Exit animations: card flies off-screen in swipe direction
+  - Entry animation: next card scales up from ghost position
+- Swipe thresholds: ~100px horizontal for Want to Go / I'll Pass, ~80px down for Viewed
+- Web-only: left/right arrow buttons on card edges, skip button at bottom center
+- Web-only: hover states on arrow buttons show faint tint overlay on card
+- Keyboard shortcuts: Right arrow → Want to Go, Left arrow → I'll Pass, Down/S → Viewed, Enter → Open details
+- Empty state when all cards viewed: "You've seen all the top spots nearby" with CTAs
 
-## Architecture Decisions
+**3. `src/hooks/useDiscoveryInteractions.js`** — Interaction handler hook
+- Wraps `useSpots()` save logic
+- Exposes: `handleWantToGo(venue)`, `handlePass(venue)`, `handleViewed(venue)`, `handleFavourite(venue)`
+- Each handler:
+  1. Calls `saveSpot({ venue, labels: ['Want to Go'] })` (or updates label if already saved, with Favourite always superseding)
+  2. Logs interaction to console: `console.log('[TODO: wire to backend]', { event: 'venue_want_to_go', venue_id, timestamp })`
+  3. Checks `isAuthenticated` — if not, queues the action and opens AuthModal
+- Also exposes: `logDescriptorTap(venueId, tagText)`, `logPhotoAdvance(venueId, photoIndex)`
 
-- **Routing**: Use the existing `pages.config.js` system with `App.jsx` as the entry point
-- **State management**: React Context (`GlobalStateContext`) for app-wide state (location, search query, filters, sort, view mode)
-- **Styling**: Tailwind CSS with existing design tokens from `index.css`
-- **Maps**: `react-leaflet` for the map view (free, no API key needed)
-- **Mock data**: Hardcoded venue results for development; API service layer with easy swap-in points
-- **PWA**: `vite-plugin-pwa` for service worker, manifest, and installability
+### Modified Files
 
-## Build Phases (all frontend shell)
+**4. `src/pages/Home.jsx`** — Add DiscoveryDeck to pre-search state
+- Import `DiscoveryDeck`
+- In the pre-search section, render `<DiscoveryDeck venues={[]} />` below the logo/search area (empty for now — feed seeding is a later prompt)
+- For now, pass `mockVenues` from existing `src/data/mockVenues.js` or hardcoded test data so the component is testable
+- The deck will be the primary UI element; category tiles move into the search drawer (later prompt)
 
-### Phase 1: Foundation
+**5. `src/hooks/useSpots.js`** — Add `saveOrUpdateLabel` helper
+- New method that checks if venue is already saved; if so, updates label (with Favourite superseding); if not, saves with the given label
+- This avoids duplicating the upsert-then-label logic across every interaction handler
 
-1. **PWA setup** — Add `vite-plugin-pwa`, create `manifest.json` with Whatspot branding, configure service worker for offline caching
-2. **GlobalStateContext** — Context provider with: `query`, `category`, `mode` (pre-search/post-search), `sort`, `view` (list/map), `userLocation`, `locationName`, `filters`, `anonymousId`, `suggestedChips`, `searchHistory`
-3. **Mock API service** — `src/services/api.ts` with `recommend()` and `recommendPage()` returning realistic mock venue data, matching the spec's response shape
-4. **Update `pages.config.js`** — Register `Home` page as main page
+### Key Technical Decisions
 
-### Phase 2: Core Components
+- **Framer Motion `drag`** for unified touch + mouse gesture handling (already in dependencies)
+- **No new dependencies** — everything uses Framer Motion, existing UI primitives, and existing Spots infrastructure
+- **Ghost cards** are pure visual — rendered as divs with `scale(0.95)`/`scale(0.9)` and slight Y offset, `pointer-events: none`, pulling photo from next venues in queue
+- **Photo crossfade** uses absolute-positioned images with opacity transitions (CSS transition, not Framer) toggled by a 4s `setInterval`
+- **Venue Details navigation** on card body tap uses `navigate(`/venue/${placeId}`, { state: { venue } })` — same as existing VenueCard. On return (popstate), if no further interaction occurred, auto-save as "Viewed"
+- **Descriptor pills** are hardcoded placeholder arrays for now (3 per card); tapping logs to console with TODO
+- **All Section 8 events** logged via `console.log` with structured objects and `// TODO: wire to user_interactions table` comments
 
-5. **Header** — Fixed top bar with logo, location display (editable), clear-search button
-6. **SearchBar** — Text input with search/stop icons, centered (pre-search) vs left-aligned (post-search), Enter-to-submit
-7. **CategoryTiles** — Grid of emoji+label tiles (Pizza, Coffee, Bars, etc.), clicking populates search bar
-8. **RefinementChips** — Horizontal scrollable pills that appear after tile selection, click appends to query
-9. **Home page** — Compose Header + SearchBar + CategoryTiles + RefinementChips for pre-search state
-
-### Phase 3: Post-Search UI
-
-10. **ResultsList** — Venue cards with name, address, distance, rating stars, price level, cuisine tag, open/closed badge, image
-11. **MapView** — react-leaflet map with venue markers and popups
-12. **ViewToggle** — List/map icon toggle
-13. **SortToggle** — Relevance/Distance inline toggle
-14. **FilterDialog** — Modal with Open Now toggle, price multi-select, cuisine filter, radius slider
-15. **SuggestedChips** — AI-generated refinement chips row (mock data)
-16. **RelaxationBanner** — Info banner when constraints were loosened
-17. **NoResultsPrompt** — Zero-results state with "Relax constraints" button
-18. **Pagination** — "More options" button when `has_more` is true
-
-### Phase 4: Modals & Mobile
-
-19. **GatedModal** — Sign-in prompt overlay
-20. **LocationConfirmModal** — Detected vs current location chooser
-21. **MobileBottomSheet** — Slide-up sheet for mobile post-search with search bar, categories, chips, history
-22. **Responsive layout** — Desktop side-by-side vs mobile stacked with bottom sheet
-
-### Phase 5: User Flows & Polish
-
-23. **Location detection** — Browser geolocation → reverse geocode (mock for now) → localStorage persistence
-24. **Search history** — localStorage-based, max 10 items, deduped
-25. **Cache restore** — Save/restore results from localStorage on navigation
-26. **Anonymous ID** — UUID generation and localStorage persistence
-
-## New Dependencies
-
-- `react-leaflet` + `leaflet` — Map rendering
-- `vite-plugin-pwa` — PWA support (service worker, manifest)
-- `lodash.debounce` or inline debounce — Search debouncing
-- `framer-motion` — AnimatePresence for results transitions
-- `uuid` — Anonymous ID generation
-
-## File Structure
-
-```text
-src/
-├── pages/
-│   └── Home.jsx                    # Main (only) page
-├── components/
-│   └── home/
-│       ├── Header.jsx
-│       ├── SearchBar.jsx
-│       ├── CategoryTiles.jsx
-│       ├── RefinementChips.jsx
-│       ├── ResultsList.jsx
-│       ├── VenueCard.jsx
-│       ├── MapView.jsx
-│       ├── ViewToggle.jsx
-│       ├── SortToggle.jsx
-│       ├── FilterDialog.jsx
-│       ├── SuggestedChips.jsx
-│       ├── RelaxationBanner.jsx
-│       ├── NoResultsPrompt.jsx
-│       ├── GatedModal.jsx
-│       ├── LocationConfirmModal.jsx
-│       └── MobileBottomSheet.jsx
-├── context/
-│   └── GlobalStateContext.jsx
-├── services/
-│   └── api.js                      # Mock API, swap for real later
-└── data/
-    └── mockVenues.js               # Mock venue data
-```
-
-## Technical Notes
-
-- The existing Base44 auth system in `AuthContext.jsx` will be preserved but the app will work without auth (anonymous mode)
-- Edge functions in `functions/` will remain as-is; they'll be migrated to Supabase Edge Functions in a later phase
-- The `recommend` API will initially return mock data; the service layer is designed so swapping in real API calls requires changing only `src/services/api.js`
-- PWA manifest will include app name "Whatspot", appropriate icons, theme color matching the design tokens, and `display: standalone`
+### What This Does NOT Build
+- Feed seeding / API integration (later prompt)
+- Descriptor generation from LLM (later prompt)
+- Search bar relocation or bottom sheet changes (later prompt)
+- Spots filter system changes (later prompt)
+- Backend interaction storage (TODO comments only)
 
