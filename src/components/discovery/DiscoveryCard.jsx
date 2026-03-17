@@ -5,7 +5,10 @@ import HeartButton from '@/components/spots/HeartButton';
 
 const CROSSFADE_INTERVAL = 4000;
 
-// Hardcoded placeholder descriptors until LLM generation is wired
+// Fallback descriptors shown while LLM-generated ones load or if generation fails.
+// TODO: A venue_descriptors table keyed by venue_id should be created to cache
+// LLM-generated descriptors and avoid redundant calls. Vibe-based dynamic Spots
+// tags will also depend on this cache.
 const PLACEHOLDER_DESCRIPTORS = [
   ['cozy neighbourhood gem', 'creative seasonal menu', 'great for date night'],
   ['lively atmosphere', 'craft cocktails', 'late night bites'],
