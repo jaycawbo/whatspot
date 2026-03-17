@@ -24,7 +24,7 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { logEvent } from '@/lib/logEvent';
-import { mockVenues } from '@/data/mockVenues';
+import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
 
 export default function Home() {
   const { state, dispatch } = useGlobalState();
