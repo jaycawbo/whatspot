@@ -162,8 +162,10 @@ export default function Home() {
       dispatch({ type: 'SET_QUERY', payload: cat.prompt });
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: cat.prompt });
       dispatch({ type: 'SET_CATEGORY', payload: cat.label });
+      // Refresh discovery feed with category query
+      searchFeed(cat.prompt);
     },
-    [dispatch]
+    [dispatch, searchFeed]
   );
 
   // --- Chip append ---
