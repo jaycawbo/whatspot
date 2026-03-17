@@ -212,14 +212,17 @@ export default function Home() {
               <WhatspotLogo size="hero" />
             </a>
 
-            <SearchBar
-              query={state.query}
-              onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
-              onSearch={handleSearch}
-              isQuerying={state.isQuerying}
-              onStopQuery={handleStopQuery}
-              centered
-            />
+            {/* Search bar above card on desktop only */}
+            {!isMobile && (
+              <SearchBar
+                query={state.query}
+                onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
+                onSearch={handleSearch}
+                isQuerying={state.isQuerying}
+                onStopQuery={handleStopQuery}
+                centered
+              />
+            )}
 
             {/* Discovery Feed — uses mock data until feed seeding is wired */}
             <div className="w-full max-w-sm mx-auto" style={{ height: '70vh', maxHeight: 600 }}>
@@ -228,6 +231,18 @@ export default function Home() {
                 onDescriptorTap={(tag) => handleSearch(tag)}
               />
             </div>
+
+            {/* Search bar below card on mobile */}
+            {isMobile && (
+              <SearchBar
+                query={state.query}
+                onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
+                onSearch={handleSearch}
+                isQuerying={state.isQuerying}
+                onStopQuery={handleStopQuery}
+                centered
+              />
+            )}
 
             <div className="w-full max-w-xl">
               <CategoryTiles onSelectCategory={handleSelectCategory} />
