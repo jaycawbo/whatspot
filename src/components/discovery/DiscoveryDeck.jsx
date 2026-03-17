@@ -40,7 +40,18 @@ export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSe
   const leftOverlayOpacity = useTransform(x, [-SWIPE_THRESHOLD, 0], [0.8, 0]);
 
   const currentVenue = venues[currentIndex];
+  const nextVenue = venues[currentIndex + 1];
   const hasMore = currentIndex < venues.length;
+
+  // Preload next card's first 2-3 images
+  useEffect(() => {
+    if (!nextVenue) return;
+    const photos = nextVenue?.image_urls?.slice(0, 3) || [];
+    photos.forEach((src) => {
+      const img = new Image();
+      img.src = src;
+    });
+  }, [nextVenue]);
 
   // Advance to next card
   const advanceCard = useCallback(() => {
