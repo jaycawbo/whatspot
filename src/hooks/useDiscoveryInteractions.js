@@ -2,8 +2,8 @@ import { useState, useCallback } from 'react';
 import { useSpots } from '@/hooks/useSpots';
 
 /**
- * Hook that maps discovery feed gestures to Spots saving with correct labels.
- * Logs all interactions to console with TODO markers for future backend wiring.
+ * Hook that maps discovery feed gestures to the new 4-way interaction system.
+ * All interactions log to console with TODO markers for future backend wiring.
  */
 export function useDiscoveryInteractions() {
   const { saveSpot, removeSpot, updateLabels, isSaved, getLabels, isAuthenticated } = useSpots();
@@ -14,88 +14,88 @@ export function useDiscoveryInteractions() {
     const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
 
     try {
-      const currentLabels = getLabels(placeId);
-
-      // Favourite always supersedes
-      if (currentLabels.includes('Favourite') && label !== 'Favourite') {
-        // Don't downgrade from Favourite
-        return;
-      }
-
       if (isSaved(placeId)) {
-        // Update label — most recent wins (except Favourite supersedes)
-        const newLabels = label === 'Favourite'
-          ? ['Favourite']
-          : [label];
-        await updateLabels({ placeId, labels: newLabels });
+        await updateLabels({ placeId, labels: [label] });
       } else {
-        const labels = [label];
-        await saveSpot({ venue, labels });
+        await saveSpot({ venue, labels: [label] });
       }
     } catch (err) {
       console.error('Failed to save interaction:', err);
     }
-  }, [saveSpot, updateLabels, isSaved, getLabels]);
+  }, [saveSpot, updateLabels, isSaved]);
 
-  const handleWantToGo = useCallback(async (venue) => {
+  const handleInterested = useCallback(async (venue) => {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
-    // TODO: wire to user_interactions table
-    console.log('[TODO: wire to backend]', { event: 'venue_want_to_go', venue_id: placeId, timestamp: Date.now() });
+    // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
+    console.log('[TODO: wire to backend]', { event: 'venue_interested', venue_id: placeId, timestamp: Date.now() });
 
     if (!isAuthenticated) {
-      setPendingAction({ venue, label: 'Want to Go' });
-      return false; // Signal caller to show auth modal
-    }
-    await saveWithLabel(venue, 'Want to Go');
-    return true;
-  }, [isAuthenticated, saveWithLabel]);
-
-  const handlePass = useCallback(async (venue) => {
-    const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
-    // TODO: wire to user_interactions table
-    console.log('[TODO: wire to backend]', { event: 'venue_passed', venue_id: placeId, timestamp: Date.now() });
-
-    if (!isAuthenticated) {
-      setPendingAction({ venue, label: "I'll Pass" });
+      setPendingAction({ venue, label: 'Interested' });
       return false;
     }
-    await saveWithLabel(venue, "I'll Pass");
+    await saveWithLabel(venue, 'Interested');
     return true;
   }, [isAuthenticated, saveWithLabel]);
 
-  const handleViewed = useCallback(async (venue) => {
+  const handleNotInterested = useCallback(async (venue) => {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
-    // TODO: wire to user_interactions table
-    console.log('[TODO: wire to backend]', { event: 'venue_viewed', venue_id: placeId, timestamp: Date.now() });
+    // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
+    console.log('[TODO: wire to backend]', { event: 'venue_not_interested', venue_id: placeId, timestamp: Date.now() });
 
     if (!isAuthenticated) {
-      setPendingAction({ venue, label: 'Viewed' });
+      setPendingAction({ venue, label: 'Not Interested' });
       return false;
     }
-    await saveWithLabel(venue, 'Viewed');
+    await saveWithLabel(venue, 'Not Interested');
     return true;
   }, [isAuthenticated, saveWithLabel]);
 
-  const handleFavourite = useCallback(async (venue) => {
+  const handleSkip = useCallback((venue) => {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
-    // TODO: wire to user_interactions table
-    console.log('[TODO: wire to backend]', { event: 'venue_favourited', venue_id: placeId, timestamp: Date.now() });
+    // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
+    console.log('[TODO: wire to backend]', { event: 'venue_skipped', venue_id: placeId, timestamp: Date.now() });
+    // Skip does not save — just log and advance
+    return true;
+  }, []);
+
+  const handleRated = useCallback(async (venue, rating) => {
+    const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
+    // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
+    console.log('[TODO: wire to backend]', { event: 'venue_rated', venue_id: placeId, rating, timestamp: Date.now() });
+
+    const labelMap = {
+      disliked: "Didn't Like It",
+      liked: 'Liked It',
+      loved: 'Favourites',
+    };
 
     if (!isAuthenticated) {
-      setPendingAction({ venue, label: 'Favourite' });
+      setPendingAction({ venue, label: labelMap[rating] });
       return false;
     }
-    await saveWithLabel(venue, 'Favourite');
+    await saveWithLabel(venue, labelMap[rating]);
     return true;
   }, [isAuthenticated, saveWithLabel]);
+
+  const logRatingSheetOpened = useCallback((venue) => {
+    const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
+    // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
+    console.log('[TODO: wire to backend]', { event: 'rating_sheet_opened', venue_id: placeId, timestamp: Date.now() });
+  }, []);
+
+  const logRatingSheetCancelled = useCallback((venue) => {
+    const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
+    // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
+    console.log('[TODO: wire to backend]', { event: 'rating_sheet_cancelled', venue_id: placeId, timestamp: Date.now() });
+  }, []);
 
   const logDescriptorTap = useCallback((venueId, tagText) => {
-    // TODO: wire to user_interactions table
+    // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
     console.log('[TODO: wire to backend]', { event: 'descriptor_tag_tapped', venue_id: venueId, tag_text: tagText, timestamp: Date.now() });
   }, []);
 
   const logPhotoAdvance = useCallback((venueId, photoIndex) => {
-    // TODO: wire to user_interactions table
+    // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
     console.log('[TODO: wire to backend]', { event: 'photo_advanced', venue_id: venueId, photo_index: photoIndex, timestamp: Date.now() });
   }, []);
 
@@ -107,10 +107,12 @@ export function useDiscoveryInteractions() {
   }, [pendingAction, saveWithLabel]);
 
   return {
-    handleWantToGo,
-    handlePass,
-    handleViewed,
-    handleFavourite,
+    handleInterested,
+    handleNotInterested,
+    handleSkip,
+    handleRated,
+    logRatingSheetOpened,
+    logRatingSheetCancelled,
     logDescriptorTap,
     logPhotoAdvance,
     pendingAction,
