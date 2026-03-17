@@ -116,6 +116,57 @@ serve(async (req) => {
 
     if (upsertError) throw upsertError;
 
+    // Aggregate interaction counts from user_venue_interactions
+    const { data: interactions, error: intError } = await supabase
+      .from('user_venue_interactions')
+      .select('venue_id, interaction_type, rating');
+
+    if (!intError && interactions) {
+      const interactionMap: Record<string, {
+        interested_count: number;
+        not_interested_count: number;
+        liked_count: number;
+        disliked_count: number;
+        loved_count: number;
+      }> = {};
+
+      for (const row of interactions) {
+        if (!interactionMap[row.venue_id]) {
+          interactionMap[row.venue_id] = {
+            interested_count: 0,
+            not_interested_count: 0,
+            liked_count: 0,
+            disliked_count: 0,
+            loved_count: 0,
+          };
+        }
+        const m = interactionMap[row.venue_id];
+        if (row.interaction_type === 'interested') m.interested_count++;
+        if (row.interaction_type === 'not_interested') m.not_interested_count++;
+        if (row.interaction_type === 'rated' && row.rating === 'liked') m.liked_count++;
+        if (row.interaction_type === 'rated' && row.rating === 'disliked') m.disliked_count++;
+        if (row.interaction_type === 'rated' && row.rating === 'loved') m.loved_count++;
+      }
+
+      const interactionUpserts = Object.entries(interactionMap).map(([venue_id, counts]) => ({
+        venue_id,
+        ...counts,
+        updated_at: new Date().toISOString(),
+      }));
+
+      if (interactionUpserts.length > 0) {
+        const { error: intUpsertError } = await supabase
+          .from('venue_signals')
+          .upsert(interactionUpserts, { onConflict: 'venue_id' });
+
+        if (intUpsertError) {
+          console.error('Failed to upsert interaction counts:', intUpsertError.message);
+        } else {
+          console.log(`✅ Updated interaction counts for ${interactionUpserts.length} venues`);
+        }
+      }
+    }
+
     console.log(`✅ Processed ${events.length} events across ${upserts.length} venues`);
 
     return new Response(
