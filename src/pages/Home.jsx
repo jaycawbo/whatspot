@@ -141,9 +141,14 @@ export default function Home() {
   const handleSearch = useCallback(
     (q) => {
       dispatch({ type: 'SET_QUERY', payload: q });
+      // In pre-search mode, refresh the discovery feed instead of switching to post-search
+      if (state.mode === 'pre-search') {
+        searchFeed(q);
+        return;
+      }
       runSearch(q, filtersRef.current);
     },
-    [dispatch, runSearch]
+    [dispatch, runSearch, state.mode, searchFeed]
   );
 
   const handleStopQuery = useCallback(() => {
