@@ -11,6 +11,7 @@ import { useGlobalState } from '@/context/GlobalStateContext';
 export function useDiscoveryFeed() {
   const { state } = useGlobalState();
   const [venues, setVenues] = useState([]);
+  const [overflowVenues, setOverflowVenues] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentQuery, setCurrentQuery] = useState('');
@@ -50,7 +51,9 @@ export function useDiscoveryFeed() {
       });
 
       const results = res?.results || [];
+      const overflow = res?.nearby_overflow || [];
       setVenues(results);
+      setOverflowVenues(overflow);
       radiusRef.current = effectiveRadius;
     } catch (err) {
       console.error('Discovery feed fetch failed:', err);
@@ -82,6 +85,7 @@ export function useDiscoveryFeed() {
 
   return {
     venues,
+    overflowVenues,
     isLoading,
     error,
     searchFeed,
