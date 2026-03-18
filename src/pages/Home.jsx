@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { logEvent } from '@/lib/logEvent';
 import LoadingMessages from '@/components/home/LoadingMessages';
 import { useGlobalState } from '@/context/GlobalStateContext';
@@ -15,7 +15,17 @@ export default function Home() {
   const isMobile = useIsMobile();
   const searchBarRef = useRef(null);
 
-  const { venues: feedVenues, overflowVenues, isLoading: feedLoading, currentQuery, searchFeed, expandSearch } = useDiscoveryFeed();
+  const { venues: feedVenues, overflowVenues, isLoading: feedLoading, currentQuery, searchFeed, expandSearch, getReserveVenues } = useDiscoveryFeed();
+  const [reserveVenues, setReserveVenues] = useState([]);
+
+  const handleRequestMoreVenues = useCallback(() => {
+    const reserve = getReserveVenues();
+    if (reserve.length > 0) {
+      setReserveVenues(reserve);
+    } else {
+      expandSearch();
+    }
+  }, [getReserveVenues, expandSearch]);
 
   const addSearchHistory = useCallback(
     (queryText) => {
@@ -42,6 +52,7 @@ export default function Home() {
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: null });
       addSearchHistory(nextQuery);
       searchFeed(nextQuery);
+      setReserveVenues([]);
       logEvent('search', {
         search_query: nextQuery,
         neighborhood_context: state.locationName,
@@ -57,6 +68,7 @@ export default function Home() {
       dispatch({ type: 'SET_CATEGORY', payload: category.label });
       addSearchHistory(category.prompt);
       searchFeed(category.prompt);
+      setReserveVenues([]);
       logEvent('search', {
         search_query: category.prompt,
         neighborhood_context: state.locationName,
@@ -104,15 +116,18 @@ export default function Home() {
               </div>
             ) : (
               <DiscoveryDeck
-                venues={feedVenues}
+                venues={[...feedVenues, ...reserveVenues]}
                 overflowVenues={overflowVenues}
                 currentQuery={currentQuery}
+                isDiscoveryMode={!currentQuery}
                 onDescriptorTap={(tag) => {
                   dispatch({ type: 'SET_QUERY', payload: tag });
                   searchFeed(tag);
+                  setReserveVenues([]);
                 }}
                 onExpandSearch={expandSearch}
                 onNewSearch={() => searchBarRef.current?.focus?.()}
+                onRequestMoreVenues={handleRequestMoreVenues}
               />
             )}
           </div>
