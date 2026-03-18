@@ -43,14 +43,16 @@ serve(async (req) => {
     }
 
     // Fetch all user's spots with venue data
-    const { data: favorites, error: favError } = await supabase
-      .from("favorites")
-      .select("id, labels, venue_id, venues(address, category, name)")
+    const { data: interactions, error: intError } = await supabase
+      .from("user_venue_interactions")
+      .select("venue_id, interaction_type, rating, venues!fk_uvi_venue(address, category, name)")
       .eq("user_id", user.id);
 
-    if (favError) throw favError;
+    if (intError) throw intError;
 
-    const spots = favorites || [];
+    const spots = (interactions || []).map((row: any) => ({
+      venues: row.venues,
+    }));
     const totalSpots = spots.length;
 
     // If fewer than 10 spots, return empty tags
