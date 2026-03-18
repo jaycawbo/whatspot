@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState, useEffect } from 'react';
 import LoadingMessages from '@/components/home/LoadingMessages';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import Header from '@/components/home/Header';
@@ -14,7 +14,13 @@ export default function Home() {
   const isMobile = useIsMobile();
   const searchBarRef = useRef(null);
 
-  const { venues: feedVenues, isLoading: feedLoading, searchFeed, expandSearch } = useDiscoveryFeed();
+  const { venues: feedVenues, overflowVenues, isLoading: feedLoading, searchFeed, expandSearch } = useDiscoveryFeed();
+  const [showOverflow, setShowOverflow] = useState(false);
+
+  // Reset overflow display when new results come in
+  useEffect(() => {
+    setShowOverflow(false);
+  }, [feedVenues]);
 
   const addSearchHistory = useCallback(
     (queryText) => {
@@ -103,6 +109,30 @@ export default function Home() {
                 onExpandSearch={expandSearch}
                 onNewSearch={() => searchBarRef.current?.focus?.()}
               />
+              {overflowVenues.length > 0 && !feedLoading && !showOverflow && (
+                <div className="text-center py-3 px-4">
+                  <p className="text-sm text-muted-foreground">
+                    {overflowVenues.length} more match{overflowVenues.length > 1 ? 'es' : ''} found just outside this area
+                  </p>
+                  <button
+                    onClick={() => setShowOverflow(true)}
+                    className="text-sm font-medium text-foreground underline underline-offset-2 mt-1"
+                  >
+                    Show them
+                  </button>
+                </div>
+              )}
+              {showOverflow && overflowVenues.length > 0 && (
+                <DiscoveryDeck
+                  venues={overflowVenues}
+                  onDescriptorTap={(tag) => {
+                    dispatch({ type: 'SET_QUERY', payload: tag });
+                    searchFeed(tag);
+                  }}
+                  onExpandSearch={expandSearch}
+                  onNewSearch={() => searchBarRef.current?.focus?.()}
+                />
+              )}
             )}
           </div>
         </div>
