@@ -51,7 +51,9 @@ export function useDiscoveryFeed() {
       });
 
       const results = res?.results || [];
+      const overflow = res?.nearby_overflow || [];
       setVenues(results);
+      setOverflowVenues(overflow);
       radiusRef.current = effectiveRadius;
     } catch (err) {
       console.error('Discovery feed fetch failed:', err);
