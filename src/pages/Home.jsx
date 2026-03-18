@@ -14,7 +14,13 @@ export default function Home() {
   const isMobile = useIsMobile();
   const searchBarRef = useRef(null);
 
-  const { venues: feedVenues, isLoading: feedLoading, searchFeed, expandSearch } = useDiscoveryFeed();
+  const { venues: feedVenues, overflowVenues, isLoading: feedLoading, searchFeed, expandSearch } = useDiscoveryFeed();
+  const [showOverflow, setShowOverflow] = useState(false);
+
+  // Reset overflow display when new results come in
+  useEffect(() => {
+    setShowOverflow(false);
+  }, [feedVenues]);
 
   const addSearchHistory = useCallback(
     (queryText) => {
