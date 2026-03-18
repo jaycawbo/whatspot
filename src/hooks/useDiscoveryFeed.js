@@ -85,6 +85,7 @@ export function useDiscoveryFeed() {
 
   return {
     venues,
+    overflowVenues,
     isLoading,
     error,
     searchFeed,

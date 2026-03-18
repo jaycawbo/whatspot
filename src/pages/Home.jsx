@@ -109,6 +109,30 @@ export default function Home() {
                 onExpandSearch={expandSearch}
                 onNewSearch={() => searchBarRef.current?.focus?.()}
               />
+              {overflowVenues.length > 0 && !feedLoading && !showOverflow && (
+                <div className="text-center py-3 px-4">
+                  <p className="text-sm text-muted-foreground">
+                    {overflowVenues.length} more match{overflowVenues.length > 1 ? 'es' : ''} found just outside this area
+                  </p>
+                  <button
+                    onClick={() => setShowOverflow(true)}
+                    className="text-sm font-medium text-foreground underline underline-offset-2 mt-1"
+                  >
+                    Show them
+                  </button>
+                </div>
+              )}
+              {showOverflow && overflowVenues.length > 0 && (
+                <DiscoveryDeck
+                  venues={overflowVenues}
+                  onDescriptorTap={(tag) => {
+                    dispatch({ type: 'SET_QUERY', payload: tag });
+                    searchFeed(tag);
+                  }}
+                  onExpandSearch={expandSearch}
+                  onNewSearch={() => searchBarRef.current?.focus?.()}
+                />
+              )}
             )}
           </div>
         </div>
