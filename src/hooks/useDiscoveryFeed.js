@@ -117,7 +117,7 @@ export function useDiscoveryFeed() {
 
   // Search-driven refresh
   const searchFeed = useCallback((query) => {
-    radiusRef.current = state.filters?.radius || 2;
+    radiusRef.current = state.filters?.radius || 5;
     fetchFeed({ query });
   }, [fetchFeed, state.filters]);
 
