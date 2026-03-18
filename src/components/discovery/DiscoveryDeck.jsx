@@ -65,15 +65,35 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const downOverlayOpacity = useTransform(y, [0, SWIPE_DOWN_THRESHOLD], [0, 0.8]);
   const upOverlayOpacity = useTransform(y, [-SWIPE_UP_THRESHOLD, 0], [0.8, 0]);
 
-  // Reset deck when initial venues change (new search)
+  // Reset deck when initial venues change (new search) or append (reserve venues)
+  const initialVenueIdsRef = useRef('');
+
   useEffect(() => {
+    const newIds = initialVenues
+      .map(v => (v.place_id || v.google_place_id || '').replace(/^places\//, ''))
+      .join(',');
+
+    if (newIds === initialVenueIdsRef.current && initialVenueIdsRef.current !== '') return;
+    
+    // Detect append vs full reset
+    const currentIds = initialVenueIdsRef.current;
+    initialVenueIdsRef.current = newIds;
+
+    if (currentIds !== '' && newIds.startsWith(currentIds)) {
+      // New venues appended — just add them without resetting index
+      setVenues(initialVenues);
+      moreRequestedRef.current = false;
+      return;
+    }
+
+    // Full reset — new search or cold load
     setVenues(initialVenues);
     setOverflowAppended(false);
     setCurrentIndex(0);
     moreRequestedRef.current = false;
     x.set(0);
     y.set(0);
-  }, [initialVenues]);
+  }, [initialVenues, x, y]);
 
   // Proactive loading: request more venues when nearing end of deck
   useEffect(() => {
