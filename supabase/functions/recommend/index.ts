@@ -765,7 +765,7 @@ Deno.serve(async (req) => {
       const rankings = comprehensiveResult.rankings || [];
       finalVenues = rankings
         .filter((r: any) => r.confidence >= 0.5)
-        .slice(0, 5)
+        .slice(0, 8)
         .map((r: any, i: number) => {
           const venue = candidates[r.index - 1];
           if (!venue) return null;
@@ -778,12 +778,12 @@ Deno.serve(async (req) => {
         })
         .filter(Boolean);
 
-      // Backfill to guarantee 5 results
-      if (finalVenues.length < 5) {
+      // Backfill to guarantee 8 results
+      if (finalVenues.length < 8) {
         const usedIndices = new Set(rankings.filter((r: any) => r.confidence >= 0.5).map((r: any) => r.index - 1));
         const backfill = candidates
           .filter((_: any, i: number) => !usedIndices.has(i))
-          .slice(0, 5 - finalVenues.length)
+          .slice(0, 8 - finalVenues.length)
           .map((v: any) => ({ ...v, descriptors: [], reasoning_explanation: '' }));
         finalVenues.push(...backfill);
       }
