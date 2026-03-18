@@ -1,4 +1,5 @@
 import React, { useCallback, useRef } from 'react';
+import { logEvent } from '@/lib/logEvent';
 import LoadingMessages from '@/components/home/LoadingMessages';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import Header from '@/components/home/Header';
