@@ -52,6 +52,7 @@ export default function Home() {
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: null });
       addSearchHistory(nextQuery);
       searchFeed(nextQuery);
+      setReserveVenues([]);
       logEvent('search', {
         search_query: nextQuery,
         neighborhood_context: state.locationName,
