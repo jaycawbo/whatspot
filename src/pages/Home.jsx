@@ -116,15 +116,18 @@ export default function Home() {
               </div>
             ) : (
               <DiscoveryDeck
-                venues={feedVenues}
+                venues={[...feedVenues, ...reserveVenues]}
                 overflowVenues={overflowVenues}
                 currentQuery={currentQuery}
+                isDiscoveryMode={!currentQuery}
                 onDescriptorTap={(tag) => {
                   dispatch({ type: 'SET_QUERY', payload: tag });
                   searchFeed(tag);
+                  setReserveVenues([]);
                 }}
                 onExpandSearch={expandSearch}
                 onNewSearch={() => searchBarRef.current?.focus?.()}
+                onRequestMoreVenues={handleRequestMoreVenues}
               />
             )}
           </div>

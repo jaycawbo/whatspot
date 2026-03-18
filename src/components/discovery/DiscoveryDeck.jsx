@@ -266,14 +266,26 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   if (!hasMore || venues.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 px-6 text-center">
-        <p className="text-lg font-semibold text-foreground">You've seen all the top spots nearby.</p>
+        <p className="text-lg font-semibold text-foreground">
+          {isDiscoveryMode 
+            ? "You've explored all the top spots nearby." 
+            : "You've seen all the top results for this search."}
+        </p>
         <div className="flex gap-3">
-          {onExpandSearch && (
+          {!isDiscoveryMode && onExpandSearch && (
             <button
               onClick={onExpandSearch}
               className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
             >
-              Expand search area
+              Show more results
+            </button>
+          )}
+          {isDiscoveryMode && onExpandSearch && (
+            <button
+              onClick={onExpandSearch}
+              className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
+            >
+              Explore further
             </button>
           )}
           {onNewSearch && (
