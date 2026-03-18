@@ -283,7 +283,15 @@ export type Database = {
           user_id?: string | null
           venue_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fk_uvi_venue"
+            columns: ["venue_id"]
+            isOneToOne: false
+            referencedRelation: "venues"
+            referencedColumns: ["google_place_id"]
+          },
+        ]
       }
       venue_signals: {
         Row: {
