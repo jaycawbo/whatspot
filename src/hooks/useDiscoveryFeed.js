@@ -11,6 +11,7 @@ import { useGlobalState } from '@/context/GlobalStateContext';
 export function useDiscoveryFeed() {
   const { state } = useGlobalState();
   const [venues, setVenues] = useState([]);
+  const [overflowVenues, setOverflowVenues] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentQuery, setCurrentQuery] = useState('');
