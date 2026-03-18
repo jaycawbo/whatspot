@@ -81,6 +81,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   }, [currentIndex, venues.length, overflowVenues, overflowAppended, currentQuery]);
 
   // Preload next card's images
+  const nextVenue = venues[currentIndex + 1] ?? null;
   useEffect(() => {
     if (!nextVenue) return;
     const photos = nextVenue?.image_urls?.slice(0, 3) || [];
