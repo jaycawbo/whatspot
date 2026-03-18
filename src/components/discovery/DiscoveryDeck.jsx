@@ -128,6 +128,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   // Advance to next card
   const advanceCard = useCallback(() => {
     setExitDirection(null);
+    setIsDragging(false);
     setCurrentIndex((i) => i + 1);
     x.set(0);
     y.set(0);
