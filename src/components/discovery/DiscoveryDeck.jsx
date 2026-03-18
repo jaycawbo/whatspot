@@ -39,6 +39,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const [ratingSheetOpen, setRatingSheetOpen] = useState(false);
   const [ratingPendingVenue, setRatingPendingVenue] = useState(null);
   const isMobile = useIsMobile();
+  const currentVenue = venues[currentIndex] ?? null;
+  const hasMore = currentIndex < venues.length;
   const navigate = useNavigate();
   const containerRef = useRef(null);
 
