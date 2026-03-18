@@ -270,7 +270,13 @@ Deno.serve(async (req) => {
       minScore: 1.2,
       maxRadius: radius_km || 5,
     };
-    if (relaxation_level === 1) {
+    if (isDiscoveryMode) {
+      // Relaxed thresholds for discovery — surface more variety
+      admission.minRating = 4.0;
+      admission.minReviewCount = 25;
+      admission.minScore = 1.0;
+      admission.maxRadius = radius_km || 5;
+    } else if (relaxation_level === 1) {
       admission.maxRadius = 10;
     } else if (relaxation_level === 2) {
       admission.maxRadius = 10;
