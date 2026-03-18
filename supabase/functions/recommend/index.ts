@@ -233,6 +233,7 @@ Deno.serve(async (req) => {
       open_now,
       price_levels,
       session_context = [],
+      exclude_ids = [],
     } = await req.json();
 
     // Build session context string for LLM prompts
