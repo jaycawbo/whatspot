@@ -401,7 +401,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
       {/* Post-search instructional copy (Fix 3) */}
       {showSearchCopy && (
-        <p className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-10 z-20 text-xs text-muted-foreground text-center max-w-[90%] whitespace-normal">
+        <p className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-[3.5rem] z-30 text-xs text-muted-foreground text-center max-w-[90%] whitespace-normal pointer-events-none">
           Showing you the best options based on your search. Swipe through to see additional results.
         </p>
       )}
