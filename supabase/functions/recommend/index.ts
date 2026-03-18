@@ -902,6 +902,17 @@ Deno.serve(async (req) => {
       .slice(0, 10);
     console.log(`📦 Reserve venues: ${reserveVenues.length}`);
 
+    // ─── Photo enrichment for reserve venues (lightweight, 3 photos each) ───
+    if (reserveVenues.length > 0) {
+      console.log(`🖼️ Reserve photo enrichment: ${reserveVenues.length} venues (3 photos each)...`);
+      await Promise.all(
+        reserveVenues.map(async (venue: any) => {
+          if (!venue.place_id) { venue.image_urls = []; return; }
+          venue.image_urls = await safe('reserve-photos', () => getPlacePhotos(GOOGLE_KEY, venue.place_id, 3), []);
+        }),
+      );
+    }
+
     // ─── STEP 5: Photo enrichment ───
     console.log(`🖼️ STEP 5: Photos for ${finalVenues.length} venues...`);
     const enriched = await Promise.all(
