@@ -43,6 +43,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const hasMore = currentIndex < venues.length;
   const navigate = useNavigate();
   const containerRef = useRef(null);
+  const moreRequestedRef = useRef(false);
 
   const {
     handleInterested,
