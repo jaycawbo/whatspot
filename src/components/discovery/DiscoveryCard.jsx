@@ -1,14 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-// HeartButton removed — interactions now handled by swipe gestures
 
 const CROSSFADE_INTERVAL = 4000;
 
-// Fallback descriptors shown while LLM-generated ones load or if generation fails.
-// TODO: A venue_descriptors table keyed by venue_id should be created to cache
-// LLM-generated descriptors and avoid redundant calls. Vibe-based dynamic Spots
-// tags will also depend on this cache.
 const PLACEHOLDER_DESCRIPTORS = [
   ['cozy neighbourhood gem', 'creative seasonal menu', 'great for date night'],
   ['lively atmosphere', 'craft cocktails', 'late night bites'],
@@ -34,8 +29,13 @@ export default function DiscoveryCard({
   const [nextPhoto, setNextPhoto] = useState(null);
   const [isFading, setIsFading] = useState(false);
   const intervalRef = useRef(null);
+  const isPausedRef = useRef(false);
+  const remainingTimeRef = useRef(CROSSFADE_INTERVAL);
+  const lastTickRef = useRef(Date.now());
+  const holdStartPosRef = useRef(null);
+  const isHoldingRef = useRef(false);
+  const HOLD_MOVE_THRESHOLD = 7;
 
-  // Descriptors: use venue's if present, otherwise pick from placeholders
   const descriptors = venue?.descriptors?.length > 0
     ? venue.descriptors.slice(0, 3)
     : PLACEHOLDER_DESCRIPTORS[index % PLACEHOLDER_DESCRIPTORS.length];
@@ -43,20 +43,34 @@ export default function DiscoveryCard({
   const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
   const neighbourhood = venue?.address?.split(',').slice(1, 2).join('').trim() || venue?.address || '';
 
-  // Auto-advance photos with crossfade
+  // Auto-advance photos with crossfade — uses remaining time for pause/resume
+  const startTimer = useCallback(() => {
+    clearInterval(intervalRef.current);
+    lastTickRef.current = Date.now();
+    intervalRef.current = setInterval(() => {
+      if (isPausedRef.current) return;
+      const elapsed = Date.now() - lastTickRef.current;
+      remainingTimeRef.current -= elapsed;
+      lastTickRef.current = Date.now();
+      if (remainingTimeRef.current <= 0) {
+        remainingTimeRef.current = CROSSFADE_INTERVAL;
+        setNextPhoto((prev) => {
+          const next = ((prev ?? currentPhoto) + 1) % photos.length;
+          return next;
+        });
+        setIsFading(true);
+      }
+    }, 100);
+  }, [photos.length, currentPhoto]);
+
   useEffect(() => {
     if (isGhost || photos.length <= 1) return;
-    intervalRef.current = setInterval(() => {
-      setNextPhoto((prev) => {
-        const next = ((prev ?? currentPhoto) + 1) % photos.length;
-        return next;
-      });
-      setIsFading(true);
-    }, CROSSFADE_INTERVAL);
+    remainingTimeRef.current = CROSSFADE_INTERVAL;
+    startTimer();
     return () => clearInterval(intervalRef.current);
-  }, [photos.length, isGhost, currentPhoto]);
+  }, [photos.length, isGhost, startTimer]);
 
-  // Complete the crossfade transition
+  // Complete the crossfade transition — no opacity animation on new current photo
   useEffect(() => {
     if (!isFading || nextPhoto === null) return;
     const timer = setTimeout(() => {
@@ -67,34 +81,67 @@ export default function DiscoveryCard({
     return () => clearTimeout(timer);
   }, [isFading, nextPhoto]);
 
+  // Hold-to-pause handlers (Fix 5)
+  const handlePressStart = useCallback((clientX, clientY) => {
+    holdStartPosRef.current = { x: clientX, y: clientY };
+    isHoldingRef.current = true;
+    isPausedRef.current = true;
+  }, []);
+
+  const handlePressMove = useCallback((clientX, clientY) => {
+    if (!isHoldingRef.current || !holdStartPosRef.current) return;
+    const dx = clientX - holdStartPosRef.current.x;
+    const dy = clientY - holdStartPosRef.current.y;
+    if (Math.sqrt(dx * dx + dy * dy) > HOLD_MOVE_THRESHOLD) {
+      // Movement detected — this is a drag, not a hold
+      isPausedRef.current = false;
+      isHoldingRef.current = false;
+      holdStartPosRef.current = null;
+    }
+  }, []);
+
+  const handlePressEnd = useCallback(() => {
+    if (isHoldingRef.current) {
+      isPausedRef.current = false;
+      lastTickRef.current = Date.now();
+    }
+    isHoldingRef.current = false;
+    holdStartPosRef.current = null;
+  }, []);
+
+  // Mouse events
+  const onMouseDown = useCallback((e) => handlePressStart(e.clientX, e.clientY), [handlePressStart]);
+  const onMouseMove = useCallback((e) => handlePressMove(e.clientX, e.clientY), [handlePressMove]);
+  const onMouseUp = useCallback(() => handlePressEnd(), [handlePressEnd]);
+
+  // Touch events
+  const onTouchStart = useCallback((e) => {
+    const t = e.touches[0];
+    handlePressStart(t.clientX, t.clientY);
+  }, [handlePressStart]);
+  const onTouchMove = useCallback((e) => {
+    const t = e.touches[0];
+    handlePressMove(t.clientX, t.clientY);
+  }, [handlePressMove]);
+  const onTouchEnd = useCallback(() => handlePressEnd(), [handlePressEnd]);
+
   // Manual photo navigation
   const goToPhoto = useCallback((direction) => {
     clearInterval(intervalRef.current);
+    isPausedRef.current = false;
     const next = direction === 'next'
       ? (currentPhoto + 1) % photos.length
       : (currentPhoto - 1 + photos.length) % photos.length;
     setCurrentPhoto(next);
     setNextPhoto(null);
     setIsFading(false);
+    remainingTimeRef.current = CROSSFADE_INTERVAL;
+    startTimer();
+  }, [currentPhoto, photos.length, placeId, startTimer]);
 
-    // TODO: wire to user_interactions table
-    console.log('[TODO: wire to backend]', {
-      event: 'photo_advanced',
-      venue_id: placeId,
-      photo_index: next,
-      timestamp: Date.now(),
-    });
-  }, [currentPhoto, photos.length, placeId]);
-
-  // Handle card body tap (venue info area)
+  // Handle card body tap
   const handleBodyTap = useCallback(() => {
     if (isGhost) return;
-    // TODO: wire to user_interactions table
-    console.log('[TODO: wire to backend]', {
-      event: 'venue_tapped',
-      venue_id: placeId,
-      timestamp: Date.now(),
-    });
     if (onCardBodyTap) {
       onCardBodyTap(venue);
     } else {
@@ -104,13 +151,6 @@ export default function DiscoveryCard({
 
   // Handle descriptor tap
   const handleDescriptorTap = useCallback((tag) => {
-    // TODO: wire to user_interactions table
-    console.log('[TODO: wire to backend]', {
-      event: 'descriptor_tag_tapped',
-      venue_id: placeId,
-      tag_text: tag,
-      timestamp: Date.now(),
-    });
     onDescriptorTap?.(tag);
   }, [placeId, onDescriptorTap]);
 
@@ -156,25 +196,38 @@ export default function DiscoveryCard({
   return (
     <div className="relative w-full h-full rounded-2xl overflow-hidden bg-card border border-border shadow-xl flex flex-col">
       {/* Photo zone */}
-      <div className="relative flex-1 min-h-0 bg-muted overflow-hidden">
-        {/* Current photo */}
+      <div
+        className="relative flex-1 min-h-0 bg-muted overflow-hidden"
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        {/* Current photo — no transition, always full opacity when not fading out */}
         <img
           src={photos[currentPhoto]}
           alt={venue?.name || 'Venue photo'}
-          className="absolute inset-0 h-full w-full object-cover transition-opacity duration-600"
-          style={{ opacity: isFading ? 0 : 1 }}
+          className="absolute inset-0 h-full w-full object-cover"
+          style={{
+            opacity: isFading ? 0 : 1,
+            transition: isFading ? 'opacity 600ms ease' : 'none',
+          }}
         />
-        {/* Next photo (crossfade) */}
+        {/* Next photo (crossfade in) */}
         {nextPhoto !== null && (
           <img
             src={photos[nextPhoto]}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover transition-opacity duration-600"
-            style={{ opacity: isFading ? 1 : 0 }}
+            className="absolute inset-0 h-full w-full object-cover"
+            style={{
+              opacity: isFading ? 1 : 0,
+              transition: isFading ? 'opacity 600ms ease' : 'none',
+            }}
           />
         )}
-
-        {/* Top-right corner intentionally empty — interactions handled by swipe gestures */}
 
         {/* Dot indicators */}
         {photos.length > 1 && (
