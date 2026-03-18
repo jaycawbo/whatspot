@@ -8,6 +8,7 @@ import { useDiscoveryInteractions } from '@/hooks/useDiscoveryInteractions';
 import { useNavigate } from 'react-router-dom';
 import { useIsMobile } from '@/hooks/use-mobile';
 import AuthModal from '@/components/auth/AuthModal';
+import { toast } from 'sonner';
 
 const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
