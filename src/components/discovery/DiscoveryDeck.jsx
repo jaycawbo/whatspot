@@ -14,7 +14,22 @@ const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
 const SWIPE_UP_THRESHOLD = 80;
 
-export default function DiscoveryDeck({ venues = [], onDescriptorTap, onExpandSearch, onNewSearch }) {
+const LOCATION_KEYWORDS = [
+  'little portugal', 'kensington', 'ossington', 'queen west', 'king street',
+  'college street', 'dundas', 'bloor', 'parkdale', 'leslieville', 'junction',
+  'annex', 'yorkville', 'liberty village', 'distillery', 'st clair',
+  'danforth', 'roncesvalles', 'bathurst', 'spadina', 'chinatown',
+];
+
+function isLocationQuery(query) {
+  if (!query) return false;
+  const q = query.toLowerCase();
+  if (LOCATION_KEYWORDS.some((kw) => q.includes(kw))) return true;
+  if (/\b(in|near|around|by)\s+\w/i.test(q)) return true;
+  return false;
+}
+
+export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenues = [], currentQuery = '', onDescriptorTap, onExpandSearch, onNewSearch }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [exitDirection, setExitDirection] = useState(null);
   const [hoveredButton, setHoveredButton] = useState(null);
