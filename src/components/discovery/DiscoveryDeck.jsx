@@ -59,6 +59,10 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
   const x = useMotionValue(0);
   const y = useMotionValue(0);
+  const rightOverlayOpacity = useTransform(x, [0, SWIPE_THRESHOLD], [0, 0.8]);
+  const leftOverlayOpacity = useTransform(x, [-SWIPE_THRESHOLD, 0], [0.8, 0]);
+  const downOverlayOpacity = useTransform(y, [0, SWIPE_DOWN_THRESHOLD], [0, 0.8]);
+  const upOverlayOpacity = useTransform(y, [-SWIPE_UP_THRESHOLD, 0], [0.8, 0]);
 
   // Reset deck when initial venues change (new search)
   useEffect(() => {
