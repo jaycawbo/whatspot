@@ -1,45 +1,114 @@
 
 
-## Plan: Fix 3 UI Issues in DiscoveryDeck
+# Whatspot — Frontend Shell + PWA Build Plan
 
-**Files to modify:** `src/components/discovery/DiscoveryDeck.jsx` only
+## Overview
 
----
+Build the complete Whatspot frontend UI with mock data, PWA support, and prepare the architecture for future Supabase Edge Function integration. The app is a single-page venue discovery tool with search, category browsing, filtering, and map/list views.
 
-### Fix 1: Drag Animation Boomerang Bug
+## Current State
 
-**Root cause:** In `handleDragEnd` (line 205), `setIsDragging(false)` runs *before* `performAction` executes the exit animation. This re-enables `animate={{ opacity: 1, scale: 1 }}` with `transition={{ duration: 0.4 }}`, causing Framer Motion to fight the drag position. Additionally, `dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}` with `dragElastic: 0.8` means Framer internally snaps the card back to origin on release before the manual `animate(x, exitX)` kicks in.
+- Empty shell: no pages besides `Index.tsx` placeholder and `NotFound.tsx`
+- Existing Base44 SDK setup (auth, vite plugin, edge functions for Google Places)
+- Existing edge functions for Google Places APIs (will be migrated to Supabase later)
+- No Home page, no components, no global state
 
-**Fix:**
-- Keep `isDragging = true` during the exit animation. Only set it to `false` inside `advanceCard`.
-- In `handleDragEnd`: do NOT call `setIsDragging(false)` at the top. Only set it to false in the snap-back (below-threshold) branch.
-- In `advanceCard`: add `setIsDragging(false)`.
-- Remove `dragConstraints` and `dragElastic` props entirely — they cause the internal snap-back. The manual threshold logic in `handleDragEnd` already handles the physics.
+## Architecture Decisions
 
-### Fix 2: Post-Search Instructional Copy Spacing
+- **Routing**: Use the existing `pages.config.js` system with `App.jsx` as the entry point
+- **State management**: React Context (`GlobalStateContext`) for app-wide state (location, search query, filters, sort, view mode)
+- **Styling**: Tailwind CSS with existing design tokens from `index.css`
+- **Maps**: `react-leaflet` for the map view (free, no API key needed)
+- **Mock data**: Hardcoded venue results for development; API service layer with easy swap-in points
+- **PWA**: `vite-plugin-pwa` for service worker, manifest, and installability
 
-**Root cause:** The copy uses `absolute bottom-0 translate-y-10` (line 405) which is only ~2.5rem below the card edge, overlapping with the Skip button and the card on mobile.
+## Build Phases (all frontend shell)
 
-**Fix:**
-- Move the copy further below: use `translate-y-[3.5rem]` so it sits between the card bottom and the Skip button.
-- Set `z-30` so it layers above the card on mobile.
-- Increase Skip button offset from `4.5rem` to `6rem` when `showSearchCopy` is true.
+### Phase 1: Foundation
 
-### Fix 3: "Been Here" Button Spacing
+1. **PWA setup** — Add `vite-plugin-pwa`, create `manifest.json` with Whatspot branding, configure service worker for offline caching
+2. **GlobalStateContext** — Context provider with: `query`, `category`, `mode` (pre-search/post-search), `sort`, `view` (list/map), `userLocation`, `locationName`, `filters`, `anonymousId`, `suggestedChips`, `searchHistory`
+3. **Mock API service** — `src/services/api.ts` with `recommend()` and `recommendPage()` returning realistic mock venue data, matching the spec's response shape
+4. **Update `pages.config.js`** — Register `Home` page as main page
 
-**Root cause:** `top: -4rem` is not enough clearance from category chips above.
+### Phase 2: Core Components
 
-**Fix:** Change to `top: -5.5rem` to provide clear separation from both the card and elements above at all tablet/desktop widths.
+5. **Header** — Fixed top bar with logo, location display (editable), clear-search button
+6. **SearchBar** — Text input with search/stop icons, centered (pre-search) vs left-aligned (post-search), Enter-to-submit
+7. **CategoryTiles** — Grid of emoji+label tiles (Pizza, Coffee, Bars, etc.), clicking populates search bar
+8. **RefinementChips** — Horizontal scrollable pills that appear after tile selection, click appends to query
+9. **Home page** — Compose Header + SearchBar + CategoryTiles + RefinementChips for pre-search state
 
----
+### Phase 3: Post-Search UI
 
-### Technical Detail
+10. **ResultsList** — Venue cards with name, address, distance, rating stars, price level, cuisine tag, open/closed badge, image
+11. **MapView** — react-leaflet map with venue markers and popups
+12. **ViewToggle** — List/map icon toggle
+13. **SortToggle** — Relevance/Distance inline toggle
+14. **FilterDialog** — Modal with Open Now toggle, price multi-select, cuisine filter, radius slider
+15. **SuggestedChips** — AI-generated refinement chips row (mock data)
+16. **RelaxationBanner** — Info banner when constraints were loosened
+17. **NoResultsPrompt** — Zero-results state with "Relax constraints" button
+18. **Pagination** — "More options" button when `has_more` is true
 
-All changes are in `DiscoveryDeck.jsx`:
-- Lines 129-134 (`advanceCard`): add `setIsDragging(false)`
-- Lines 204-221 (`handleDragEnd`): remove top-level `setIsDragging(false)`, only set in snap-back branch
-- Lines 342-360 (motion.div): remove `dragConstraints` and `dragElastic`
-- Lines 403-408 (instructional copy): adjust positioning classes
-- Line 440 (Skip button): increase offset when copy visible
-- Line 453 (Been Here button): increase top offset
+### Phase 4: Modals & Mobile
+
+19. **GatedModal** — Sign-in prompt overlay
+20. **LocationConfirmModal** — Detected vs current location chooser
+21. **MobileBottomSheet** — Slide-up sheet for mobile post-search with search bar, categories, chips, history
+22. **Responsive layout** — Desktop side-by-side vs mobile stacked with bottom sheet
+
+### Phase 5: User Flows & Polish
+
+23. **Location detection** — Browser geolocation → reverse geocode (mock for now) → localStorage persistence
+24. **Search history** — localStorage-based, max 10 items, deduped
+25. **Cache restore** — Save/restore results from localStorage on navigation
+26. **Anonymous ID** — UUID generation and localStorage persistence
+
+## New Dependencies
+
+- `react-leaflet` + `leaflet` — Map rendering
+- `vite-plugin-pwa` — PWA support (service worker, manifest)
+- `lodash.debounce` or inline debounce — Search debouncing
+- `framer-motion` — AnimatePresence for results transitions
+- `uuid` — Anonymous ID generation
+
+## File Structure
+
+```text
+src/
+├── pages/
+│   └── Home.jsx                    # Main (only) page
+├── components/
+│   └── home/
+│       ├── Header.jsx
+│       ├── SearchBar.jsx
+│       ├── CategoryTiles.jsx
+│       ├── RefinementChips.jsx
+│       ├── ResultsList.jsx
+│       ├── VenueCard.jsx
+│       ├── MapView.jsx
+│       ├── ViewToggle.jsx
+│       ├── SortToggle.jsx
+│       ├── FilterDialog.jsx
+│       ├── SuggestedChips.jsx
+│       ├── RelaxationBanner.jsx
+│       ├── NoResultsPrompt.jsx
+│       ├── GatedModal.jsx
+│       ├── LocationConfirmModal.jsx
+│       └── MobileBottomSheet.jsx
+├── context/
+│   └── GlobalStateContext.jsx
+├── services/
+│   └── api.js                      # Mock API, swap for real later
+└── data/
+    └── mockVenues.js               # Mock venue data
+```
+
+## Technical Notes
+
+- The existing Base44 auth system in `AuthContext.jsx` will be preserved but the app will work without auth (anonymous mode)
+- Edge functions in `functions/` will remain as-is; they'll be migrated to Supabase Edge Functions in a later phase
+- The `recommend` API will initially return mock data; the service layer is designed so swapping in real API calls requires changing only `src/services/api.js`
+- PWA manifest will include app name "Whatspot", appropriate icons, theme color matching the design tokens, and `display: standalone`
 
