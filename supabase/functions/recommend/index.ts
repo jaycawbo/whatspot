@@ -862,6 +862,13 @@ Deno.serve(async (req) => {
       console.log(`✅ STEP 4c: Kept ${keptVenues.length} venues, added ${replacements.length} replacements`);
     }
 
+    // ─── Build reserve venues from remaining candidates ───
+    const finalVenueIds = new Set(finalVenues.map((v: any) => v.place_id));
+    const reserveVenues = candidates
+      .filter((v: any) => !finalVenueIds.has(v.place_id))
+      .slice(0, 10);
+    console.log(`📦 Reserve venues: ${reserveVenues.length}`);
+
     // ─── STEP 5: Photo enrichment ───
     console.log(`🖼️ STEP 5: Photos for ${finalVenues.length} venues...`);
     const enriched = await Promise.all(
