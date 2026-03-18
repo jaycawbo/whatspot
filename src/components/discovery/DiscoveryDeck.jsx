@@ -449,7 +449,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
           {/* Top — Been here (Fix 1: more margin from top) */}
           <button
             className="absolute left-1/2 -translate-x-1/2 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-blue-500/10 transition-colors"
-            style={{ top: '-4rem' }}
+            style={{ top: '-5.5rem' }}
             onClick={() => performAction('up', currentVenue)}
             onMouseEnter={() => setHoveredButton('up')}
             onMouseLeave={() => setHoveredButton(null)}
