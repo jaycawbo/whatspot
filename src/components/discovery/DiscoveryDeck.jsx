@@ -128,6 +128,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   // Advance to next card
   const advanceCard = useCallback(() => {
     setExitDirection(null);
+    setIsDragging(false);
     setCurrentIndex((i) => i + 1);
     x.set(0);
     y.set(0);
@@ -202,8 +203,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   }, []);
 
   const handleDragEnd = useCallback((event, info) => {
-    setIsDragging(false);
-    if (!currentVenue) return;
+    if (!currentVenue) { setIsDragging(false); return; }
     const { offset } = info;
 
     if (offset.x > SWIPE_THRESHOLD) {
@@ -215,6 +215,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     } else if (offset.y < -SWIPE_UP_THRESHOLD) {
       performAction('up', currentVenue);
     } else {
+      setIsDragging(false);
       animate(x, 0, { type: 'spring', stiffness: 500, damping: 30 });
       animate(y, 0, { type: 'spring', stiffness: 500, damping: 30 });
     }
@@ -343,8 +344,6 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         className="absolute inset-0 z-10 touch-none"
         style={{ x, y }}
         drag={!ratingSheetOpen}
-        dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
-        dragElastic={0.8}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         animate={
@@ -402,7 +401,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
       {/* Post-search instructional copy (Fix 3) */}
       {showSearchCopy && (
-        <p className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-10 z-20 text-xs text-muted-foreground text-center max-w-[90%] whitespace-normal">
+        <p className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-[3.5rem] z-30 text-xs text-muted-foreground text-center max-w-[90%] whitespace-normal pointer-events-none">
           Showing you the best options based on your search. Swipe through to see additional results.
         </p>
       )}
@@ -437,7 +436,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
           {/* Bottom — Skip (Fix 3: pushed down further when search copy visible) */}
           <button
             className="absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-accent transition-colors"
-            style={{ transform: `translateX(-50%) translateY(${showSearchCopy ? '4.5rem' : '3.5rem'})` }}
+            style={{ transform: `translateX(-50%) translateY(${showSearchCopy ? '6rem' : '3.5rem'})` }}
             onClick={() => performAction('down', currentVenue)}
             onMouseEnter={() => setHoveredButton('down')}
             onMouseLeave={() => setHoveredButton(null)}
@@ -450,7 +449,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
           {/* Top — Been here (Fix 1: more margin from top) */}
           <button
             className="absolute left-1/2 -translate-x-1/2 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-blue-500/10 transition-colors"
-            style={{ top: '-4rem' }}
+            style={{ top: '-5.5rem' }}
             onClick={() => performAction('up', currentVenue)}
             onMouseEnter={() => setHoveredButton('up')}
             onMouseLeave={() => setHoveredButton(null)}
