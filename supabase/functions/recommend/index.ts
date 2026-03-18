@@ -495,6 +495,17 @@ Deno.serve(async (req) => {
       console.log(`📊 Google returned ${googleResults.length} venues`);
     }
 
+    // ─── Exclude previously seen venues (discovery offset) ───
+    if (Array.isArray(exclude_ids) && exclude_ids.length > 0) {
+      const excludeSet = new Set(exclude_ids.map((id: string) => id.replace(/^places\//, '')));
+      const before = googleResults.length;
+      googleResults = googleResults.filter((r: any) => {
+        const stripped = (r.place_id || '').replace(/^places\//, '');
+        return !excludeSet.has(stripped);
+      });
+      console.log(`🚫 Excluded ${before - googleResults.length} previously seen venues (${exclude_ids.length} exclude_ids)`);
+    }
+
     if (googleResults.length === 0) {
       return new Response(
         JSON.stringify({
