@@ -4,15 +4,36 @@ import { useAuth } from '@/lib/AuthContext';
 
 const SPOTS_KEY = ['spots'];
 
+// Label → interaction mapping
+const LABEL_TO_INTERACTION = {
+  'Interested': { interaction_type: 'interested', rating: null },
+  'Not Interested': { interaction_type: 'not_interested', rating: null },
+  "Didn't Like It": { interaction_type: 'rated', rating: 'disliked' },
+  'Liked It': { interaction_type: 'rated', rating: 'liked' },
+  'Favourites': { interaction_type: 'rated', rating: 'loved' },
+};
+
+// Reverse: interaction → label
+function interactionToLabel(interaction_type, rating) {
+  if (interaction_type === 'rated') {
+    if (rating === 'loved') return 'Favourites';
+    if (rating === 'liked') return 'Liked It';
+    if (rating === 'disliked') return "Didn't Like It";
+  }
+  if (interaction_type === 'interested') return 'Interested';
+  if (interaction_type === 'not_interested') return 'Not Interested';
+  if (interaction_type === 'skipped') return 'Not Interested';
+  return 'Interested';
+}
+
 /**
  * Hook for managing the user's single "Spots" list.
- * Uses the favorites + venues tables in Supabase.
+ * Uses user_venue_interactions + venues tables in Supabase.
  */
 export function useSpots() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  // Fetch all user's spots (favorites joined with venue data)
   const {
     data: spots = [],
     isLoading,
@@ -22,46 +43,47 @@ export function useSpots() {
     queryFn: async () => {
       if (!user) return [];
       const { data, error } = await supabase
-        .from('favorites')
-        .select('id, labels, created_at, venue_id, venues(*)')
+        .from('user_venue_interactions')
+        .select('id, interaction_type, rating, created_at, venue_id, venues!fk_uvi_venue(*)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data || []).map((fav) => ({
-        favoriteId: fav.id,
-        labels: fav.labels || [],
-        createdAt: fav.created_at,
-        venueId: fav.venue_id,
-        ...fav.venues,
-      }));
+      return (data || []).map((row) => {
+        const label = interactionToLabel(row.interaction_type, row.rating);
+        return {
+          favoriteId: row.id,
+          labels: [label],
+          createdAt: row.created_at,
+          venueId: row.venue_id,
+          google_place_id: row.venue_id,
+          ...row.venues,
+        };
+      });
     },
     enabled: !!user,
     staleTime: 30_000,
   });
 
-  // Check if a venue is saved (by google_place_id)
   const isSaved = (placeId) => {
     if (!placeId) return false;
     return spots.some((s) => s.google_place_id === placeId);
   };
 
-  // Get labels for a specific venue
   const getLabels = (placeId) => {
     const spot = spots.find((s) => s.google_place_id === placeId);
     return spot?.labels || [];
   };
 
-  // Save a venue to Spots (upsert venue, then create favorite)
+  // Save a venue to Spots (upsert venue, then write user_venue_interactions)
   const saveMutation = useMutation({
     mutationFn: async ({ venue, labels = [] }) => {
       if (!user) throw new Error('Not authenticated');
 
-      // Normalize the place_id — strip "places/" prefix for storage
       const googlePlaceId = venue.place_id?.replace(/^places\//, '') || venue.google_place_id;
       if (!googlePlaceId) throw new Error('No place_id available');
 
       // 1. Upsert venue into venues table
-      const { data: venueRow, error: venueError } = await supabase
+      const { error: venueError } = await supabase
         .from('venues')
         .upsert(
           {
@@ -72,29 +94,35 @@ export function useSpots() {
             lng: venue.lon ?? venue.lng,
             rating: venue.rating,
             review_count: venue.review_count,
-            price_level: venue.price_level ? venue.price_level.length : null, // '$' -> 1, '$$' -> 2, etc.
+            price_level: venue.price_level ? venue.price_level.length : null,
             photo_url: venue.image_urls?.[0] || null,
             category: venue.category || venue.cuisine_type || null,
             last_fetched: new Date().toISOString(),
           },
           { onConflict: 'google_place_id' }
-        )
-        .select('id')
-        .single();
+        );
 
       if (venueError) throw venueError;
 
-      // 2. Upsert favorite (prevents duplicate key errors)
-      const { error: favError } = await supabase.from('favorites').upsert(
-        {
-          user_id: user.id,
-          venue_id: venueRow.id,
-          labels,
-        },
-        { onConflict: 'user_id,venue_id' }
-      );
+      // 2. Derive interaction from first label
+      const firstLabel = labels[0] || 'Interested';
+      const mapping = LABEL_TO_INTERACTION[firstLabel] || { interaction_type: 'interested', rating: null };
 
-      if (favError) throw favError;
+      const { error: intError } = await supabase
+        .from('user_venue_interactions')
+        .upsert(
+          {
+            user_id: user.id,
+            anonymous_id: crypto.randomUUID(),
+            venue_id: googlePlaceId,
+            interaction_type: mapping.interaction_type,
+            rating: mapping.rating,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,venue_id' }
+        );
+
+      if (intError) throw intError;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: SPOTS_KEY }),
   });
@@ -103,9 +131,11 @@ export function useSpots() {
   const removeMutation = useMutation({
     mutationFn: async (placeId) => {
       if (!user) throw new Error('Not authenticated');
-      const spot = spots.find((s) => s.google_place_id === placeId);
-      if (!spot) return;
-      const { error } = await supabase.from('favorites').delete().eq('id', spot.favoriteId);
+      const { error } = await supabase
+        .from('user_venue_interactions')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('venue_id', placeId);
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: SPOTS_KEY }),
@@ -115,28 +145,31 @@ export function useSpots() {
   const updateLabelsMutation = useMutation({
     mutationFn: async ({ placeId, labels }) => {
       if (!user) throw new Error('Not authenticated');
-      const spot = spots.find((s) => s.google_place_id === placeId);
-      if (!spot) throw new Error('Venue not in spots');
+      const firstLabel = labels[0] || 'Interested';
+      const mapping = LABEL_TO_INTERACTION[firstLabel] || { interaction_type: 'interested', rating: null };
+
       const { error } = await supabase
-        .from('favorites')
-        .update({ labels })
-        .eq('id', spot.favoriteId);
+        .from('user_venue_interactions')
+        .update({
+          interaction_type: mapping.interaction_type,
+          rating: mapping.rating,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id)
+        .eq('venue_id', placeId);
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: SPOTS_KEY }),
   });
 
-  // Get all unique labels across all spots
   const allLabels = [...new Set(spots.flatMap((s) => s.labels || []))];
 
-  // Save or update label with hierarchy: Favourite always supersedes
   const saveOrUpdateLabel = async ({ venue, label }) => {
     if (!user) throw new Error('Not authenticated');
     const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
     const currentLabels = getLabels(placeId);
 
-    // Don't downgrade from Favourite
-    if (currentLabels.includes('Favourite') && label !== 'Favourite') return;
+    if (currentLabels.includes('Favourites') && label !== 'Favourites') return;
 
     if (isSaved(placeId)) {
       const newLabels = [label];
