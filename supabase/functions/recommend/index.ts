@@ -270,7 +270,13 @@ Deno.serve(async (req) => {
       minScore: 1.2,
       maxRadius: radius_km || 5,
     };
-    if (relaxation_level === 1) {
+    if (isDiscoveryMode) {
+      // Relaxed thresholds for discovery — surface more variety
+      admission.minRating = 4.0;
+      admission.minReviewCount = 25;
+      admission.minScore = 1.0;
+      admission.maxRadius = radius_km || 5;
+    } else if (relaxation_level === 1) {
       admission.maxRadius = 10;
     } else if (relaxation_level === 2) {
       admission.maxRadius = 10;
@@ -487,12 +493,39 @@ Deno.serve(async (req) => {
       );
       console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationBias 3km)`);
     } else {
-      googleResults = await googlePlacesBroadSearch(
-        GOOGLE_KEY,
-        `${googleSearchQuery} in ${googleLocationContext}`,
-        lat, lon, admission.maxRadius, open_now, googlePriceLevels
-      );
-      console.log(`📊 Google returned ${googleResults.length} venues`);
+      if (isDiscoveryMode) {
+        // Discovery mode — two parallel searches for venue type diversity
+        const [foodResults, drinkResults] = await Promise.all([
+          googlePlacesBroadSearch(
+            GOOGLE_KEY,
+            `restaurant OR cafe OR bistro in ${googleLocationContext}`,
+            lat, lon, admission.maxRadius, open_now, googlePriceLevels
+          ),
+          googlePlacesBroadSearch(
+            GOOGLE_KEY,
+            `bar OR pub OR lounge OR club OR brewery in ${googleLocationContext}`,
+            lat, lon, admission.maxRadius, open_now, googlePriceLevels
+          ),
+        ]);
+        // Merge and deduplicate by place_id
+        const seenPlaceIds = new Set<string>();
+        googleResults = [];
+        for (const r of [...foodResults, ...drinkResults]) {
+          const pid = (r.place_id || '').replace(/^places\//, '');
+          if (!seenPlaceIds.has(pid)) {
+            seenPlaceIds.add(pid);
+            googleResults.push(r);
+          }
+        }
+        console.log(`📊 Discovery: ${foodResults.length} food + ${drinkResults.length} drink = ${googleResults.length} unique venues`);
+      } else {
+        googleResults = await googlePlacesBroadSearch(
+          GOOGLE_KEY,
+          `${googleSearchQuery} in ${googleLocationContext}`,
+          lat, lon, admission.maxRadius, open_now, googlePriceLevels
+        );
+        console.log(`📊 Google returned ${googleResults.length} venues`);
+      }
     }
 
     // ─── Exclude previously seen venues (discovery offset) ───
