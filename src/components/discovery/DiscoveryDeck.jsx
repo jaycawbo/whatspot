@@ -29,7 +29,7 @@ function isLocationQuery(query) {
   return false;
 }
 
-export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenues = [], currentQuery = '', onDescriptorTap, onExpandSearch, onNewSearch }) {
+export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenues = [], currentQuery = '', onDescriptorTap, onExpandSearch, onNewSearch, onRequestMoreVenues, isDiscoveryMode = false }) {
   const [venues, setVenues] = useState(initialVenues);
   const [overflowAppended, setOverflowAppended] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
