@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState, useEffect } from 'react';
 import LoadingMessages from '@/components/home/LoadingMessages';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import Header from '@/components/home/Header';
