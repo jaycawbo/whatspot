@@ -29,7 +29,7 @@ function isLocationQuery(query) {
   return false;
 }
 
-export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenues = [], currentQuery = '', onDescriptorTap, onExpandSearch, onNewSearch }) {
+export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenues = [], currentQuery = '', onDescriptorTap, onExpandSearch, onNewSearch, onRequestMoreVenues, isDiscoveryMode = false }) {
   const [venues, setVenues] = useState(initialVenues);
   const [overflowAppended, setOverflowAppended] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -43,6 +43,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const hasMore = currentIndex < venues.length;
   const navigate = useNavigate();
   const containerRef = useRef(null);
+  const moreRequestedRef = useRef(false);
 
   const {
     handleInterested,
@@ -69,9 +70,18 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     setVenues(initialVenues);
     setOverflowAppended(false);
     setCurrentIndex(0);
+    moreRequestedRef.current = false;
     x.set(0);
     y.set(0);
   }, [initialVenues]);
+
+  // Proactive loading: request more venues when nearing end of deck
+  useEffect(() => {
+    if (onRequestMoreVenues && !moreRequestedRef.current && venues.length > 0 && currentIndex >= venues.length - 3) {
+      moreRequestedRef.current = true;
+      onRequestMoreVenues();
+    }
+  }, [currentIndex, venues.length, onRequestMoreVenues]);
 
   // Auto-append overflow when reaching last card
   useEffect(() => {
@@ -256,14 +266,26 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   if (!hasMore || venues.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 px-6 text-center">
-        <p className="text-lg font-semibold text-foreground">You've seen all the top spots nearby.</p>
+        <p className="text-lg font-semibold text-foreground">
+          {isDiscoveryMode 
+            ? "You've explored all the top spots nearby." 
+            : "You've seen all the top results for this search."}
+        </p>
         <div className="flex gap-3">
-          {onExpandSearch && (
+          {!isDiscoveryMode && onExpandSearch && (
             <button
               onClick={onExpandSearch}
               className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
             >
-              Expand search area
+              Show more results
+            </button>
+          )}
+          {isDiscoveryMode && onExpandSearch && (
+            <button
+              onClick={onExpandSearch}
+              className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
+            >
+              Explore further
             </button>
           )}
           {onNewSearch && (
