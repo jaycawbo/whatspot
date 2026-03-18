@@ -29,6 +29,7 @@ export function useDiscoveryFeed() {
     setIsLoading(true);
     setError(null);
     setCurrentQuery(query);
+    setOverflowVenues([]);
 
     // Read session context
     let session_context = [];
