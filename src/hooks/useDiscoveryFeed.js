@@ -16,7 +16,7 @@ export function useDiscoveryFeed() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentQuery, setCurrentQuery] = useState('');
-  const radiusRef = useRef(state.filters?.radius || 2);
+  const radiusRef = useRef(state.filters?.radius || 5);
   const abortRef = useRef(null);
   const hasFetchedRef = useRef(false);
   const reserveVenuesRef = useRef([]);
