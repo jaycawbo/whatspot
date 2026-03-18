@@ -9,6 +9,8 @@ import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
 import { List, Map, Share2, Heart } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@/lib/AuthContext';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -29,11 +31,21 @@ const EMPTY_STATES = {
   'Favourites': 'No favourites yet — swipe up and rate a venue you loved',
 };
 
-// TODO: label priority logic should be enforced at the database level
-// when the backend interactions table is wired up
+// Map interaction_type + rating to filter label
+function interactionToLabel(interactionType, rating) {
+  if (interactionType === 'interested') return 'Interested';
+  if (interactionType === 'not_interested') return 'Not Interested';
+  if (interactionType === 'rated') {
+    if (rating === 'liked') return 'Liked It';
+    if (rating === 'disliked') return "Didn't Like It";
+    if (rating === 'loved') return 'Favourites';
+  }
+  return null;
+}
 
 export default function Spots() {
   const { spots, isLoading, removeSpot, isAuthenticated } = useSpots();
+  const { user } = useAuth();
   const { state } = useGlobalState();
   const [viewMode, setViewMode] = useState('list');
   const [activeStandardFilter, setActiveStandardFilter] = useState('Interested');
@@ -43,6 +55,43 @@ export default function Spots() {
   const [dynamicTagsCache, setDynamicTagsCache] = useState({ count: 0, tags: [] });
   const [shareOpen, setShareOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+
+  // Fetch user_venue_interactions for the current user
+  const { data: interactions = [] } = useQuery({
+    queryKey: ['user_venue_interactions'],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from('user_venue_interactions')
+        .select('venue_id, interaction_type, rating')
+        .eq('user_id', user.id);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user,
+    staleTime: 30_000,
+  });
+
+  // Build a map: venue_id (google_place_id) -> label from interactions
+  const interactionLabelMap = useMemo(() => {
+    const map = {};
+    for (const row of interactions) {
+      const label = interactionToLabel(row.interaction_type, row.rating);
+      if (label) map[row.venue_id] = label;
+    }
+    return map;
+  }, [interactions]);
+
+  // Merge spots with interaction overrides
+  const mergedSpots = useMemo(() => {
+    return spots.map((spot) => {
+      const interactionLabel = interactionLabelMap[spot.google_place_id];
+      if (interactionLabel) {
+        return { ...spot, labels: [interactionLabel] };
+      }
+      return spot;
+    });
+  }, [spots, interactionLabelMap]);
 
   // Fetch dynamic tags from edge function
   const fetchDynamicTags = useCallback(async () => {
@@ -87,9 +136,9 @@ export default function Spots() {
     );
   }, []);
 
-  // Filter spots
+  // Filter spots using merged labels
   const filteredSpots = useMemo(() => {
-    let result = spots.filter((s) => s.labels?.includes(activeStandardFilter));
+    let result = mergedSpots.filter((s) => s.labels?.includes(activeStandardFilter));
 
     if (activeDynamicTags.length > 0) {
       result = result.filter((spot) => {
@@ -104,10 +153,10 @@ export default function Spots() {
     }
 
     return result;
-  }, [spots, activeStandardFilter, activeDynamicTags]);
+  }, [mergedSpots, activeStandardFilter, activeDynamicTags]);
 
   const spotCount = (label) =>
-    spots.filter((s) => s.labels?.includes(label)).length;
+    mergedSpots.filter((s) => s.labels?.includes(label)).length;
 
   const handleRemove = async (placeId) => {
     try {
@@ -128,11 +177,11 @@ export default function Spots() {
             <h1 className="text-2xl font-bold text-foreground">Spots</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
               {isAuthenticated
-                ? `${spots.length} ${spots.length === 1 ? 'spot' : 'spots'} saved`
+                ? `${mergedSpots.length} ${mergedSpots.length === 1 ? 'spot' : 'spots'} saved`
                 : 'Sign in to see your saved spots'}
             </p>
           </div>
-          {isAuthenticated && spots.length > 0 && (
+          {isAuthenticated && mergedSpots.length > 0 && (
             <Button variant="outline" size="sm" onClick={() => setShareOpen(true)}>
               <Share2 className="h-4 w-4 mr-1.5" />
               Share
