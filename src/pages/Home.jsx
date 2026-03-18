@@ -57,6 +57,10 @@ export default function Home() {
       dispatch({ type: 'SET_CATEGORY', payload: category.label });
       addSearchHistory(category.prompt);
       searchFeed(category.prompt);
+      logEvent('search', {
+        search_query: category.prompt,
+        neighborhood_context: state.locationName,
+      });
     },
     [dispatch, addSearchHistory, searchFeed]
   );
