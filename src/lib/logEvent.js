@@ -5,6 +5,7 @@ export async function logEvent(eventType, payload = {}) {
   try {
     const now = new Date();
     await supabase.from('user_events').insert({
+      user_id: null,
       anonymous_id: getAnonId(),
       session_id: getSessionId(),
       event_type: eventType,
