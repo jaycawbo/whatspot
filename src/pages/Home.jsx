@@ -1,4 +1,5 @@
 import React, { useCallback, useRef } from 'react';
+import { logEvent } from '@/lib/logEvent';
 import LoadingMessages from '@/components/home/LoadingMessages';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import Header from '@/components/home/Header';
@@ -41,6 +42,10 @@ export default function Home() {
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: null });
       addSearchHistory(nextQuery);
       searchFeed(nextQuery);
+      logEvent('search', {
+        search_query: nextQuery,
+        neighborhood_context: state.locationName,
+      });
     },
     [dispatch, addSearchHistory, searchFeed]
   );
@@ -52,6 +57,10 @@ export default function Home() {
       dispatch({ type: 'SET_CATEGORY', payload: category.label });
       addSearchHistory(category.prompt);
       searchFeed(category.prompt);
+      logEvent('search', {
+        search_query: category.prompt,
+        neighborhood_context: state.locationName,
+      });
     },
     [dispatch, addSearchHistory, searchFeed]
   );
