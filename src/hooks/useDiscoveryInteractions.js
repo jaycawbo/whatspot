@@ -91,6 +91,15 @@ export function useDiscoveryInteractions() {
     // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
     console.log('[TODO: wire to backend]', { event: 'venue_skipped', venue_id: placeId, timestamp: Date.now() });
 
+    try {
+      const raw = sessionStorage.getItem('whatspot_skipped_venues');
+      const existing = raw ? JSON.parse(raw) : [];
+      const id = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
+      if (id && !existing.includes(id)) {
+        sessionStorage.setItem('whatspot_skipped_venues', JSON.stringify([...existing, id]));
+      }
+    } catch {}
+
     writeInteraction(venue, 'skipped');
 
     // Skip does not save — just log and advance
