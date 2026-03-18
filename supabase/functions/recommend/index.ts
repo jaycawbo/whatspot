@@ -894,6 +894,7 @@ Deno.serve(async (req) => {
         relaxation_level,
         gated: false,
         nearby_overflow: overflowVenues || [],
+        reserve_venues: reserveVenues,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
