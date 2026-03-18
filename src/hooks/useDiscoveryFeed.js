@@ -7,6 +7,7 @@ import { useGlobalState } from '@/context/GlobalStateContext';
  * - Fetches nearby venues on mount (discovery mode)
  * - Handles search-driven feed refresh
  * - Manages radius expansion for "expand search area"
+ * - Tracks reserve venues and seen/skipped IDs
  */
 export function useDiscoveryFeed() {
   const { state } = useGlobalState();
@@ -18,6 +19,7 @@ export function useDiscoveryFeed() {
   const radiusRef = useRef(state.filters?.radius || 2);
   const abortRef = useRef(null);
   const hasFetchedRef = useRef(false);
+  const reserveVenuesRef = useRef([]);
 
   const fetchFeed = useCallback(async ({ query = '', radius, mode } = {}) => {
     if (abortRef.current) abortRef.current.abort();
@@ -38,6 +40,14 @@ export function useDiscoveryFeed() {
       if (raw) session_context = JSON.parse(raw);
     } catch {}
 
+    // Read seen IDs for discovery mode exclude_ids
+    const seenIds = effectiveMode === 'discovery' ? (() => {
+      try {
+        const raw = sessionStorage.getItem('whatspot_seen_venues');
+        return raw ? JSON.parse(raw) : [];
+      } catch { return []; }
+    })() : [];
+
     try {
       const res = await recommend({
         mode: effectiveMode,
@@ -49,13 +59,46 @@ export function useDiscoveryFeed() {
         open_now: state.filters?.openNow || undefined,
         price_levels: state.filters?.priceLevels?.length ? state.filters.priceLevels : undefined,
         session_context,
+        exclude_ids: seenIds.length ? seenIds : undefined,
       });
 
       const results = res?.results || [];
       const overflow = res?.nearby_overflow || [];
-      setVenues(results);
+      const reserve = res?.reserve_venues || [];
+
+      // Filter out skipped venues
+      let skippedIds = [];
+      try {
+        const raw = sessionStorage.getItem('whatspot_skipped_venues');
+        if (raw) skippedIds = JSON.parse(raw);
+      } catch {}
+
+      const filtered = results.filter(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        return !skippedIds.includes(id);
+      });
+
+      reserveVenuesRef.current = reserve.filter(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        return !skippedIds.includes(id);
+      });
+
+      setVenues(filtered);
       setOverflowVenues(overflow);
       radiusRef.current = effectiveRadius;
+
+      // Track seen venue IDs for discovery mode
+      if (effectiveMode === 'discovery') {
+        try {
+          const raw = sessionStorage.getItem('whatspot_seen_venues');
+          const existing = raw ? JSON.parse(raw) : [];
+          const newIds = filtered.map(v =>
+            (v.place_id || v.google_place_id || '').replace(/^places\//, '')
+          ).filter(Boolean);
+          const merged = [...new Set([...existing, ...newIds])];
+          sessionStorage.setItem('whatspot_seen_venues', JSON.stringify(merged));
+        } catch {}
+      }
     } catch (err) {
       console.error('Discovery feed fetch failed:', err);
       setError(err?.message || 'Failed to load venues');
@@ -84,6 +127,12 @@ export function useDiscoveryFeed() {
     fetchFeed({ query: currentQuery, radius: newRadius });
   }, [fetchFeed, currentQuery]);
 
+  const getReserveVenues = useCallback(() => {
+    const reserve = reserveVenuesRef.current;
+    reserveVenuesRef.current = [];
+    return reserve;
+  }, []);
+
   return {
     venues,
     overflowVenues,
@@ -93,5 +142,6 @@ export function useDiscoveryFeed() {
     searchFeed,
     expandSearch,
     refetchDiscovery: () => fetchFeed(),
+    getReserveVenues,
   };
 }
