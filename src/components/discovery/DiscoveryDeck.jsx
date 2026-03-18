@@ -38,6 +38,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [ratingSheetOpen, setRatingSheetOpen] = useState(false);
   const [ratingPendingVenue, setRatingPendingVenue] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
   const isMobile = useIsMobile();
   const currentVenue = venues[currentIndex] ?? null;
   const hasMore = currentIndex < venues.length;
@@ -75,18 +76,15 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
     if (newIds === initialVenueIdsRef.current && initialVenueIdsRef.current !== '') return;
     
-    // Detect append vs full reset
     const currentIds = initialVenueIdsRef.current;
     initialVenueIdsRef.current = newIds;
 
     if (currentIds !== '' && newIds.startsWith(currentIds)) {
-      // New venues appended — just add them without resetting index
       setVenues(initialVenues);
       moreRequestedRef.current = false;
       return;
     }
 
-    // Full reset — new search or cold load
     setVenues(initialVenues);
     setOverflowAppended(false);
     setCurrentIndex(0);
@@ -95,7 +93,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     y.set(0);
   }, [initialVenues, x, y]);
 
-  // Proactive loading: request more venues when nearing end of deck
+  // Proactive loading
   useEffect(() => {
     if (onRequestMoreVenues && !moreRequestedRef.current && venues.length > 0 && currentIndex >= venues.length - 3) {
       moreRequestedRef.current = true;
@@ -103,7 +101,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     }
   }, [currentIndex, venues.length, onRequestMoreVenues]);
 
-  // Auto-append overflow when reaching last card
+  // Auto-append overflow
   useEffect(() => {
     if (overflowAppended || overflowVenues.length === 0) return;
     if (currentIndex >= venues.length - 1 && venues.length > 0) {
@@ -183,7 +181,6 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       return;
     }
 
-    // Animate card with upward fade-out
     setExitDirection('rated');
     setRatingPendingVenue(null);
     await new Promise((r) => setTimeout(r, 400));
@@ -199,8 +196,13 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     setRatingPendingVenue(null);
   }, [ratingPendingVenue, logRatingSheetCancelled]);
 
-  // Drag end handler
+  // Drag handlers — track isDragging to disable transition during drag (Fix 2)
+  const handleDragStart = useCallback(() => {
+    setIsDragging(true);
+  }, []);
+
   const handleDragEnd = useCallback((event, info) => {
+    setIsDragging(false);
     if (!currentVenue) return;
     const { offset } = info;
 
@@ -236,7 +238,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         return;
       }
 
-      if (ratingSheetOpen) return; // Don't process other keys while sheet is open
+      if (ratingSheetOpen) return;
 
       switch (e.key) {
         case 'ArrowRight':
@@ -282,6 +284,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     }
   }, [isAuthenticated, pendingAction, executePending, advanceCard, clearPending]);
 
+  // Whether to show post-search instructional copy
+  const showSearchCopy = !!currentQuery;
+
   // Empty state
   if (!hasMore || venues.length === 0) {
     return (
@@ -321,7 +326,6 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     );
   }
 
-  // Determine if card should be dimmed (rating sheet open)
   const isCardDimmed = ratingSheetOpen;
 
   return (
@@ -341,15 +345,18 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         drag={!ratingSheetOpen}
         dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
         dragElastic={0.8}
+        onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         animate={
-          exitDirection === 'rated'
-            ? { opacity: 0, y: -100, scale: 0.95 }
-            : isCardDimmed
-              ? { opacity: 0.5, scale: 1 }
-              : { opacity: 1, scale: 1 }
+          isDragging
+            ? undefined
+            : exitDirection === 'rated'
+              ? { opacity: 0, y: -100, scale: 0.95 }
+              : isCardDimmed
+                ? { opacity: 0.5, scale: 1 }
+                : { opacity: 1, scale: 1 }
         }
-        transition={{ duration: 0.4 }}
+        transition={isDragging ? { duration: 0 } : { duration: 0.4 }}
       >
         {/* Swipe overlays */}
         {/* Right — green "Interested" */}
@@ -357,7 +364,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
           className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
           style={{ opacity: rightOverlayOpacity, background: 'hsla(142, 71%, 45%, 0.2)' }}
         >
-          <span className="text-2xl font-bold text-green-600">Interested</span>
+          <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Interested</span>
         </motion.div>
 
         {/* Left — red "Not Interested" */}
@@ -365,15 +372,15 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
           className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
           style={{ opacity: leftOverlayOpacity, background: 'hsla(0, 84%, 60%, 0.2)' }}
         >
-          <span className="text-2xl font-bold text-destructive">Not Interested</span>
+          <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Not Interested</span>
         </motion.div>
 
-        {/* Down — grey "Skip" */}
+        {/* Down — grey "Skip" (Fix 4: white text + shadow for contrast) */}
         <motion.div
           className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
           style={{ opacity: downOverlayOpacity, background: 'hsla(0, 0%, 50%, 0.2)' }}
         >
-          <span className="text-2xl font-bold text-muted-foreground">Skip</span>
+          <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Skip</span>
         </motion.div>
 
         {/* Up — blue "Been here" */}
@@ -381,8 +388,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
           className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none"
           style={{ opacity: upOverlayOpacity, background: 'hsla(210, 70%, 50%, 0.2)' }}
         >
-          <Heart className="h-10 w-10 text-blue-500 fill-blue-500/30" />
-          <span className="text-2xl font-bold text-blue-600">Been here</span>
+          <Heart className="h-10 w-10 text-white fill-white/30" />
+          <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Been here</span>
         </motion.div>
 
         <DiscoveryCard
@@ -392,6 +399,13 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
           onCardBodyTap={handleCardBodyTap}
         />
       </motion.div>
+
+      {/* Post-search instructional copy (Fix 3) */}
+      {showSearchCopy && (
+        <p className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-10 z-20 text-xs text-muted-foreground text-center max-w-[90%] whitespace-normal">
+          Showing you the best options based on your search. Swipe through to see additional results.
+        </p>
+      )}
 
       {/* Web-only action buttons */}
       {!isMobile && (
@@ -420,9 +434,10 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
             <ChevronRight className="h-6 w-6 text-green-600" />
           </button>
 
-          {/* Bottom — Skip */}
+          {/* Bottom — Skip (Fix 3: pushed down further when search copy visible) */}
           <button
-            className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-14 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-accent transition-colors"
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-accent transition-colors"
+            style={{ transform: `translateX(-50%) translateY(${showSearchCopy ? '4.5rem' : '3.5rem'})` }}
             onClick={() => performAction('down', currentVenue)}
             onMouseEnter={() => setHoveredButton('down')}
             onMouseLeave={() => setHoveredButton(null)}
@@ -432,9 +447,10 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
             <span className="text-sm text-muted-foreground">Skip</span>
           </button>
 
-          {/* Top — Been here */}
+          {/* Top — Been here (Fix 1: more margin from top) */}
           <button
-            className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-14 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-blue-500/10 transition-colors"
+            className="absolute left-1/2 -translate-x-1/2 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-blue-500/10 transition-colors"
+            style={{ top: '-4rem' }}
             onClick={() => performAction('up', currentVenue)}
             onMouseEnter={() => setHoveredButton('up')}
             onMouseLeave={() => setHoveredButton(null)}
@@ -462,12 +478,14 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       {/* Constellations rating sheet */}
       <ConstellationsSheet
         open={ratingSheetOpen}
-        onOpenChange={setRatingSheetOpen}
-        venueName={ratingPendingVenue?.name || ''}
+        onOpenChange={(open) => {
+          if (!open) handleRatingCancel();
+        }}
+        venue={ratingPendingVenue}
         onRate={handleRate}
-        onCancel={handleRatingCancel}
       />
 
+      {/* Auth modal */}
       <AuthModal open={authModalOpen} onOpenChange={handleAuthClose} />
     </div>
   );
