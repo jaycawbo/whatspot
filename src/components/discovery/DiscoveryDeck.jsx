@@ -436,7 +436,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
           {/* Bottom — Skip (Fix 3: pushed down further when search copy visible) */}
           <button
             className="absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-accent transition-colors"
-            style={{ transform: `translateX(-50%) translateY(${showSearchCopy ? '4.5rem' : '3.5rem'})` }}
+            style={{ transform: `translateX(-50%) translateY(${showSearchCopy ? '6rem' : '3.5rem'})` }}
             onClick={() => performAction('down', currentVenue)}
             onMouseEnter={() => setHoveredButton('down')}
             onMouseLeave={() => setHoveredButton(null)}
