@@ -30,6 +30,8 @@ function isLocationQuery(query) {
 }
 
 export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenues = [], currentQuery = '', onDescriptorTap, onExpandSearch, onNewSearch }) {
+  const [venues, setVenues] = useState(initialVenues);
+  const [overflowAppended, setOverflowAppended] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [exitDirection, setExitDirection] = useState(null);
   const [hoveredButton, setHoveredButton] = useState(null);
@@ -56,22 +58,27 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const x = useMotionValue(0);
   const y = useMotionValue(0);
 
-  // Reset deck when venues change
+  // Reset deck when initial venues change (new search)
   useEffect(() => {
+    setVenues(initialVenues);
+    setOverflowAppended(false);
     setCurrentIndex(0);
     x.set(0);
     y.set(0);
-  }, [venues]);
+  }, [initialVenues]);
 
-  // Overlay opacities based on drag distance
-  const rightOverlayOpacity = useTransform(x, [0, SWIPE_THRESHOLD], [0, 0.8]);
-  const leftOverlayOpacity = useTransform(x, [-SWIPE_THRESHOLD, 0], [0.8, 0]);
-  const downOverlayOpacity = useTransform(y, [0, SWIPE_DOWN_THRESHOLD], [0, 0.8]);
-  const upOverlayOpacity = useTransform(y, [-SWIPE_UP_THRESHOLD, 0], [0.8, 0]);
-
-  const currentVenue = venues[currentIndex];
-  const nextVenue = venues[currentIndex + 1];
-  const hasMore = currentIndex < venues.length;
+  // Auto-append overflow when reaching last card
+  useEffect(() => {
+    if (overflowAppended || overflowVenues.length === 0) return;
+    if (currentIndex >= venues.length - 1 && venues.length > 0) {
+      const message = isLocationQuery(currentQuery)
+        ? 'Showing spots just outside your area'
+        : 'Here are a few more you might like';
+      toast(message, { duration: 3000 });
+      setVenues((prev) => [...prev, ...overflowVenues]);
+      setOverflowAppended(true);
+    }
+  }, [currentIndex, venues.length, overflowVenues, overflowAppended, currentQuery]);
 
   // Preload next card's images
   useEffect(() => {
