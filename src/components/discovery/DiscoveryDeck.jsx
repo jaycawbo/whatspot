@@ -203,8 +203,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   }, []);
 
   const handleDragEnd = useCallback((event, info) => {
-    setIsDragging(false);
-    if (!currentVenue) return;
+    if (!currentVenue) { setIsDragging(false); return; }
     const { offset } = info;
 
     if (offset.x > SWIPE_THRESHOLD) {
@@ -216,6 +215,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     } else if (offset.y < -SWIPE_UP_THRESHOLD) {
       performAction('up', currentVenue);
     } else {
+      setIsDragging(false);
       animate(x, 0, { type: 'spring', stiffness: 500, damping: 30 });
       animate(y, 0, { type: 'spring', stiffness: 500, damping: 30 });
     }
