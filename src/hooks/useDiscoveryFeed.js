@@ -89,6 +89,7 @@ export function useDiscoveryFeed() {
     overflowVenues,
     isLoading,
     error,
+    currentQuery,
     searchFeed,
     expandSearch,
     refetchDiscovery: () => fetchFeed(),
