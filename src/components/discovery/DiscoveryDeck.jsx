@@ -70,9 +70,18 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     setVenues(initialVenues);
     setOverflowAppended(false);
     setCurrentIndex(0);
+    moreRequestedRef.current = false;
     x.set(0);
     y.set(0);
   }, [initialVenues]);
+
+  // Proactive loading: request more venues when nearing end of deck
+  useEffect(() => {
+    if (onRequestMoreVenues && !moreRequestedRef.current && venues.length > 0 && currentIndex >= venues.length - 3) {
+      moreRequestedRef.current = true;
+      onRequestMoreVenues();
+    }
+  }, [currentIndex, venues.length, onRequestMoreVenues]);
 
   // Auto-append overflow when reaching last card
   useEffect(() => {
