@@ -15,6 +15,6 @@ export async function logEvent(eventType, payload = {}) {
     });
   } catch (e) {
     // Logging must never break the app — fail silently
-    console.warn('logEvent failed:', e.message);
+    console.warn('logEvent failed:', e.message, JSON.stringify(e));
   }
 }
