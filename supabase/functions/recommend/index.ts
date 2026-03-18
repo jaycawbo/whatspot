@@ -233,6 +233,7 @@ Deno.serve(async (req) => {
       open_now,
       price_levels,
       session_context = [],
+      exclude_ids = [],
     } = await req.json();
 
     // Build session context string for LLM prompts
@@ -494,6 +495,17 @@ Deno.serve(async (req) => {
       console.log(`📊 Google returned ${googleResults.length} venues`);
     }
 
+    // ─── Exclude previously seen venues (discovery offset) ───
+    if (Array.isArray(exclude_ids) && exclude_ids.length > 0) {
+      const excludeSet = new Set(exclude_ids.map((id: string) => id.replace(/^places\//, '')));
+      const before = googleResults.length;
+      googleResults = googleResults.filter((r: any) => {
+        const stripped = (r.place_id || '').replace(/^places\//, '');
+        return !excludeSet.has(stripped);
+      });
+      console.log(`🚫 Excluded ${before - googleResults.length} previously seen venues (${exclude_ids.length} exclude_ids)`);
+    }
+
     if (googleResults.length === 0) {
       return new Response(
         JSON.stringify({
@@ -647,7 +659,7 @@ Deno.serve(async (req) => {
 
     // ─── STEP 4c: Apply refinement post-processing (needs finalResults, set below) ───
     // First, select initial candidates for the comprehensive LLM or discovery path
-    const candidates = dedup(scoredVenues).slice(0, 8);
+    const candidates = dedup(scoredVenues).slice(0, 20);
 
     // ─── COMPREHENSIVE LLM: Confidence scoring, descriptors, summary & chips ───
     console.log('🤖 COMPREHENSIVE LLM: Scoring, descriptors, summary & chips...');
@@ -753,7 +765,7 @@ Deno.serve(async (req) => {
       const rankings = comprehensiveResult.rankings || [];
       finalVenues = rankings
         .filter((r: any) => r.confidence >= 0.5)
-        .slice(0, 5)
+        .slice(0, 8)
         .map((r: any, i: number) => {
           const venue = candidates[r.index - 1];
           if (!venue) return null;
@@ -766,12 +778,12 @@ Deno.serve(async (req) => {
         })
         .filter(Boolean);
 
-      // Backfill to guarantee 5 results
-      if (finalVenues.length < 5) {
+      // Backfill to guarantee 8 results
+      if (finalVenues.length < 8) {
         const usedIndices = new Set(rankings.filter((r: any) => r.confidence >= 0.5).map((r: any) => r.index - 1));
         const backfill = candidates
           .filter((_: any, i: number) => !usedIndices.has(i))
-          .slice(0, 5 - finalVenues.length)
+          .slice(0, 8 - finalVenues.length)
           .map((v: any) => ({ ...v, descriptors: [], reasoning_explanation: '' }));
         finalVenues.push(...backfill);
       }
@@ -850,6 +862,13 @@ Deno.serve(async (req) => {
       console.log(`✅ STEP 4c: Kept ${keptVenues.length} venues, added ${replacements.length} replacements`);
     }
 
+    // ─── Build reserve venues from remaining candidates ───
+    const finalVenueIds = new Set(finalVenues.map((v: any) => v.place_id));
+    const reserveVenues = candidates
+      .filter((v: any) => !finalVenueIds.has(v.place_id))
+      .slice(0, 10);
+    console.log(`📦 Reserve venues: ${reserveVenues.length}`);
+
     // ─── STEP 5: Photo enrichment ───
     console.log(`🖼️ STEP 5: Photos for ${finalVenues.length} venues...`);
     const enriched = await Promise.all(
@@ -875,6 +894,7 @@ Deno.serve(async (req) => {
         relaxation_level,
         gated: false,
         nearby_overflow: overflowVenues || [],
+        reserve_venues: reserveVenues,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
