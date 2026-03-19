@@ -203,6 +203,29 @@ export function useDiscoveryFeed() {
     if (isPrefetchingRef.current) return;
     isPrefetchingRef.current = true;
 
+    // Advance to next radius ring
+    radiusRingIndexRef.current = radiusRingIndexRef.current + 1;
+
+    // If we've exhausted all rings, advance criteria pass and reset rings
+    if (radiusRingIndexRef.current >= RADIUS_RINGS.length) {
+      criteriaPassRef.current = criteriaPassRef.current + 1;
+      radiusRingIndexRef.current = 0;
+
+      // If all criteria passes exhausted, stay at pass 7 (floor)
+      if (criteriaPassRef.current > MAX_CRITERIA_PASS) {
+        criteriaPassRef.current = MAX_CRITERIA_PASS;
+      }
+
+      // Clear seen venues for the new pass so venues can resurface
+      try {
+        sessionStorage.removeItem('whatspot_seen_venues');
+      } catch {}
+    }
+
+    const currentRadius = RADIUS_RINGS[radiusRingIndexRef.current];
+    const currentPass = criteriaPassRef.current;
+    const anchor = anchorPointRef.current ?? { lat: state.userLocation?.lat ?? 43.6532, lon: state.userLocation?.lon ?? -79.3832 };
+
     const seenIds = (() => {
       try {
         const raw = sessionStorage.getItem('whatspot_seen_venues');
@@ -219,12 +242,13 @@ export function useDiscoveryFeed() {
     try {
       const res = await recommend({
         mode: 'discovery',
-        lat: state.userLocation.lat,
-        lon: state.userLocation.lon,
+        lat: anchor.lat,
+        lon: anchor.lon,
         location_name: state.locationName,
-        radius_km: radiusRef.current,
+        radius_km: currentRadius,
         open_now: state.filters?.openNow || undefined,
         exclude_ids: seenIds.length ? seenIds : undefined,
+        criteria_pass: currentPass,
       });
 
       const results = res?.results || [];
