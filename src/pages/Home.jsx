@@ -15,7 +15,7 @@ export default function Home() {
   const isMobile = useIsMobile();
   const searchBarRef = useRef(null);
 
-  const { venues: feedVenues, overflowVenues, isLoading: feedLoading, currentQuery, searchFeed, expandSearch, getReserveVenues } = useDiscoveryFeed();
+  const { venues: feedVenues, overflowVenues, isLoading: feedLoading, currentQuery, searchFeed, expandSearch, getReserveVenues, prefetchNextBatch } = useDiscoveryFeed();
   const [reserveVenues, setReserveVenues] = useState([]);
 
   const handleRequestMoreVenues = useCallback(() => {
