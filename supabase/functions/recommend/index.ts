@@ -265,6 +265,7 @@ Deno.serve(async (req) => {
       price_levels,
       session_context = [],
       exclude_ids = [],
+      criteria_pass,
     } = await req.json();
 
     // Build session context string for LLM prompts
