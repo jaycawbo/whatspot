@@ -21,11 +21,14 @@ export default function Home() {
   const handleRequestMoreVenues = useCallback(() => {
     const reserve = getReserveVenues();
     if (reserve.length > 0) {
-      setReserveVenues(reserve);
-    } else {
+      setReserveVenues(prev => [...prev, ...reserve]);
+    }
+    if (!currentQuery) {
+      prefetchNextBatch();
+    } else if (reserve.length === 0) {
       expandSearch();
     }
-  }, [getReserveVenues, expandSearch]);
+  }, [getReserveVenues, prefetchNextBatch, expandSearch, currentQuery]);
 
   const addSearchHistory = useCallback(
     (queryText) => {
