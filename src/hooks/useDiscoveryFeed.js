@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { recommend } from '@/services/api';
 import { useGlobalState } from '@/context/GlobalStateContext';
+import { supabase } from '@/integrations/supabase/client';
 
 /**
  * Hook that manages the discovery feed state:
