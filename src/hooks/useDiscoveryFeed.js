@@ -3,6 +3,21 @@ import { recommend } from '@/services/api';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { supabase } from '@/integrations/supabase/client';
 
+const TORONTO_ANCHORS = [
+  { lat: 43.6532, lon: -79.3832 }, // center
+  { lat: 43.6622, lon: -79.3832 }, // north
+  { lat: 43.6442, lon: -79.3832 }, // south
+  { lat: 43.6532, lon: -79.3703 }, // east
+  { lat: 43.6532, lon: -79.3961 }, // west
+  { lat: 43.6586, lon: -79.3739 }, // northeast
+  { lat: 43.6478, lon: -79.3739 }, // southeast
+  { lat: 43.6478, lon: -79.3925 }, // southwest
+  { lat: 43.6586, lon: -79.3925 }, // northwest
+];
+
+const RADIUS_RINGS = [2, 4, 6, 8, 10, 12];
+const MAX_CRITERIA_PASS = 7;
+
 /**
  * Hook that manages the discovery feed state:
  * - Fetches nearby venues on mount (discovery mode)
