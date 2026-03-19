@@ -144,5 +144,6 @@ export function useDiscoveryFeed() {
     expandSearch,
     refetchDiscovery: () => fetchFeed(),
     getReserveVenues,
+    prefetchNextBatch,
   };
 }
