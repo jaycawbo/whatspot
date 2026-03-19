@@ -36,6 +36,9 @@ export function useDiscoveryFeed() {
   const abortRef = useRef(null);
   const hasFetchedRef = useRef(false);
   const reserveVenuesRef = useRef([]);
+  const radiusRingIndexRef = useRef(0);
+  const criteriaPassRef = useRef(1);
+  const anchorPointRef = useRef(null);
   const isPrefetchingRef = useRef(false);
 
   const fetchFeed = useCallback(async ({ query = '', radius, mode } = {}) => {
