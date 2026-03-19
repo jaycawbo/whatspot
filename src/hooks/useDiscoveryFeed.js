@@ -184,8 +184,10 @@ export function useDiscoveryFeed() {
   useEffect(() => {
     if (hasFetchedRef.current) return;
     hasFetchedRef.current = true;
-    initAnchorPoint().then(() => fetchFeed());
-  }, [fetchFeed, initAnchorPoint]);
+  // Fetch immediately with default anchor, then update anchor in background
+  fetchFeed();
+  initAnchorPoint();
+}, [fetchFeed, initAnchorPoint]);
 
   // Search-driven refresh
   const searchFeed = useCallback((query) => {
