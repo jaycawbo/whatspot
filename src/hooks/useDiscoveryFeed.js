@@ -184,8 +184,8 @@ export function useDiscoveryFeed() {
   useEffect(() => {
     if (hasFetchedRef.current) return;
     hasFetchedRef.current = true;
-    fetchFeed();
-  }, [fetchFeed]);
+    initAnchorPoint().then(() => fetchFeed());
+  }, [fetchFeed, initAnchorPoint]);
 
   // Search-driven refresh
   const searchFeed = useCallback((query) => {
