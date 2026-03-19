@@ -41,6 +41,58 @@ export function useDiscoveryFeed() {
   const anchorPointRef = useRef(null);
   const isPrefetchingRef = useRef(false);
 
+  const initAnchorPoint = useCallback(async () => {
+    if (anchorPointRef.current) return;
+
+    // Priority 1: live user location
+    if (state.userLocation?.lat && state.userLocation?.lon) {
+      anchorPointRef.current = {
+        lat: state.userLocation.lat,
+        lon: state.userLocation.lon,
+      };
+      return;
+    }
+
+    // Priority 2: authenticated user — load from Supabase and increment
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('discovery_anchor_index, discovery_last_radius_km, discovery_last_criteria_pass')
+        .eq('id', user.id)
+        .single();
+
+      const anchorIndex = profile?.discovery_anchor_index ?? 0;
+      const nextIndex = (anchorIndex + 1) % TORONTO_ANCHORS.length;
+
+      anchorPointRef.current = TORONTO_ANCHORS[anchorIndex];
+      radiusRingIndexRef.current = 0;
+      criteriaPassRef.current = profile?.discovery_last_criteria_pass ?? 1;
+
+      // Update profile for next session
+      await supabase.from('user_profiles').update({
+        discovery_anchor_index: nextIndex,
+        discovery_last_radius_km: RADIUS_RINGS[0],
+        discovery_last_criteria_pass: 1,
+      }).eq('id', user.id);
+      return;
+    }
+
+    // Priority 3: guest — random anchor from sessionStorage or new random pick
+    try {
+      const stored = sessionStorage.getItem('whatspot_anchor_index');
+      if (stored !== null) {
+        anchorPointRef.current = TORONTO_ANCHORS[parseInt(stored)];
+      } else {
+        const randomIndex = Math.floor(Math.random() * TORONTO_ANCHORS.length);
+        sessionStorage.setItem('whatspot_anchor_index', String(randomIndex));
+        anchorPointRef.current = TORONTO_ANCHORS[randomIndex];
+      }
+    } catch {
+      anchorPointRef.current = TORONTO_ANCHORS[0];
+    }
+  }, [state.userLocation]);
+
   const fetchFeed = useCallback(async ({ query = '', radius, mode } = {}) => {
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
