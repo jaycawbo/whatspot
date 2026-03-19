@@ -1,53 +1,114 @@
 
 
-## Plan: Fix "Been Here" Button Spacing + Instructional Copy Overlap
+# Whatspot — Frontend Shell + PWA Build Plan
 
-**File to modify:** `src/components/discovery/DiscoveryDeck.jsx` only
+## Overview
 
----
+Build the complete Whatspot frontend UI with mock data, PWA support, and prepare the architecture for future Supabase Edge Function integration. The app is a single-page venue discovery tool with search, category browsing, filtering, and map/list views.
 
-### Why Previous Fixes Failed
+## Current State
 
-Both issues share the same root cause: the deck container has a fixed height (`var(--deck-height, 78vh)`) and all elements — buttons, instructional copy — are absolutely positioned inside it using offsets that push them outside the container bounds. But the parent layout (`flex items-center justify-center`) doesn't account for this overflow, so:
+- Empty shell: no pages besides `Index.tsx` placeholder and `NotFound.tsx`
+- Existing Base44 SDK setup (auth, vite plugin, edge functions for Google Places)
+- Existing edge functions for Google Places APIs (will be migrated to Supabase later)
+- No Home page, no components, no global state
 
-- **"Been Here" button** at `top: -5.5rem` bleeds upward into the category chips area because there's no reserved space above the container.
-- **Instructional copy** at `bottom-0 translate-y-[3.5rem]` bleeds downward and overlaps the card on mobile (where there's no extra space below) and sits behind the Skip button on desktop.
+## Architecture Decisions
 
-Adjusting pixel values alone can't fix this — the container needs structural changes to reserve space for these elements.
+- **Routing**: Use the existing `pages.config.js` system with `App.jsx` as the entry point
+- **State management**: React Context (`GlobalStateContext`) for app-wide state (location, search query, filters, sort, view mode)
+- **Styling**: Tailwind CSS with existing design tokens from `index.css`
+- **Maps**: `react-leaflet` for the map view (free, no API key needed)
+- **Mock data**: Hardcoded venue results for development; API service layer with easy swap-in points
+- **PWA**: `vite-plugin-pwa` for service worker, manifest, and installability
 
-### Solution
+## Build Phases (all frontend shell)
 
-Wrap the deck in a flex column layout that places the "Been Here" button, the card area, and the instructional copy + Skip button in **document flow** rather than relying on absolute offsets that escape the container.
+### Phase 1: Foundation
 
-**Structural change to the container (line 332):**
+1. **PWA setup** — Add `vite-plugin-pwa`, create `manifest.json` with Whatspot branding, configure service worker for offline caching
+2. **GlobalStateContext** — Context provider with: `query`, `category`, `mode` (pre-search/post-search), `sort`, `view` (list/map), `userLocation`, `locationName`, `filters`, `anonymousId`, `suggestedChips`, `searchHistory`
+3. **Mock API service** — `src/services/api.ts` with `recommend()` and `recommendPage()` returning realistic mock venue data, matching the spec's response shape
+4. **Update `pages.config.js`** — Register `Home` page as main page
 
-Replace the single `relative` div with a flex column:
+### Phase 2: Core Components
+
+5. **Header** — Fixed top bar with logo, location display (editable), clear-search button
+6. **SearchBar** — Text input with search/stop icons, centered (pre-search) vs left-aligned (post-search), Enter-to-submit
+7. **CategoryTiles** — Grid of emoji+label tiles (Pizza, Coffee, Bars, etc.), clicking populates search bar
+8. **RefinementChips** — Horizontal scrollable pills that appear after tile selection, click appends to query
+9. **Home page** — Compose Header + SearchBar + CategoryTiles + RefinementChips for pre-search state
+
+### Phase 3: Post-Search UI
+
+10. **ResultsList** — Venue cards with name, address, distance, rating stars, price level, cuisine tag, open/closed badge, image
+11. **MapView** — react-leaflet map with venue markers and popups
+12. **ViewToggle** — List/map icon toggle
+13. **SortToggle** — Relevance/Distance inline toggle
+14. **FilterDialog** — Modal with Open Now toggle, price multi-select, cuisine filter, radius slider
+15. **SuggestedChips** — AI-generated refinement chips row (mock data)
+16. **RelaxationBanner** — Info banner when constraints were loosened
+17. **NoResultsPrompt** — Zero-results state with "Relax constraints" button
+18. **Pagination** — "More options" button when `has_more` is true
+
+### Phase 4: Modals & Mobile
+
+19. **GatedModal** — Sign-in prompt overlay
+20. **LocationConfirmModal** — Detected vs current location chooser
+21. **MobileBottomSheet** — Slide-up sheet for mobile post-search with search bar, categories, chips, history
+22. **Responsive layout** — Desktop side-by-side vs mobile stacked with bottom sheet
+
+### Phase 5: User Flows & Polish
+
+23. **Location detection** — Browser geolocation → reverse geocode (mock for now) → localStorage persistence
+24. **Search history** — localStorage-based, max 10 items, deduped
+25. **Cache restore** — Save/restore results from localStorage on navigation
+26. **Anonymous ID** — UUID generation and localStorage persistence
+
+## New Dependencies
+
+- `react-leaflet` + `leaflet` — Map rendering
+- `vite-plugin-pwa` — PWA support (service worker, manifest)
+- `lodash.debounce` or inline debounce — Search debouncing
+- `framer-motion` — AnimatePresence for results transitions
+- `uuid` — Anonymous ID generation
+
+## File Structure
 
 ```text
-┌─────────────────────────┐
-│  "Been Here" button     │  ← in flow, not absolute (desktop only)
-│  (h-12, mb-3)           │
-├─────────────────────────┤
-│                         │
-│   Card area (flex-1)    │  ← relative container for card + ghost cards + overlays
-│                         │
-├─────────────────────────┤
-│  Instructional copy     │  ← in flow, conditional (mt-3)
-│  Skip button            │  ← in flow, below copy (mt-2)
-└─────────────────────────┘
+src/
+├── pages/
+│   └── Home.jsx                    # Main (only) page
+├── components/
+│   └── home/
+│       ├── Header.jsx
+│       ├── SearchBar.jsx
+│       ├── CategoryTiles.jsx
+│       ├── RefinementChips.jsx
+│       ├── ResultsList.jsx
+│       ├── VenueCard.jsx
+│       ├── MapView.jsx
+│       ├── ViewToggle.jsx
+│       ├── SortToggle.jsx
+│       ├── FilterDialog.jsx
+│       ├── SuggestedChips.jsx
+│       ├── RelaxationBanner.jsx
+│       ├── NoResultsPrompt.jsx
+│       ├── GatedModal.jsx
+│       ├── LocationConfirmModal.jsx
+│       └── MobileBottomSheet.jsx
+├── context/
+│   └── GlobalStateContext.jsx
+├── services/
+│   └── api.js                      # Mock API, swap for real later
+└── data/
+    └── mockVenues.js               # Mock venue data
 ```
 
-Specifically:
-1. The outer wrapper becomes `flex flex-col` with the same max-width constraints and full height.
-2. **"Been Here" button** (desktop only): Moves from `absolute top: -5.5rem` to a normally-flowing element at the top of the flex column, with `mb-3` for spacing. This guarantees it never overlaps the card or elements above.
-3. **Card area**: A `relative flex-1` div that contains the ghost cards, active motion card, and swipe overlays. Left/Right buttons remain absolutely positioned on this div since they're horizontally outside.
-4. **Instructional copy** (conditional): Moves from absolute positioning to a normal-flow `<p>` below the card area with `mt-3`.
-5. **Skip button** (desktop only): Moves from absolute positioning to normal flow below the copy, with `mt-2`.
-6. **Mobile**: On mobile, buttons don't render (gated by `!isMobile`). The instructional copy renders below the card in flow with `mt-3`, preventing overlap.
+## Technical Notes
 
-### What stays the same
-- Left/Right arrow buttons remain absolute on the card area div (they sit horizontally outside, no vertical overlap issue).
-- Hover tint overlay remains absolute `inset-0` on the card area.
-- All swipe overlays inside the motion.div stay unchanged.
-- No changes to DiscoveryCard.jsx, ConstellationsSheet.jsx, or any other file.
+- The existing Base44 auth system in `AuthContext.jsx` will be preserved but the app will work without auth (anonymous mode)
+- Edge functions in `functions/` will remain as-is; they'll be migrated to Supabase Edge Functions in a later phase
+- The `recommend` API will initially return mock data; the service layer is designed so swapping in real API calls requires changing only `src/services/api.js`
+- PWA manifest will include app name "Whatspot", appropriate icons, theme color matching the design tokens, and `display: standalone`
 
