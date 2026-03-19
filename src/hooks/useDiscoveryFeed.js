@@ -20,6 +20,7 @@ export function useDiscoveryFeed() {
   const abortRef = useRef(null);
   const hasFetchedRef = useRef(false);
   const reserveVenuesRef = useRef([]);
+  const isPrefetchingRef = useRef(false);
 
   const fetchFeed = useCallback(async ({ query = '', radius, mode } = {}) => {
     if (abortRef.current) abortRef.current.abort();
