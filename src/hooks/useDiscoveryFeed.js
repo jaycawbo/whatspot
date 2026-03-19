@@ -187,7 +187,7 @@ export function useDiscoveryFeed() {
   // Fetch immediately with default anchor, then update anchor in background
   fetchFeed();
   initAnchorPoint();
-}, [fetchFeed, initAnchorPoint]);
+}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Search-driven refresh
   const searchFeed = useCallback((query) => {
