@@ -330,126 +330,12 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const isCardDimmed = ratingSheetOpen;
 
   return (
-    <div ref={containerRef} className="relative w-full mx-auto max-w-[calc(100vw-2rem)] sm:max-w-[560px] lg:max-w-[660px]" style={{ height: 'var(--deck-height, 78vh)' }}>
-      {/* Ghost cards */}
-      {venues[currentIndex + 2] && (
-        <DiscoveryCard venue={venues[currentIndex + 2]} index={currentIndex + 2} isGhost ghostLevel={2} />
-      )}
-      {venues[currentIndex + 1] && (
-        <DiscoveryCard venue={venues[currentIndex + 1]} index={currentIndex + 1} isGhost ghostLevel={1} />
-      )}
-
-      {/* Active card */}
-      <motion.div
-        className="absolute inset-0 z-10 touch-none"
-        style={{ x, y }}
-        drag={!ratingSheetOpen}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        animate={
-          isDragging
-            ? undefined
-            : exitDirection === 'rated'
-              ? { opacity: 0, y: -100, scale: 0.95 }
-              : isCardDimmed
-                ? { opacity: 0.5, scale: 1 }
-                : { opacity: 1, scale: 1 }
-        }
-        transition={isDragging ? { duration: 0 } : { duration: 0.4 }}
-      >
-        {/* Swipe overlays */}
-        {/* Right — green "Interested" */}
-        <motion.div
-          className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
-          style={{ opacity: rightOverlayOpacity, background: 'hsla(142, 71%, 45%, 0.2)' }}
-        >
-          <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Interested</span>
-        </motion.div>
-
-        {/* Left — red "Not Interested" */}
-        <motion.div
-          className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
-          style={{ opacity: leftOverlayOpacity, background: 'hsla(0, 84%, 60%, 0.2)' }}
-        >
-          <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Not Interested</span>
-        </motion.div>
-
-        {/* Down — grey "Skip" (Fix 4: white text + shadow for contrast) */}
-        <motion.div
-          className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
-          style={{ opacity: downOverlayOpacity, background: 'hsla(0, 0%, 50%, 0.2)' }}
-        >
-          <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Skip</span>
-        </motion.div>
-
-        {/* Up — blue "Been here" */}
-        <motion.div
-          className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none"
-          style={{ opacity: upOverlayOpacity, background: 'hsla(210, 70%, 50%, 0.2)' }}
-        >
-          <Heart className="h-10 w-10 text-white fill-white/30" />
-          <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Been here</span>
-        </motion.div>
-
-        <DiscoveryCard
-          venue={currentVenue}
-          index={currentIndex}
-          onDescriptorTap={onDescriptorTap}
-          onCardBodyTap={handleCardBodyTap}
-        />
-      </motion.div>
-
-      {/* Post-search instructional copy (Fix 3) */}
-      {showSearchCopy && (
-        <p className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-[3.5rem] z-30 text-xs text-muted-foreground text-center max-w-[90%] whitespace-normal pointer-events-none">
-          Showing you the best options based on your search. Swipe through to see additional results.
-        </p>
-      )}
-
-      {/* Web-only action buttons */}
+    <div ref={containerRef} className="flex flex-col w-full mx-auto max-w-[calc(100vw-2rem)] sm:max-w-[560px] lg:max-w-[660px]" style={{ height: 'var(--deck-height, 78vh)' }}>
+      {/* Top — Been here (desktop only, in flow) */}
       {!isMobile && (
-        <>
-          {/* Left — Not Interested */}
+        <div className="flex justify-center mb-3 shrink-0">
           <button
-            className="absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-destructive/10 transition-colors"
-            style={{ left: '-3rem' }}
-            onClick={() => performAction('left', currentVenue)}
-            onMouseEnter={() => setHoveredButton('left')}
-            onMouseLeave={() => setHoveredButton(null)}
-            aria-label="Not Interested"
-          >
-            <ChevronLeft className="h-6 w-6 text-destructive" />
-          </button>
-
-          {/* Right — Interested */}
-          <button
-            className="absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-green-500/10 transition-colors"
-            style={{ right: '-3rem' }}
-            onClick={() => performAction('right', currentVenue)}
-            onMouseEnter={() => setHoveredButton('right')}
-            onMouseLeave={() => setHoveredButton(null)}
-            aria-label="Interested"
-          >
-            <ChevronRight className="h-6 w-6 text-green-600" />
-          </button>
-
-          {/* Bottom — Skip (Fix 3: pushed down further when search copy visible) */}
-          <button
-            className="absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-accent transition-colors"
-            style={{ transform: `translateX(-50%) translateY(${showSearchCopy ? '6rem' : '3.5rem'})` }}
-            onClick={() => performAction('down', currentVenue)}
-            onMouseEnter={() => setHoveredButton('down')}
-            onMouseLeave={() => setHoveredButton(null)}
-            aria-label="Skip"
-          >
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Skip</span>
-          </button>
-
-          {/* Top — Been here (Fix 1: more margin from top) */}
-          <button
-            className="absolute left-1/2 -translate-x-1/2 z-30 flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-blue-500/10 transition-colors"
-            style={{ top: '-5.5rem' }}
+            className="flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-blue-500/10 transition-colors"
             onClick={() => performAction('up', currentVenue)}
             onMouseEnter={() => setHoveredButton('up')}
             onMouseLeave={() => setHoveredButton(null)}
@@ -458,20 +344,137 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
             <Heart className="h-4 w-4 text-blue-500" />
             <span className="text-sm text-blue-600">Been here</span>
           </button>
+        </div>
+      )}
 
-          {/* Hover tint overlay */}
-          {hoveredButton && (
-            <div
-              className={cn(
-                'absolute inset-0 z-[15] rounded-2xl pointer-events-none transition-opacity',
-                hoveredButton === 'right' && 'bg-green-500/5',
-                hoveredButton === 'left' && 'bg-destructive/5',
-                hoveredButton === 'down' && 'bg-muted/10',
-                hoveredButton === 'up' && 'bg-blue-500/5',
-              )}
-            />
-          )}
-        </>
+      {/* Card area */}
+      <div className="relative flex-1 min-h-0">
+        {/* Ghost cards */}
+        {venues[currentIndex + 2] && (
+          <DiscoveryCard venue={venues[currentIndex + 2]} index={currentIndex + 2} isGhost ghostLevel={2} />
+        )}
+        {venues[currentIndex + 1] && (
+          <DiscoveryCard venue={venues[currentIndex + 1]} index={currentIndex + 1} isGhost ghostLevel={1} />
+        )}
+
+        {/* Active card */}
+        <motion.div
+          className="absolute inset-0 z-10 touch-none"
+          style={{ x, y }}
+          drag={!ratingSheetOpen}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          animate={
+            isDragging
+              ? undefined
+              : exitDirection === 'rated'
+                ? { opacity: 0, y: -100, scale: 0.95 }
+                : isCardDimmed
+                  ? { opacity: 0.5, scale: 1 }
+                  : { opacity: 1, scale: 1 }
+          }
+          transition={isDragging ? { duration: 0 } : { duration: 0.4 }}
+        >
+          {/* Swipe overlays */}
+          <motion.div
+            className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
+            style={{ opacity: rightOverlayOpacity, background: 'hsla(142, 71%, 45%, 0.2)' }}
+          >
+            <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Interested</span>
+          </motion.div>
+
+          <motion.div
+            className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
+            style={{ opacity: leftOverlayOpacity, background: 'hsla(0, 84%, 60%, 0.2)' }}
+          >
+            <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Not Interested</span>
+          </motion.div>
+
+          <motion.div
+            className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
+            style={{ opacity: downOverlayOpacity, background: 'hsla(0, 0%, 50%, 0.2)' }}
+          >
+            <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Skip</span>
+          </motion.div>
+
+          <motion.div
+            className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none"
+            style={{ opacity: upOverlayOpacity, background: 'hsla(210, 70%, 50%, 0.2)' }}
+          >
+            <Heart className="h-10 w-10 text-white fill-white/30" />
+            <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Been here</span>
+          </motion.div>
+
+          <DiscoveryCard
+            venue={currentVenue}
+            index={currentIndex}
+            onDescriptorTap={onDescriptorTap}
+            onCardBodyTap={handleCardBodyTap}
+          />
+        </motion.div>
+
+        {/* Web-only Left/Right buttons (absolute on card area) */}
+        {!isMobile && (
+          <>
+            <button
+              className="absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-destructive/10 transition-colors"
+              style={{ left: '-3rem' }}
+              onClick={() => performAction('left', currentVenue)}
+              onMouseEnter={() => setHoveredButton('left')}
+              onMouseLeave={() => setHoveredButton(null)}
+              aria-label="Not Interested"
+            >
+              <ChevronLeft className="h-6 w-6 text-destructive" />
+            </button>
+
+            <button
+              className="absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-green-500/10 transition-colors"
+              style={{ right: '-3rem' }}
+              onClick={() => performAction('right', currentVenue)}
+              onMouseEnter={() => setHoveredButton('right')}
+              onMouseLeave={() => setHoveredButton(null)}
+              aria-label="Interested"
+            >
+              <ChevronRight className="h-6 w-6 text-green-600" />
+            </button>
+
+            {/* Hover tint overlay */}
+            {hoveredButton && (
+              <div
+                className={cn(
+                  'absolute inset-0 z-[15] rounded-2xl pointer-events-none transition-opacity',
+                  hoveredButton === 'right' && 'bg-green-500/5',
+                  hoveredButton === 'left' && 'bg-destructive/5',
+                  hoveredButton === 'down' && 'bg-muted/10',
+                  hoveredButton === 'up' && 'bg-blue-500/5',
+                )}
+              />
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Post-search instructional copy (in flow) */}
+      {showSearchCopy && (
+        <p className="mt-3 shrink-0 text-xs text-muted-foreground text-center max-w-[90%] mx-auto pointer-events-none">
+          Showing you the best options based on your search. Swipe through to see additional results.
+        </p>
+      )}
+
+      {/* Bottom — Skip (desktop only, in flow) */}
+      {!isMobile && (
+        <div className={cn("flex justify-center shrink-0", showSearchCopy ? "mt-2" : "mt-3")}>
+          <button
+            className="flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-accent transition-colors"
+            onClick={() => performAction('down', currentVenue)}
+            onMouseEnter={() => setHoveredButton('down')}
+            onMouseLeave={() => setHoveredButton(null)}
+            aria-label="Skip"
+          >
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Skip</span>
+          </button>
+        </div>
       )}
 
       {/* Constellations rating sheet */}
