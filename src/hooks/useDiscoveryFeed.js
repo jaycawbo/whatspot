@@ -20,6 +20,7 @@ export function useDiscoveryFeed() {
   const abortRef = useRef(null);
   const hasFetchedRef = useRef(false);
   const reserveVenuesRef = useRef([]);
+  const isPrefetchingRef = useRef(false);
 
   const fetchFeed = useCallback(async ({ query = '', radius, mode } = {}) => {
     if (abortRef.current) abortRef.current.abort();
@@ -127,6 +128,71 @@ export function useDiscoveryFeed() {
     fetchFeed({ query: currentQuery, radius: newRadius });
   }, [fetchFeed, currentQuery]);
 
+  const prefetchNextBatch = useCallback(async () => {
+    if (isPrefetchingRef.current) return;
+    isPrefetchingRef.current = true;
+
+    const seenIds = (() => {
+      try {
+        const raw = sessionStorage.getItem('whatspot_seen_venues');
+        return raw ? JSON.parse(raw) : [];
+      } catch { return []; }
+    })();
+
+    let skippedIds = [];
+    try {
+      const raw = sessionStorage.getItem('whatspot_skipped_venues');
+      if (raw) skippedIds = JSON.parse(raw);
+    } catch {}
+
+    try {
+      const res = await recommend({
+        mode: 'discovery',
+        lat: state.userLocation.lat,
+        lon: state.userLocation.lon,
+        location_name: state.locationName,
+        radius_km: radiusRef.current,
+        open_now: state.filters?.openNow || undefined,
+        exclude_ids: seenIds.length ? seenIds : undefined,
+      });
+
+      const results = res?.results || [];
+      const reserve = res?.reserve_venues || [];
+
+      const filtered = results.filter(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        return !skippedIds.includes(id) && !seenIds.includes(id);
+      });
+
+      if (filtered.length > 0) {
+        setVenues(prev => [...prev, ...filtered]);
+        reserveVenuesRef.current = [
+          ...reserveVenuesRef.current,
+          ...reserve.filter(v => {
+            const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+            return !skippedIds.includes(id) && !seenIds.includes(id);
+          })
+        ];
+
+        try {
+          const raw = sessionStorage.getItem('whatspot_seen_venues');
+          const existing = raw ? JSON.parse(raw) : [];
+          const newIds = filtered.map(v =>
+            (v.place_id || v.google_place_id || '').replace(/^places\//, '')
+          ).filter(Boolean);
+          sessionStorage.setItem(
+            'whatspot_seen_venues',
+            JSON.stringify([...new Set([...existing, ...newIds])])
+          );
+        } catch {}
+      }
+    } catch (err) {
+      console.error('Prefetch failed silently:', err);
+    } finally {
+      isPrefetchingRef.current = false;
+    }
+  }, [state.userLocation, state.locationName, state.filters]);
+
   const getReserveVenues = useCallback(() => {
     const reserve = reserveVenuesRef.current;
     reserveVenuesRef.current = [];
@@ -143,5 +209,6 @@ export function useDiscoveryFeed() {
     expandSearch,
     refetchDiscovery: () => fetchFeed(),
     getReserveVenues,
+    prefetchNextBatch,
   };
 }
