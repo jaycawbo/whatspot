@@ -303,11 +303,14 @@ Deno.serve(async (req) => {
       maxRadius: radius_km || 5,
     };
     if (isDiscoveryMode) {
-      // Relaxed thresholds for discovery — surface more variety
-      admission.minRating = 4.0;
-      admission.minReviewCount = 25;
-      admission.minScore = 1.0;
+      // Threshold ladder for discovery — relaxes over successive passes
+      const criteriaIndex = Math.min(Math.max((criteria_pass ?? 1) - 1, 0), 6);
+      const discoveryCriteria = DISCOVERY_CRITERIA[criteriaIndex];
+      admission.minRating = discoveryCriteria.minRating;
+      admission.minReviewCount = discoveryCriteria.minReviewCount;
+      admission.minScore = discoveryCriteria.scoreThreshold;
       admission.maxRadius = radius_km || 5;
+      console.log(`🎚️ Discovery criteria_pass=${criteria_pass ?? 1} → minRating=${admission.minRating}, minReviews=${admission.minReviewCount}, minScore=${admission.minScore}`);
     } else if (relaxation_level === 1) {
       admission.maxRadius = 10;
     } else if (relaxation_level === 2) {
