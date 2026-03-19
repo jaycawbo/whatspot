@@ -13,6 +13,37 @@ const SCORING = {
   TRUST_WEIGHT: 0.25,
 };
 
+// ─── Chain blocklist (discovery mode only) ───
+const CHAIN_BLOCKLIST = [
+  "mcdonald's", "mcdonalds", "subway", "starbucks", "tim hortons", "burger king",
+  "wendy's", "wendys", "kfc", "pizza hut", "domino's", "dominoes", "taco bell",
+  "popeyes", "dairy queen", "harvey's", "harveys", "a&w", "second cup",
+  "country style", "boston pizza", "swiss chalet", "st. louis", "milestones",
+  "earls", "cactus club", "joeys", "montanas", "kelseys", "jack astors",
+  "the keg", "hero certified burgers", "mucho burrito", "chipotle", "panera",
+  "five guys", "shake shack", "nandos", "pita pit", "quiznos", "mr. sub",
+  "extreme pita", "thai express", "manchu wok", "new york fries", "orange julius",
+  "baskin robbins", "gregory's", "gregorys", "pizza pizza", "little caesars",
+  "papa johns", "mary browns", "popeyes", "church's chicken", "cultures",
+  "jugo juice", "booster juice", "kernels", "great canadian bagel",
+  "robin's donuts", "robins donuts", "baton rouge", "red lobster", "olive garden"
+];
+
+function isChain(name: string): boolean {
+  const lower = name.toLowerCase();
+  return CHAIN_BLOCKLIST.some(chain => lower.includes(chain));
+}
+
+// ─── Discovery mode threshold ladder ───
+const DISCOVERY_CRITERIA = [
+  { minRating: 4.0, minReviewCount: 25, scoreThreshold: 1.0 },
+  { minRating: 3.8, minReviewCount: 20, scoreThreshold: 0.9 },
+  { minRating: 3.5, minReviewCount: 15, scoreThreshold: 0.8 },
+  { minRating: 3.3, minReviewCount: 10, scoreThreshold: 0.7 },
+  { minRating: 3.0, minReviewCount: 5,  scoreThreshold: 0.6 },
+  { minRating: 2.5, minReviewCount: 3,  scoreThreshold: 0.5 },
+  { minRating: 0,   minReviewCount: 1,  scoreThreshold: 0.3 },
+];
 // ─── Helpers ───
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -234,6 +265,7 @@ Deno.serve(async (req) => {
       price_levels,
       session_context = [],
       exclude_ids = [],
+      criteria_pass,
     } = await req.json();
 
     // Build session context string for LLM prompts
@@ -271,11 +303,14 @@ Deno.serve(async (req) => {
       maxRadius: radius_km || 5,
     };
     if (isDiscoveryMode) {
-      // Relaxed thresholds for discovery — surface more variety
-      admission.minRating = 4.0;
-      admission.minReviewCount = 25;
-      admission.minScore = 1.0;
+      // Threshold ladder for discovery — relaxes over successive passes
+      const criteriaIndex = Math.min(Math.max((criteria_pass ?? 1) - 1, 0), 6);
+      const discoveryCriteria = DISCOVERY_CRITERIA[criteriaIndex];
+      admission.minRating = discoveryCriteria.minRating;
+      admission.minReviewCount = discoveryCriteria.minReviewCount;
+      admission.minScore = discoveryCriteria.scoreThreshold;
       admission.maxRadius = radius_km || 5;
+      console.log(`🎚️ Discovery criteria_pass=${criteria_pass ?? 1} → minRating=${admission.minRating}, minReviews=${admission.minReviewCount}, minScore=${admission.minScore}`);
     } else if (relaxation_level === 1) {
       admission.maxRadius = 10;
     } else if (relaxation_level === 2) {
@@ -597,7 +632,9 @@ Deno.serve(async (req) => {
           unknownPrice,
         };
       })
-      .filter((v: any) => v !== null);
+      .filter((v: any) => v !== null)
+      .filter((v: any) => !isDiscoveryMode || !isChain(v.name || ''))
+      .filter((v: any) => !isDiscoveryMode || !v.lat || v.lat <= 43.7730);
 
     console.log(`✅ ${filteredVenues.length} passed filters`);
 
