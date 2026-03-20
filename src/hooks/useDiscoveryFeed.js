@@ -282,12 +282,15 @@ export function useDiscoveryFeed() {
           ).filter(Boolean);
           sessionStorage.setItem(
             'whatspot_seen_venues',
-            JSON.stringify([...new Set([...existing, ...newIds])])
+            JSON.stringify([...new Set([...existing, ...newIds])].slice(-100))
           );
         } catch {}
       }
+
+      return { fetched: filtered.length, reserve: reserve.length };
     } catch (err) {
       console.error('Prefetch failed silently:', err);
+      return { fetched: 0, reserve: 0 };
     } finally {
       isPrefetchingRef.current = false;
     }
