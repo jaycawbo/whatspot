@@ -208,8 +208,8 @@ export function useDiscoveryFeed() {
     fetchFeed({ query: currentQuery, radius: newRadius });
   }, [fetchFeed, currentQuery]);
 
-  const prefetchNextBatch = useCallback(async () => {
-    if (isPrefetchingRef.current) return;
+  const prefetchNextBatch = useCallback(async (retryCount = 0) => {
+    if (isPrefetchingRef.current && retryCount === 0) return;
     isPrefetchingRef.current = true;
 
     // Advance to next radius ring
@@ -220,12 +220,10 @@ export function useDiscoveryFeed() {
       criteriaPassRef.current = criteriaPassRef.current + 1;
       radiusRingIndexRef.current = 0;
 
-      // If all criteria passes exhausted, stay at pass 7 (floor)
       if (criteriaPassRef.current > MAX_CRITERIA_PASS) {
         criteriaPassRef.current = MAX_CRITERIA_PASS;
       }
 
-      // Clear seen venues for the new pass so venues can resurface
       try {
         sessionStorage.removeItem('whatspot_seen_venues');
       } catch {}
@@ -235,13 +233,7 @@ export function useDiscoveryFeed() {
     const currentPass = criteriaPassRef.current;
     const anchor = anchorPointRef.current ?? { lat: state.userLocation?.lat ?? 43.6532, lon: state.userLocation?.lon ?? -79.3832 };
 
-    const seenIds = (() => {
-      try {
-        const raw = sessionStorage.getItem('whatspot_seen_venues');
-        return raw ? JSON.parse(raw) : [];
-      } catch { return []; }
-    })();
-
+    // Only exclude skipped venues, not all seen venues
     let skippedIds = [];
     try {
       const raw = sessionStorage.getItem('whatspot_skipped_venues');
@@ -256,7 +248,7 @@ export function useDiscoveryFeed() {
         location_name: state.locationName,
         radius_km: currentRadius,
         open_now: state.filters?.openNow || undefined,
-        exclude_ids: seenIds.length ? seenIds : undefined,
+        exclude_ids: skippedIds.length ? skippedIds : undefined,
         criteria_pass: currentPass,
       });
 
@@ -265,7 +257,7 @@ export function useDiscoveryFeed() {
 
       const filtered = results.filter(v => {
         const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-        return !skippedIds.includes(id) && !seenIds.includes(id);
+        return !skippedIds.includes(id);
       });
 
       if (filtered.length > 0) {
@@ -274,7 +266,7 @@ export function useDiscoveryFeed() {
           ...reserveVenuesRef.current,
           ...reserve.filter(v => {
             const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-            return !skippedIds.includes(id) && !seenIds.includes(id);
+            return !skippedIds.includes(id);
           })
         ];
 
@@ -289,6 +281,12 @@ export function useDiscoveryFeed() {
             JSON.stringify([...new Set([...existing, ...newIds])].slice(-100))
           );
         } catch {}
+      }
+
+      // Auto-retry with next ring if this ring returned nothing (max 2 retries)
+      if (filtered.length === 0 && retryCount < 2) {
+        isPrefetchingRef.current = false;
+        return prefetchNextBatch(retryCount + 1);
       }
 
       return { fetched: filtered.length, reserve: reserve.length };
