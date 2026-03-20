@@ -113,10 +113,11 @@ export function useDiscoveryFeed() {
       if (raw) session_context = JSON.parse(raw);
     } catch {}
 
-    // Read seen IDs for discovery mode exclude_ids
-    const seenIds = effectiveMode === 'discovery' ? (() => {
+    // For discovery mode, only exclude skipped venues (not all seen venues)
+    // This keeps the exclude list small so the backend has a full candidate pool
+    const excludeIds = effectiveMode === 'discovery' ? (() => {
       try {
-        const raw = sessionStorage.getItem('whatspot_seen_venues');
+        const raw = sessionStorage.getItem('whatspot_skipped_venues');
         return raw ? JSON.parse(raw) : [];
       } catch { return []; }
     })() : [];
