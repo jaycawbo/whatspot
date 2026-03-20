@@ -40,6 +40,7 @@ export function useDiscoveryFeed() {
   const criteriaPassRef = useRef(1);
   const anchorPointRef = useRef(null);
   const isPrefetchingRef = useRef(false);
+  const prefetchedVenuesRef = useRef([]);
 
   const initAnchorPoint = useCallback(async () => {
     if (anchorPointRef.current) return;
@@ -262,7 +263,7 @@ export function useDiscoveryFeed() {
       });
 
       if (filtered.length > 0) {
-        setVenues(prev => [...prev, ...filtered]);
+        prefetchedVenuesRef.current = [...prefetchedVenuesRef.current, ...filtered];
         reserveVenuesRef.current = [
           ...reserveVenuesRef.current,
           ...reserve.filter(v => {
@@ -296,6 +297,12 @@ export function useDiscoveryFeed() {
     return reserve;
   }, []);
 
+  const getPrefetchedVenues = useCallback(() => {
+    const prefetched = prefetchedVenuesRef.current;
+    prefetchedVenuesRef.current = [];
+    return prefetched;
+  }, []);
+
   return {
     venues,
     overflowVenues,
@@ -306,6 +313,7 @@ export function useDiscoveryFeed() {
     expandSearch,
     refetchDiscovery: () => fetchFeed(),
     getReserveVenues,
+    getPrefetchedVenues,
     prefetchNextBatch,
   };
 }
