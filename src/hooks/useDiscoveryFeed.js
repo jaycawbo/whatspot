@@ -160,7 +160,7 @@ export function useDiscoveryFeed() {
       setOverflowVenues(overflow);
       radiusRef.current = effectiveRadius;
 
-      // Track seen venue IDs for discovery mode
+      // Track seen venue IDs for discovery mode (cap at 100 to prevent exhaustion)
       if (effectiveMode === 'discovery') {
         try {
           const raw = sessionStorage.getItem('whatspot_seen_venues');
@@ -168,7 +168,7 @@ export function useDiscoveryFeed() {
           const newIds = filtered.map(v =>
             (v.place_id || v.google_place_id || '').replace(/^places\//, '')
           ).filter(Boolean);
-          const merged = [...new Set([...existing, ...newIds])];
+          const merged = [...new Set([...existing, ...newIds])].slice(-100);
           sessionStorage.setItem('whatspot_seen_venues', JSON.stringify(merged));
         } catch {}
       }
@@ -185,6 +185,8 @@ export function useDiscoveryFeed() {
   useEffect(() => {
     if (hasFetchedRef.current) return;
     hasFetchedRef.current = true;
+  // Clear skipped venues from previous sessions so the feed starts fresh
+  try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
   // Fetch immediately with default anchor, then update anchor in background
   fetchFeed();
   initAnchorPoint();
