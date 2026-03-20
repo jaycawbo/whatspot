@@ -113,10 +113,11 @@ export function useDiscoveryFeed() {
       if (raw) session_context = JSON.parse(raw);
     } catch {}
 
-    // Read seen IDs for discovery mode exclude_ids
-    const seenIds = effectiveMode === 'discovery' ? (() => {
+    // For discovery mode, only exclude skipped venues (not all seen venues)
+    // This keeps the exclude list small so the backend has a full candidate pool
+    const excludeIds = effectiveMode === 'discovery' ? (() => {
       try {
-        const raw = sessionStorage.getItem('whatspot_seen_venues');
+        const raw = sessionStorage.getItem('whatspot_skipped_venues');
         return raw ? JSON.parse(raw) : [];
       } catch { return []; }
     })() : [];
@@ -131,8 +132,7 @@ export function useDiscoveryFeed() {
         radius_km: effectiveRadius,
         open_now: state.filters?.openNow || undefined,
         price_levels: state.filters?.priceLevels?.length ? state.filters.priceLevels : undefined,
-        session_context,
-        exclude_ids: seenIds.length ? seenIds : undefined,
+        exclude_ids: excludeIds.length ? excludeIds : undefined,
       });
 
       const results = res?.results || [];
@@ -181,16 +181,20 @@ export function useDiscoveryFeed() {
     }
   }, [state.userLocation, state.locationName, state.filters]);
 
-  // Initial load — discovery mode
+  // Initial load — discovery mode + immediate prefetch
   useEffect(() => {
     if (hasFetchedRef.current) return;
     hasFetchedRef.current = true;
-  // Clear skipped venues from previous sessions so the feed starts fresh
-  try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
-  // Fetch immediately with default anchor, then update anchor in background
-  fetchFeed();
-  initAnchorPoint();
-}, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // Clear skipped venues from previous sessions so the feed starts fresh
+    try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
+    // Fetch immediately with default anchor, then update anchor in background
+    // After initial fetch completes, fire prefetch so second batch is already loading
+    fetchFeed().then(() => {
+      initAnchorPoint().then(() => {
+        prefetchNextBatch();
+      });
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Search-driven refresh
   const searchFeed = useCallback((query) => {
@@ -204,8 +208,8 @@ export function useDiscoveryFeed() {
     fetchFeed({ query: currentQuery, radius: newRadius });
   }, [fetchFeed, currentQuery]);
 
-  const prefetchNextBatch = useCallback(async () => {
-    if (isPrefetchingRef.current) return;
+  const prefetchNextBatch = useCallback(async (retryCount = 0) => {
+    if (isPrefetchingRef.current && retryCount === 0) return;
     isPrefetchingRef.current = true;
 
     // Advance to next radius ring
@@ -216,12 +220,10 @@ export function useDiscoveryFeed() {
       criteriaPassRef.current = criteriaPassRef.current + 1;
       radiusRingIndexRef.current = 0;
 
-      // If all criteria passes exhausted, stay at pass 7 (floor)
       if (criteriaPassRef.current > MAX_CRITERIA_PASS) {
         criteriaPassRef.current = MAX_CRITERIA_PASS;
       }
 
-      // Clear seen venues for the new pass so venues can resurface
       try {
         sessionStorage.removeItem('whatspot_seen_venues');
       } catch {}
@@ -231,13 +233,7 @@ export function useDiscoveryFeed() {
     const currentPass = criteriaPassRef.current;
     const anchor = anchorPointRef.current ?? { lat: state.userLocation?.lat ?? 43.6532, lon: state.userLocation?.lon ?? -79.3832 };
 
-    const seenIds = (() => {
-      try {
-        const raw = sessionStorage.getItem('whatspot_seen_venues');
-        return raw ? JSON.parse(raw) : [];
-      } catch { return []; }
-    })();
-
+    // Only exclude skipped venues, not all seen venues
     let skippedIds = [];
     try {
       const raw = sessionStorage.getItem('whatspot_skipped_venues');
@@ -252,7 +248,7 @@ export function useDiscoveryFeed() {
         location_name: state.locationName,
         radius_km: currentRadius,
         open_now: state.filters?.openNow || undefined,
-        exclude_ids: seenIds.length ? seenIds : undefined,
+        exclude_ids: skippedIds.length ? skippedIds : undefined,
         criteria_pass: currentPass,
       });
 
@@ -261,7 +257,7 @@ export function useDiscoveryFeed() {
 
       const filtered = results.filter(v => {
         const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-        return !skippedIds.includes(id) && !seenIds.includes(id);
+        return !skippedIds.includes(id);
       });
 
       if (filtered.length > 0) {
@@ -270,7 +266,7 @@ export function useDiscoveryFeed() {
           ...reserveVenuesRef.current,
           ...reserve.filter(v => {
             const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-            return !skippedIds.includes(id) && !seenIds.includes(id);
+            return !skippedIds.includes(id);
           })
         ];
 
@@ -285,6 +281,12 @@ export function useDiscoveryFeed() {
             JSON.stringify([...new Set([...existing, ...newIds])].slice(-100))
           );
         } catch {}
+      }
+
+      // Auto-retry with next ring if this ring returned nothing (max 2 retries)
+      if (filtered.length === 0 && retryCount < 2) {
+        isPrefetchingRef.current = false;
+        return prefetchNextBatch(retryCount + 1);
       }
 
       return { fetched: filtered.length, reserve: reserve.length };
