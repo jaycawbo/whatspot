@@ -19,17 +19,29 @@ export default function Home() {
   const [reserveVenues, setReserveVenues] = useState([]);
   const hasInitializedReserve = useRef(false);
 
+  useEffect(() => {
+    if (feedVenues.length > 0 && !hasInitializedReserve.current) {
+      hasInitializedReserve.current = true;
+      const reserve = getReserveVenues();
+      if (reserve.length > 0) {
+        setReserveVenues(reserve);
+      }
+    }
+  }, [feedVenues, getReserveVenues]);
+
   const handleRequestMoreVenues = useCallback(() => {
     const reserve = getReserveVenues();
-    if (reserve.length > 0) {
-      setReserveVenues(prev => [...prev, ...reserve]);
+    const prefetched = getPrefetchedVenues();
+    const combined = [...reserve, ...prefetched];
+    if (combined.length > 0) {
+      setReserveVenues(prev => [...prev, ...combined]);
     }
     if (!currentQuery) {
       prefetchNextBatch();
-    } else if (reserve.length === 0) {
+    } else if (combined.length === 0) {
       expandSearch();
     }
-  }, [getReserveVenues, prefetchNextBatch, expandSearch, currentQuery]);
+  }, [getReserveVenues, getPrefetchedVenues, prefetchNextBatch, expandSearch, currentQuery]);
 
   const addSearchHistory = useCallback(
     (queryText) => {
