@@ -297,6 +297,12 @@ export function useDiscoveryFeed() {
     return reserve;
   }, []);
 
+  const getPrefetchedVenues = useCallback(() => {
+    const prefetched = prefetchedVenuesRef.current;
+    prefetchedVenuesRef.current = [];
+    return prefetched;
+  }, []);
+
   return {
     venues,
     overflowVenues,
