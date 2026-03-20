@@ -40,6 +40,7 @@ export function useDiscoveryFeed() {
   const criteriaPassRef = useRef(1);
   const anchorPointRef = useRef(null);
   const isPrefetchingRef = useRef(false);
+  const prefetchedVenuesRef = useRef([]);
 
   const initAnchorPoint = useCallback(async () => {
     if (anchorPointRef.current) return;
