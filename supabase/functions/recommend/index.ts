@@ -772,7 +772,7 @@ Deno.serve(async (req) => {
         { type: 'function', function: { name: 'discovery_venue_content' } }
       ), { descriptors: [], chips: [] });
 
-      finalVenues = candidates.slice(0, 8).map((v: any, i: number) => ({
+      finalVenues = candidates.slice(0, 12).map((v: any, i: number) => ({
         ...v,
         descriptors: discoveryResult.descriptors?.[i] || [],
       }));
