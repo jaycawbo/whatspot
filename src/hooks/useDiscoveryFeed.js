@@ -263,7 +263,7 @@ export function useDiscoveryFeed() {
       });
 
       if (filtered.length > 0) {
-        setVenues(prev => [...prev, ...filtered]);
+        prefetchedVenuesRef.current = [...prefetchedVenuesRef.current, ...filtered];
         reserveVenuesRef.current = [
           ...reserveVenuesRef.current,
           ...reserve.filter(v => {
