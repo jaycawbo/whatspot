@@ -181,16 +181,20 @@ export function useDiscoveryFeed() {
     }
   }, [state.userLocation, state.locationName, state.filters]);
 
-  // Initial load — discovery mode
+  // Initial load — discovery mode + immediate prefetch
   useEffect(() => {
     if (hasFetchedRef.current) return;
     hasFetchedRef.current = true;
-  // Clear skipped venues from previous sessions so the feed starts fresh
-  try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
-  // Fetch immediately with default anchor, then update anchor in background
-  fetchFeed();
-  initAnchorPoint();
-}, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // Clear skipped venues from previous sessions so the feed starts fresh
+    try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
+    // Fetch immediately with default anchor, then update anchor in background
+    // After initial fetch completes, fire prefetch so second batch is already loading
+    fetchFeed().then(() => {
+      initAnchorPoint().then(() => {
+        prefetchNextBatch();
+      });
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Search-driven refresh
   const searchFeed = useCallback((query) => {
