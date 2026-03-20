@@ -313,6 +313,7 @@ export function useDiscoveryFeed() {
     expandSearch,
     refetchDiscovery: () => fetchFeed(),
     getReserveVenues,
+    getPrefetchedVenues,
     prefetchNextBatch,
   };
 }
