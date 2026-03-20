@@ -29,16 +29,29 @@ export default function Home() {
     }
   }, [feedVenues, getReserveVenues]);
 
-  const handleRequestMoreVenues = useCallback(() => {
+  const handleRequestMoreVenues = useCallback(async () => {
+    // Phase 1: drain any already-buffered venues immediately
     const reserve = getReserveVenues();
     const prefetched = getPrefetchedVenues();
-    const combined = [...reserve, ...prefetched];
-    if (combined.length > 0) {
-      setReserveVenues(prev => [...prev, ...combined]);
+    const immediate = [...reserve, ...prefetched];
+    if (immediate.length > 0) {
+      setReserveVenues(prev => [...prev, ...immediate]);
     }
+
+    // Phase 2: fetch next batch and drain again once it resolves
     if (!currentQuery) {
-      prefetchNextBatch();
-    } else if (combined.length === 0) {
+      const result = await prefetchNextBatch();
+      const reserve2 = getReserveVenues();
+      const prefetched2 = getPrefetchedVenues();
+      const deferred = [...reserve2, ...prefetched2];
+      if (deferred.length > 0) {
+        setReserveVenues(prev => [...prev, ...deferred]);
+      }
+      // If both phases yielded nothing, expand search as fallback
+      if (immediate.length === 0 && deferred.length === 0) {
+        expandSearch();
+      }
+    } else if (immediate.length === 0) {
       expandSearch();
     }
   }, [getReserveVenues, getPrefetchedVenues, prefetchNextBatch, expandSearch, currentQuery]);
