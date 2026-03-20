@@ -1,48 +1,42 @@
 
+Root cause: the recent refactor moved predictive results out of visible React state and into refs, but nothing now promotes those new refs into the deck at the moment they arrive.
 
-## Problem Diagnosis
+What’s happening now:
+1. The deck triggers `onRequestMoreVenues()` once around halfway through the 8-card stack.
+2. `Home.jsx` immediately drains `getReserveVenues()` and `getPrefetchedVenues()`.
+3. Only after that drain does it call `prefetchNextBatch()`, which is async.
+4. When the async fetch finishes, the new venues are sitting in `prefetchedVenuesRef`, but no second drain happens, so the UI never receives them.
+5. Because `DiscoveryDeck` only triggers proactive loading once per appended batch, the user can swipe through the original 8 cards and hit the empty state even though background results may already exist.
 
-The discovery feed shows "You've explored all the top spots nearby" despite the API returning 8 venues per request. Two interacting bugs cause this:
+Why it feels worse now:
+- The current network response shows `reserve_venues: []`, so this session did not get the 6–10 built-in reserve cards.
+- That means continuity depended entirely on predictive prefetch.
+- The predictive prefetch is currently “buffering invisibly,” not appending visibly.
 
-1. **`exclude_ids` prefix mismatch** — The client sends venue IDs without the `places/` prefix (e.g., `ChIJz_UU_...`), but the recommend edge function receives Google Places results with the prefix (`places/ChIJz_UU_...`). The backend comparison fails, so "excluded" venues keep being returned.
+Implementation plan:
 
-2. **Accumulated `whatspot_skipped_venues`** — Every venue the user has ever skipped in any session is stored in sessionStorage. The client-side filter (line 149-152 in useDiscoveryFeed.js) strips the `places/` prefix and filters against this list. After enough sessions, most venues within the 2km radius have been skipped, so `filtered` ends up empty even though the API returned 8 results.
+1. Fix the async handoff in `src/pages/Home.jsx`
+- Make `handleRequestMoreVenues` async-aware.
+- Drain already-buffered reserve/prefetched venues first and append them immediately.
+- Then await `prefetchNextBatch()`.
+- After it resolves, drain `getReserveVenues()` + `getPrefetchedVenues()` again and append any newly fetched venues.
+- This makes the predictive fetch actually reach the deck instead of staying trapped in refs.
 
-The visible network requests confirm this: venues like "Mascot Brewery", "Town Crier", and "LIBRARY BAR" appear both in the `exclude_ids` list AND in the API results, proving the backend isn't filtering them. The client then filters them out as skipped, leaving zero venues.
+2. Make `src/hooks/useDiscoveryFeed.js` return useful prefetch results
+- Update `prefetchNextBatch` to return metadata such as how many visible and reserve venues were fetched.
+- This gives `Home.jsx` a reliable way to know whether the predictive request succeeded and whether it should expect a second drain to produce items.
 
----
+3. Add a no-buffer fallback path
+- If `handleRequestMoreVenues` finds nothing buffered before or after the awaited prefetch, trigger the next fallback behavior instead of letting the user hit the empty state silently.
+- In discovery mode, that should continue the discovery expansion path rather than relying on the user to manually click “Explore further.”
 
-## Fix Plan
+4. Preserve the seamless append behavior
+- Keep `DiscoveryDeck`’s append-vs-reset logic unchanged.
+- Once `Home.jsx` appends the newly fetched venues into `venues={[...feedVenues, ...reserveVenues]}`, the deck should naturally continue without resetting the swipe position.
 
-### Change 1 — Backend: Fix prefix handling in recommend edge function
+5. Verify the two important runtime cases
+- Case A: backend returns reserve venues on first load → deck should start with a larger buffer.
+- Case B: backend returns no reserve venues on first load → predictive prefetch should still append before the user reaches the end of the first batch.
 
-**File:** `supabase/functions/recommend/index.ts`
-
-When comparing `exclude_ids` against Google Places results, normalize both sides by stripping the `places/` prefix before comparison. This ensures previously seen venues are actually excluded server-side, so the API returns genuinely new venues.
-
-### Change 2 — Client: Clear skipped venues on new sessions
-
-**File:** `src/hooks/useDiscoveryFeed.js`
-
-In the initial mount effect, clear `whatspot_skipped_venues` from sessionStorage. Skipped venues are a session-level concept — they prevent seeing the same venue again within the current browsing session, not across sessions. The `exclude_ids` mechanism (via `whatspot_seen_venues`) already handles cross-request deduplication within a session.
-
-Add before `fetchFeed()` in the mount effect:
-```js
-try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
-```
-
-### Change 3 — Client: Cap seen venues list to prevent exhaustion
-
-**File:** `src/hooks/useDiscoveryFeed.js`
-
-In `fetchFeed`, cap `whatspot_seen_venues` to the most recent 100 IDs. With only ~50-80 eligible venues in a 2km radius, an unbounded list eventually excludes everything. A rolling window of 100 provides deduplication within the session while allowing venues to resurface naturally.
-
----
-
-### Technical Detail
-
-These three changes work together:
-- Change 1 ensures the backend actually respects exclusions, returning fresh venues
-- Change 2 ensures each page load starts with a clean skip list
-- Change 3 prevents the seen-venues list from growing large enough to exhaust all options within the radius
-
+Technical note:
+This is not primarily a ranking/search problem anymore. The backend is returning valid discovery results, but the current client flow only reads buffered venues before the async prefetch completes. The visible deck runs out while the next batch is sitting in refs off-screen.
