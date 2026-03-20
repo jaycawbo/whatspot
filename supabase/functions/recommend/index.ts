@@ -729,7 +729,8 @@ Deno.serve(async (req) => {
 
     // ─── STEP 4c: Apply refinement post-processing (needs finalResults, set below) ───
     // First, select initial candidates for the comprehensive LLM or discovery path
-    const candidates = dedup(scoredVenues).slice(0, 20);
+    const candidatePoolSize = isDiscoveryMode ? 30 : 20;
+    const candidates = dedup(scoredVenues).slice(0, candidatePoolSize);
 
     // ─── COMPREHENSIVE LLM: Confidence scoring, descriptors, summary & chips ───
     console.log('🤖 COMPREHENSIVE LLM: Scoring, descriptors, summary & chips...');
