@@ -1,42 +1,67 @@
 
-Root cause: the recent refactor moved predictive results out of visible React state and into refs, but nothing now promotes those new refs into the deck at the moment they arrive.
 
-What’s happening now:
-1. The deck triggers `onRequestMoreVenues()` once around halfway through the 8-card stack.
-2. `Home.jsx` immediately drains `getReserveVenues()` and `getPrefetchedVenues()`.
-3. Only after that drain does it call `prefetchNextBatch()`, which is async.
-4. When the async fetch finishes, the new venues are sitting in `prefetchedVenuesRef`, but no second drain happens, so the UI never receives them.
-5. Because `DiscoveryDeck` only triggers proactive loading once per appended batch, the user can swipe through the original 8 cards and hit the empty state even though background results may already exist.
+## Analysis: Why the deck runs out after 3 swipes
 
-Why it feels worse now:
-- The current network response shows `reserve_venues: []`, so this session did not get the 6–10 built-in reserve cards.
-- That means continuity depended entirely on predictive prefetch.
-- The predictive prefetch is currently “buffering invisibly,” not appending visibly.
+The network data tells the full story:
 
-Implementation plan:
+1. **Initial fetch** (radius 2km, 61 exclude_ids): returns **3 venues**, 0 reserve
+2. **Prefetch** (radius 4km, 64 exclude_ids): returns **3 venues**, 0 reserve
+3. **Prefetch** (radius 6km, 67 exclude_ids): returns **0 venues**
+4. **expandSearch fallback** (radius 4km, 67 exclude_ids): returns **0 venues**
 
-1. Fix the async handoff in `src/pages/Home.jsx`
-- Make `handleRequestMoreVenues` async-aware.
-- Drain already-buffered reserve/prefetched venues first and append them immediately.
-- Then await `prefetchNextBatch()`.
-- After it resolves, drain `getReserveVenues()` + `getPrefetchedVenues()` again and append any newly fetched venues.
-- This makes the predictive fetch actually reach the deck instead of staying trapped in refs.
+The exclude_ids list has **61+ entries** from previous sessions. Google Places returns max 20 per query (40 raw from the dual food+drink search). After dedup, admission filtering, chain blocklist, and excluding 61 seen venues, only 3 survive. And since `reserve_venues` are built from candidates *not* in `finalVenues`, with only 3 candidates all going to `finalVenues`, reserves are always empty.
 
-2. Make `src/hooks/useDiscoveryFeed.js` return useful prefetch results
-- Update `prefetchNextBatch` to return metadata such as how many visible and reserve venues were fetched.
-- This gives `Home.jsx` a reliable way to know whether the predictive request succeeded and whether it should expect a second drain to produce items.
+**The current scaffolding does NOT complement your vision.** Here's why and what to change:
 
-3. Add a no-buffer fallback path
-- If `handleRequestMoreVenues` finds nothing buffered before or after the awaited prefetch, trigger the next fallback behavior instead of letting the user hit the empty state silently.
-- In discovery mode, that should continue the discovery expansion path rather than relying on the user to manually click “Explore further.”
+---
 
-4. Preserve the seamless append behavior
-- Keep `DiscoveryDeck`’s append-vs-reset logic unchanged.
-- Once `Home.jsx` appends the newly fetched venues into `venues={[...feedVenues, ...reserveVenues]}`, the deck should naturally continue without resetting the swipe position.
+### Problem 1: Backend caps discovery at 8 results from a tiny pool
 
-5. Verify the two important runtime cases
-- Case A: backend returns reserve venues on first load → deck should start with a larger buffer.
-- Case B: backend returns no reserve venues on first load → predictive prefetch should still append before the user reaches the end of the first batch.
+Line 774 of the recommend function: `finalVenues = candidates.slice(0, 8)`. But `candidates` comes from `dedup(scoredVenues).slice(0, 20)`, and after 61 exclusions there are only ~3 candidates. The cap doesn't matter — the pool is exhausted.
 
-Technical note:
-This is not primarily a ranking/search problem anymore. The backend is returning valid discovery results, but the current client flow only reads buffered venues before the async prefetch completes. The visible deck runs out while the next batch is sitting in refs off-screen.
+**Fix:** For discovery mode, don't send the entire cumulative `exclude_ids` list. Only send the IDs from the *current session's active deck* (the venues currently visible in the UI), not every venue ever seen. This keeps the exclude list at ~10-15 instead of 60+, leaving plenty of candidates in the pool.
+
+### Problem 2: Discovery returns max 8 + 10 reserve = 18 total per request
+
+Even when the pool isn't exhausted, the backend caps at 8 primary + 10 reserve. For your seamless-swiping vision, the initial load should return more.
+
+**Fix:** For discovery mode, increase the primary result cap from 8 to 12, keeping reserve at 10. This gives 22 venues from a single request — enough for a quick swiper to have ~20 seconds of content while prefetch loads in background.
+
+### Problem 3: Prefetch triggers too late and too slowly
+
+The proactive trigger fires at `max(venues.length - 8, floor(venues.length / 2))`. With only 3 venues, that's `max(-5, 1) = 1` — meaning it fires after the *first* swipe. But by then the async prefetch takes 4-6 seconds, and the user exhausts 3 cards in ~3 seconds.
+
+**Fix:** Fire prefetch immediately after initial venues load (not after half the deck is swiped). This gives the prefetch a head start while the user is still looking at card 1.
+
+---
+
+### Implementation Plan
+
+**File 1: `src/hooks/useDiscoveryFeed.js`**
+
+- Change `exclude_ids` sent to the initial `fetchFeed` to only include IDs from the *current* `whatspot_skipped_venues` (session-cleared on mount), NOT `whatspot_seen_venues`. The seen-venues dedup will happen naturally via the backend's Google Places result overlap.
+- Trigger `prefetchNextBatch()` automatically right after the initial fetch completes (inside `fetchFeed` success path for discovery mode), so the second batch is already in-flight while the user views card 1.
+- In `prefetchNextBatch`, if the result is empty at the current ring, auto-advance to the next ring and retry once before returning empty.
+
+**File 2: `supabase/functions/recommend/index.ts`**
+
+- For discovery mode only, increase `finalVenues` cap from 8 to 12: `candidates.slice(0, 12)`.
+- Keep reserve at 10 (from remaining candidates).
+- This means one discovery request can return up to 22 photo-enriched venues.
+
+**File 3: `src/pages/Home.jsx`**
+
+- No structural changes needed — the existing two-phase drain in `handleRequestMoreVenues` and the auto-drain `useEffect` already handle promotion correctly. The upstream fixes (more venues per request + earlier prefetch) solve the actual throughput problem.
+
+**File 4: `src/components/discovery/DiscoveryDeck.jsx`**
+
+- No changes (per your constraint).
+
+---
+
+### Expected result
+
+- Initial load: 12 primary + 10 reserve = **22 venues** immediately in deck
+- By the time user swipes card 3, prefetch has already been running for ~4 seconds and returns another 12+ venues
+- User never sees a loading spinner within discovery mode unless the entire Toronto area is genuinely exhausted across all radius rings
+
