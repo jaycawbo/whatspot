@@ -1,29 +1,10 @@
 
 
-## Analysis
+## Plan: Update proactive loading trigger in DiscoveryDeck.jsx
 
-The proposed fix (empty dependency array) is **correct and worth applying**, but it may not be the full story.
+**Single change** in `src/components/discovery/DiscoveryDeck.jsx`:
 
-### Why the empty deps help
-With `[fetchFeed, initAnchorPoint]` as deps, React recreates these callbacks whenever `state.userLocation`, `state.locationName`, or `state.filters` change. In theory `hasFetchedRef` guards against re-execution, but there's a subtle timing issue: if another effect or state update causes `fetchFeed` to get a new reference before the initial effect fires, React may defer/batch the effect, leading to a race condition where the first fetch doesn't happen reliably. Empty deps (`[]`) guarantee the effect fires exactly once on mount with zero interference.
+Replace the proactive loading `useEffect` (around line 95) that triggers at `venues.length - 8` with the new version that uses `Math.max(venues.length - 8, Math.floor(venues.length / 2))` as the trigger point. This ensures prefetch only fires when you've swiped through at least half the deck AND there are ≤8 remaining.
 
-### Possible deeper issue
-The empty-state message ("you've explored all the top spots nearby") means the API returned zero results. This could also be caused by:
-- **Accumulated `whatspot_seen_venues` in sessionStorage** — if the seen-venues list from prior sessions is large, `exclude_ids` could filter out everything. Worth verifying whether clearing sessionStorage fixes it independently.
-- The `recommend` edge function's new `DISCOVERY_CRITERIA` pass-1 thresholds (rating ≥ 4.0, reviews ≥ 25, score ≥ 1.0) may be too strict for the initial 2km radius, returning empty results.
-
-### Plan — single file change in `src/hooks/useDiscoveryFeed.js`
-
-**Change 1 — Empty dependency array on mount effect (line 190)**
-```
-}, [fetchFeed, initAnchorPoint]);
-```
-→
-```
-}, []); // eslint-disable-line react-hooks/exhaustive-deps
-```
-
-This is the user's requested change. It ensures the effect fires exactly once on mount.
-
-If the feed still shows empty after this fix, the next step would be to investigate whether `whatspot_seen_venues` accumulation or the strict pass-1 criteria thresholds are filtering out all results.
+No other files touched.
 
