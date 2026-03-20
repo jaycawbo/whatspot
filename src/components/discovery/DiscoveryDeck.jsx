@@ -95,7 +95,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
   // Proactive loading
   useEffect(() => {
-    if (onRequestMoreVenues && !moreRequestedRef.current && venues.length > 0 && currentIndex >= venues.length - 3) {
+    if (!onRequestMoreVenues || moreRequestedRef.current || venues.length === 0) return;
+    const triggerAt = Math.max(venues.length - 8, Math.floor(venues.length / 2));
+    if (currentIndex >= triggerAt) {
       moreRequestedRef.current = true;
       onRequestMoreVenues();
     }
