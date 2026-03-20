@@ -185,6 +185,8 @@ export function useDiscoveryFeed() {
   useEffect(() => {
     if (hasFetchedRef.current) return;
     hasFetchedRef.current = true;
+  // Clear skipped venues from previous sessions so the feed starts fresh
+  try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
   // Fetch immediately with default anchor, then update anchor in background
   fetchFeed();
   initAnchorPoint();
