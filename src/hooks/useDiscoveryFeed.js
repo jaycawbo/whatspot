@@ -132,8 +132,7 @@ export function useDiscoveryFeed() {
         radius_km: effectiveRadius,
         open_now: state.filters?.openNow || undefined,
         price_levels: state.filters?.priceLevels?.length ? state.filters.priceLevels : undefined,
-        session_context,
-        exclude_ids: seenIds.length ? seenIds : undefined,
+        exclude_ids: excludeIds.length ? excludeIds : undefined,
       });
 
       const results = res?.results || [];
