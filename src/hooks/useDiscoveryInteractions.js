@@ -5,8 +5,21 @@ import { supabase } from '@/integrations/supabase/client';
 import { logEvent } from '@/lib/logEvent';
 
 /**
+ * Helper: mark a venue ID as "seen" so future API calls exclude it.
+ */
+function markVenueExcluded(venueId) {
+  if (!venueId) return;
+  try {
+    const raw = sessionStorage.getItem('whatspot_skipped_venues');
+    const existing = raw ? JSON.parse(raw) : [];
+    if (!existing.includes(venueId)) {
+      sessionStorage.setItem('whatspot_skipped_venues', JSON.stringify([...existing, venueId]));
+    }
+  } catch {}
+}
+
+/**
  * Hook that maps discovery feed gestures to the new 4-way interaction system.
- * All interactions log to console with TODO markers for future backend wiring.
  */
 export function useDiscoveryInteractions() {
   const { saveSpot, removeSpot, updateLabels, isSaved, getLabels, isAuthenticated } = useSpots();
@@ -58,9 +71,9 @@ export function useDiscoveryInteractions() {
 
   const handleInterested = useCallback(async (venue) => {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
-    // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
     console.log('[TODO: wire to backend]', { event: 'venue_interested', venue_id: placeId, timestamp: Date.now() });
 
+    markVenueExcluded(placeId);
     writeInteraction(venue, 'interested');
 
     if (!isAuthenticated) {
@@ -73,9 +86,9 @@ export function useDiscoveryInteractions() {
 
   const handleNotInterested = useCallback(async (venue) => {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
-    // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
     console.log('[TODO: wire to backend]', { event: 'venue_not_interested', venue_id: placeId, timestamp: Date.now() });
 
+    markVenueExcluded(placeId);
     writeInteraction(venue, 'not_interested');
 
     if (!isAuthenticated) {
@@ -108,9 +121,9 @@ export function useDiscoveryInteractions() {
 
   const handleRated = useCallback(async (venue, rating) => {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
-    // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
     console.log('[TODO: wire to backend]', { event: 'venue_rated', venue_id: placeId, rating, timestamp: Date.now() });
 
+    markVenueExcluded(placeId);
     writeInteraction(venue, 'rated', rating);
 
     const labelMap = {

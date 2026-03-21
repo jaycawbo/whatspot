@@ -299,13 +299,29 @@ export function useDiscoveryFeed() {
   }, [state.userLocation, state.locationName, state.filters]);
 
   const getReserveVenues = useCallback(() => {
-    const reserve = reserveVenuesRef.current;
+    let skippedIds = [];
+    try {
+      const raw = sessionStorage.getItem('whatspot_skipped_venues');
+      if (raw) skippedIds = JSON.parse(raw);
+    } catch {}
+    const reserve = reserveVenuesRef.current.filter(v => {
+      const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+      return !skippedIds.includes(id);
+    });
     reserveVenuesRef.current = [];
     return reserve;
   }, []);
 
   const getPrefetchedVenues = useCallback(() => {
-    const prefetched = prefetchedVenuesRef.current;
+    let skippedIds = [];
+    try {
+      const raw = sessionStorage.getItem('whatspot_skipped_venues');
+      if (raw) skippedIds = JSON.parse(raw);
+    } catch {}
+    const prefetched = prefetchedVenuesRef.current.filter(v => {
+      const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+      return !skippedIds.includes(id);
+    });
     prefetchedVenuesRef.current = [];
     return prefetched;
   }, []);
