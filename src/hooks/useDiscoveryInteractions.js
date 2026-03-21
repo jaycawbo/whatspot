@@ -5,8 +5,21 @@ import { supabase } from '@/integrations/supabase/client';
 import { logEvent } from '@/lib/logEvent';
 
 /**
+ * Helper: mark a venue ID as "seen" so future API calls exclude it.
+ */
+function markVenueExcluded(venueId) {
+  if (!venueId) return;
+  try {
+    const raw = sessionStorage.getItem('whatspot_skipped_venues');
+    const existing = raw ? JSON.parse(raw) : [];
+    if (!existing.includes(venueId)) {
+      sessionStorage.setItem('whatspot_skipped_venues', JSON.stringify([...existing, venueId]));
+    }
+  } catch {}
+}
+
+/**
  * Hook that maps discovery feed gestures to the new 4-way interaction system.
- * All interactions log to console with TODO markers for future backend wiring.
  */
 export function useDiscoveryInteractions() {
   const { saveSpot, removeSpot, updateLabels, isSaved, getLabels, isAuthenticated } = useSpots();
