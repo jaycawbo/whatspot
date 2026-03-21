@@ -121,9 +121,9 @@ export function useDiscoveryInteractions() {
 
   const handleRated = useCallback(async (venue, rating) => {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
-    // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
     console.log('[TODO: wire to backend]', { event: 'venue_rated', venue_id: placeId, rating, timestamp: Date.now() });
 
+    markVenueExcluded(placeId);
     writeInteraction(venue, 'rated', rating);
 
     const labelMap = {
