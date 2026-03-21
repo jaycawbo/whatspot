@@ -71,9 +71,9 @@ export function useDiscoveryInteractions() {
 
   const handleInterested = useCallback(async (venue) => {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
-    // TODO: Wire to Supabase user_venue_interactions table — do not implement yet.
     console.log('[TODO: wire to backend]', { event: 'venue_interested', venue_id: placeId, timestamp: Date.now() });
 
+    markVenueExcluded(placeId);
     writeInteraction(venue, 'interested');
 
     if (!isAuthenticated) {
