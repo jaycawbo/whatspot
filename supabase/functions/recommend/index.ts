@@ -695,6 +695,7 @@ Deno.serve(async (req) => {
       })
       .filter((v: any) => v !== null)
       .filter((v: any) => !isDiscoveryMode || !isChain(v.name || ''))
+      .filter((v: any) => !isDiscoveryMode || hasFoodDrinkType(v._rawTypes))
       .filter((v: any) => !isDiscoveryMode || !v.lat || v.lat <= 43.7730);
 
     console.log(`✅ ${filteredVenues.length} passed filters`);
