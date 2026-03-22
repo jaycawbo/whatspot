@@ -50,6 +50,7 @@ export default function LocationMapPicker({ isOpen, onClose, onLocationSelect })
           className="max-w-md w-[90vw] h-[80vh] flex flex-col p-4"
           onInteractOutside={(e) => e.preventDefault()}
           onPointerDownOutside={(e) => e.preventDefault()}
+          onFocusOutside={(e) => e.preventDefault()}
         >
         <DialogHeader className="mb-2 shrink-0">
           <DialogTitle>Pin a location</DialogTitle>
@@ -58,7 +59,7 @@ export default function LocationMapPicker({ isOpen, onClose, onLocationSelect })
           </DialogDescription>
         </DialogHeader>
         
-        <div className="flex-1 min-h-0 rounded-md overflow-hidden relative border border-border">
+        <div className="flex-1 min-h-0 rounded-md overflow-hidden relative border border-border" onPointerDown={e => e.stopPropagation()}>
           <ErrorBoundary fallback={
             <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
               Map failed to load. Please close and try again.
