@@ -1,49 +1,27 @@
 
 
-## Two Issues with the Map Experience
+## Findings
 
-### Issue 1: Dialog closes when tapping the map to pin
+**Tiles**: The code already uses CartoDB Voyager in all 4 map files. You mentioned wanting **CartoDB Positron** — I'll switch to that (the minimal grayscale style: `light_all` URL). Voyager is what's currently deployed and what your screenshot shows — it IS CartoDB, not default OSM.
 
-**Root cause:** The Radix `DialogOverlay` listens for pointer-down events outside `DialogContent` to close the dialog. Leaflet's map click events bubble up and Radix interprets them as "interact outside" events, triggering `onOpenChange(false)`. This is a well-known Radix + Leaflet conflict.
+**Dialog closing on map click**: The `onInteractOutside` and `onPointerDownOutside` props are already present and correctly forwarded by the dialog component. However, these only prevent closing when clicking the **overlay** — they don't help with Leaflet's internal event handling. The real issue is that Leaflet's map click events use `stopPropagation` in a way that interferes with Radix's focus management, causing Radix to detect a "focus outside" event and close the dialog.
 
-**Fix:** Add `onInteractOutside={(e) => e.preventDefault()}` to `DialogContent` in `LocationMapPicker.jsx`. This tells Radix to ignore pointer events inside the dialog content area, allowing map clicks to work normally.
-
-Additionally, add `onPointerDownOutside={(e) => e.preventDefault()}` as a belt-and-suspenders measure.
-
-**File:** `src/components/home/LocationMapPicker.jsx` — add two props to `<DialogContent>`.
+The proper fix is to also add `onFocusOutside={(e) => e.preventDefault()}` to prevent Radix from closing on focus loss, AND wrap the map container div with `onPointerDown={(e) => e.stopPropagation()}` to prevent pointer events from bubbling past the map to the dialog layer.
 
 ---
 
-### Issue 2: Map tile aesthetic
+## Plan
 
-The current tiles use the default OpenStreetMap raster style (`tile.openstreetmap.org`), which looks utilitarian. Here are free alternatives with better aesthetics:
+### File 1: `src/components/home/LocationMapPicker.jsx`
+- Add `onFocusOutside={(e) => e.preventDefault()}` to `<DialogContent>` 
+- Add `onPointerDown={e => e.stopPropagation()}` to the map wrapper `<div>` (the `flex-1 min-h-0` div around the map)
 
-| Option | Look | URL |
-|--------|------|-----|
-| **CartoDB Voyager** | Clean, modern, muted colors — great for app UIs | `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png` |
-| **CartoDB Positron** | Minimal grayscale — lets UI elements pop | `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png` |
-| **Stadia Alidade Smooth** | Soft pastel — polished feel | Requires API key |
+### Files 2-5: All map tile files
+Switch from Voyager to **Positron** (`light_all`) in:
+- `src/components/home/LocationMapContent.jsx`
+- `src/components/home/MapView.jsx`
+- `src/components/spots/SpotsMapView.jsx`
+- `src/pages/VenueDetails.jsx`
 
-**Recommendation:** CartoDB Voyager — free, no API key, modern look that fits a consumer app. Apply across all 4 map components (LocationMapContent, MapView, SpotsMapView, VenueDetails).
-
----
-
-### Changes
-
-**`src/components/home/LocationMapPicker.jsx`**
-- Add `onInteractOutside` and `onPointerDownOutside` with `e.preventDefault()` to `<DialogContent>` to stop the dialog from closing on map interaction.
-
-**`src/components/home/LocationMapContent.jsx`**
-- Swap TileLayer URL to CartoDB Voyager.
-
-**`src/components/home/MapView.jsx`**
-- Swap TileLayer URL to CartoDB Voyager.
-
-**`src/components/spots/SpotsMapView.jsx`**
-- Swap TileLayer URL to CartoDB Voyager.
-
-**`src/pages/VenueDetails.jsx`**
-- Swap TileLayer URL to CartoDB Voyager.
-
-All changes are straightforward prop/URL swaps — no structural refactoring needed.
+New URL: `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png`
 
