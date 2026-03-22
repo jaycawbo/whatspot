@@ -691,6 +691,7 @@ Deno.serve(async (req) => {
           cuisine_type: place.types?.find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
           isRelaxedAdmission,
           unknownPrice,
+          _rawTypes: place.types,
         };
       })
       .filter((v: any) => v !== null)
