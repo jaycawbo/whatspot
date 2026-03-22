@@ -46,7 +46,11 @@ export default function LocationMapPicker({ isOpen, onClose, onLocationSelect })
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md w-[90vw] h-[80vh] flex flex-col p-4">
+        <DialogContent
+          className="max-w-md w-[90vw] h-[80vh] flex flex-col p-4"
+          onInteractOutside={(e) => e.preventDefault()}
+          onPointerDownOutside={(e) => e.preventDefault()}
+        >
         <DialogHeader className="mb-2 shrink-0">
           <DialogTitle>Pin a location</DialogTitle>
           <DialogDescription>
