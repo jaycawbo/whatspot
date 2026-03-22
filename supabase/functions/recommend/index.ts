@@ -538,7 +538,7 @@ Deno.serve(async (req) => {
           ),
           googlePlacesBroadSearch(
             GOOGLE_KEY,
-            `bar OR pub OR lounge OR club OR brewery in ${googleLocationContext}`,
+            `bar OR pub OR lounge OR nightclub OR brewery in ${googleLocationContext}`,
             lat, lon, admission.maxRadius, open_now, googlePriceLevels
           ),
         ]);
