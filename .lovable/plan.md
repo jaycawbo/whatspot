@@ -1,45 +1,49 @@
 
 
-## Why skipped venues reappear and the ripple expansion isn't working
+## Two Issues with the Map Experience
 
-### Root Causes
+### Issue 1: Dialog closes when tapping the map to pin
 
-**1. Only swipe-down (skip) adds to the exclude list — swipe-left and swipe-right do not.**
+**Root cause:** The Radix `DialogOverlay` listens for pointer-down events outside `DialogContent` to close the dialog. Leaflet's map click events bubble up and Radix interprets them as "interact outside" events, triggering `onOpenChange(false)`. This is a well-known Radix + Leaflet conflict.
 
-`handleSkip` in `useDiscoveryInteractions.js` (line 94-101) writes venue IDs to `whatspot_skipped_venues` in sessionStorage. But `handleInterested` and `handleNotInterested` never write to any exclusion list. Since the API's `exclude_ids` only reads from `whatspot_skipped_venues`, venues swiped left or right will reappear in subsequent fetches.
+**Fix:** Add `onInteractOutside={(e) => e.preventDefault()}` to `DialogContent` in `LocationMapPicker.jsx`. This tells Radix to ignore pointer events inside the dialog content area, allowing map clicks to work normally.
 
-**2. The initial `fetchFeed()` doesn't use the ring/pass system at all.**
+Additionally, add `onPointerDownOutside={(e) => e.preventDefault()}` as a belt-and-suspenders measure.
 
-`fetchFeed` uses `radiusRef.current` (default 5km) and sends no `criteria_pass` parameter. Only `prefetchNextBatch` uses the ring/pass progression. So the initial load and any `expandSearch` fallback bypass the entire ripple system — they just double the radius without advancing criteria.
-
-**3. Client-side dedup of already-shown venues is missing.**
-
-When prefetched venues are drained into the deck, there is no dedup against venues already in the current `venues` array. If Google Places returns the same venue at radius 4km that was already shown at radius 2km, it appears again.
+**File:** `src/components/home/LocationMapPicker.jsx` — add two props to `<DialogContent>`.
 
 ---
 
-### Fix Plan
+### Issue 2: Map tile aesthetic
 
-**File 1: `src/hooks/useDiscoveryInteractions.js`**
-- In `handleInterested` and `handleNotInterested`, add the venue ID to a new sessionStorage key `whatspot_acted_venues` (separate from skipped so we can distinguish). 
-- Actually, simpler: add ALL interacted venue IDs (skip, interested, not interested, rated) to `whatspot_skipped_venues` so they are all excluded from future API calls. Rename nothing — just ensure every interaction path writes to the same exclusion list.
+The current tiles use the default OpenStreetMap raster style (`tile.openstreetmap.org`), which looks utilitarian. Here are free alternatives with better aesthetics:
 
-Specific changes:
-- `handleSkip` already writes to `whatspot_skipped_venues` — no change needed.
-- `handleInterested` (around line 64): after `saveWithLabel`, add the venue ID to `whatspot_skipped_venues`.
-- `handleNotInterested` (around line 78): after `saveWithLabel`, add the venue ID to `whatspot_skipped_venues`.
-- `handleRated` (around line 109): add the venue ID to `whatspot_skipped_venues`.
-- Extract the sessionStorage write into a shared helper to avoid repetition.
+| Option | Look | URL |
+|--------|------|-----|
+| **CartoDB Voyager** | Clean, modern, muted colors — great for app UIs | `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png` |
+| **CartoDB Positron** | Minimal grayscale — lets UI elements pop | `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png` |
+| **Stadia Alidade Smooth** | Soft pastel — polished feel | Requires API key |
 
-**File 2: `src/hooks/useDiscoveryFeed.js`**
-- When draining prefetched/reserve venues into `prefetchedVenuesRef` or when `getPrefetchedVenues`/`getReserveVenues` are called, filter out any IDs already in the current `whatspot_skipped_venues` list. This provides client-side dedup as a safety net.
-- No changes to the ring/pass progression — it already works correctly in `prefetchNextBatch`. The key fix is ensuring ALL interacted venues are in the exclusion list (File 1).
-
-**File 3: `src/pages/Home.jsx`** — No changes needed.
+**Recommendation:** CartoDB Voyager — free, no API key, modern look that fits a consumer app. Apply across all 4 map components (LocationMapContent, MapView, SpotsMapView, VenueDetails).
 
 ---
 
-### Expected Result
-- Every swiped venue (any direction) is excluded from future API calls and client-side filtering.
-- The ripple system (radius rings + criteria passes) continues to work as designed, but now with a complete exclusion list, it will naturally progress to wider radii and relaxed criteria rather than returning the same venues.
+### Changes
+
+**`src/components/home/LocationMapPicker.jsx`**
+- Add `onInteractOutside` and `onPointerDownOutside` with `e.preventDefault()` to `<DialogContent>` to stop the dialog from closing on map interaction.
+
+**`src/components/home/LocationMapContent.jsx`**
+- Swap TileLayer URL to CartoDB Voyager.
+
+**`src/components/home/MapView.jsx`**
+- Swap TileLayer URL to CartoDB Voyager.
+
+**`src/components/spots/SpotsMapView.jsx`**
+- Swap TileLayer URL to CartoDB Voyager.
+
+**`src/pages/VenueDetails.jsx`**
+- Swap TileLayer URL to CartoDB Voyager.
+
+All changes are straightforward prop/URL swaps — no structural refactoring needed.
 
