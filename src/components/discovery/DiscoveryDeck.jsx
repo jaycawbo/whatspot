@@ -138,7 +138,11 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const advanceCard = useCallback(() => {
     setExitDirection(null);
     setIsDragging(false);
-    setCurrentIndex((i) => i + 1);
+    setCurrentIndex((i) => {
+      const next = i + 1;
+      try { sessionStorage.setItem('whatspot_deck_index', String(next)); } catch {}
+      return next;
+    });
     x.set(0);
     y.set(0);
   }, [x, y]);
