@@ -271,7 +271,10 @@ export default function VenueDetails() {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
                 url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
               />
-              <Marker position={[lat, lon]} />
+              <Marker position={[lat, lon]} icon={createPillMarker(venue, {
+                spotsIds: new Set(spots.map(s => s.google_place_id)),
+                favIds: new Set(spots.filter(s => s.labels?.includes('Favourites')).map(s => s.google_place_id)),
+              })} />
             </MapContainer>
           </div>
         )}
