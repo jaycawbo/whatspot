@@ -30,9 +30,16 @@ function isLocationQuery(query) {
 }
 
 export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenues = [], currentQuery = '', onDescriptorTap, onExpandSearch, onNewSearch, onRequestMoreVenues, isDiscoveryMode = false }) {
+  // Restore swipe index from sessionStorage for back-navigation
+  const savedIndex = useRef(() => {
+    try {
+      const val = sessionStorage.getItem('whatspot_deck_index');
+      return val ? parseInt(val, 10) : 0;
+    } catch { return 0; }
+  });
   const [venues, setVenues] = useState(initialVenues);
   const [overflowAppended, setOverflowAppended] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(savedIndex.current());
   const [exitDirection, setExitDirection] = useState(null);
   const [hoveredButton, setHoveredButton] = useState(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
