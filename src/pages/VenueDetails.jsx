@@ -16,6 +16,7 @@ import 'leaflet/dist/leaflet.css';
 
 export default function VenueDetails() {
   const { placeId } = useParams();
+  const { spots } = useSpots();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
