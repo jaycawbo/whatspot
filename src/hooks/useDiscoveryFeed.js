@@ -183,6 +183,14 @@ export function useDiscoveryFeed() {
       setOverflowVenues(overflow);
       radiusRef.current = effectiveRadius;
 
+      // Cache feed state for back-navigation
+      saveFeedCache({
+        venues: filtered,
+        overflowVenues: overflow,
+        currentQuery: query,
+        reserveVenues: reserveVenuesRef.current,
+      });
+
       // Track seen venue IDs for discovery mode (cap at 100 to prevent exhaustion)
       if (effectiveMode === 'discovery') {
         try {
