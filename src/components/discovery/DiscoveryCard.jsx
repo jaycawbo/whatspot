@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 
-const CROSSFADE_INTERVAL = 4000;
+const CROSSFADE_INTERVAL = 8000;
 
 const PLACEHOLDER_DESCRIPTORS = [
   ['cozy neighbourhood gem', 'creative seasonal menu', 'great for date night'],
