@@ -230,6 +230,7 @@ export function useDiscoveryFeed() {
   // Search-driven refresh
   const searchFeed = useCallback((query) => {
     radiusRef.current = state.filters?.radius || 5;
+    try { sessionStorage.setItem('whatspot_deck_index', '0'); } catch {}
     fetchFeed({ query });
   }, [fetchFeed, state.filters]);
 
