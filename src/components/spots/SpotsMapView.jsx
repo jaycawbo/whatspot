@@ -1,11 +1,26 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import { Button } from '@/components/ui/button';
 import { Trash2, Star } from 'lucide-react';
+import { useSpots } from '@/hooks/useSpots';
+import { createPillMarker } from '@/components/map/createPillMarker';
 import 'leaflet/dist/leaflet.css';
 
-export default function SpotsMapView({ spots, center, onRemove }) {
-  if (!spots.length) {
+export default function SpotsMapView({ spots: spotsList, center, onRemove }) {
+  const { spots: allSpots } = useSpots();
+
+  const { spotsIds, favIds } = useMemo(() => {
+    const spotsSet = new Set();
+    const favSet = new Set();
+    for (const s of allSpots) {
+      const id = s.google_place_id;
+      spotsSet.add(id);
+      if (s.labels?.includes('Favourites')) favSet.add(id);
+    }
+    return { spotsIds: spotsSet, favIds: favSet };
+  }, [allSpots]);
+
+  if (!spotsList.length) {
     return (
       <div className="h-full w-full rounded-xl bg-muted flex items-center justify-center">
         <p className="text-muted-foreground text-sm">No spots to display on map</p>
@@ -13,7 +28,7 @@ export default function SpotsMapView({ spots, center, onRemove }) {
     );
   }
 
-  const mapCenter = center || [spots[0]?.lat || 43.65, spots[0]?.lng || -79.38];
+  const mapCenter = center || [spotsList[0]?.lat || 43.65, spotsList[0]?.lng || -79.38];
 
   return (
     <MapContainer center={mapCenter} zoom={13} className="h-full w-full rounded-xl" scrollWheelZoom>
@@ -21,9 +36,13 @@ export default function SpotsMapView({ spots, center, onRemove }) {
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
-      {spots.map((spot) =>
+      {spotsList.map((spot) =>
         spot.lat && spot.lng ? (
-          <Marker key={spot.google_place_id} position={[spot.lat, spot.lng]}>
+          <Marker
+            key={spot.google_place_id}
+            position={[spot.lat, spot.lng]}
+            icon={createPillMarker(spot, { spotsIds, favIds })}
+          >
             <Popup>
               <div className="text-sm space-y-1 min-w-[150px]">
                 <strong>{spot.name}</strong>
