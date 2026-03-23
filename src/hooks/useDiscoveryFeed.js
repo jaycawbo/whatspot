@@ -25,17 +25,40 @@ const MAX_CRITERIA_PASS = 7;
  * - Manages radius expansion for "expand search area"
  * - Tracks reserve venues and seen/skipped IDs
  */
+const FEED_CACHE_KEY = 'whatspot_feed_cache';
+
+function saveFeedCache(data) {
+  try {
+    sessionStorage.setItem(FEED_CACHE_KEY, JSON.stringify({ ...data, ts: Date.now() }));
+  } catch {}
+}
+
+function loadFeedCache() {
+  try {
+    const raw = sessionStorage.getItem(FEED_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // Cache valid for 30 minutes
+    if (Date.now() - parsed.ts > 30 * 60 * 1000) {
+      sessionStorage.removeItem(FEED_CACHE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch { return null; }
+}
+
 export function useDiscoveryFeed() {
   const { state } = useGlobalState();
-  const [venues, setVenues] = useState([]);
-  const [overflowVenues, setOverflowVenues] = useState([]);
+  const cached = useRef(loadFeedCache()).current;
+  const [venues, setVenues] = useState(cached?.venues || []);
+  const [overflowVenues, setOverflowVenues] = useState(cached?.overflowVenues || []);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [currentQuery, setCurrentQuery] = useState('');
+  const [currentQuery, setCurrentQuery] = useState(cached?.currentQuery || '');
   const radiusRef = useRef(state.filters?.radius || 5);
   const abortRef = useRef(null);
-  const hasFetchedRef = useRef(false);
-  const reserveVenuesRef = useRef([]);
+  const hasFetchedRef = useRef(!!cached);
+  const reserveVenuesRef = useRef(cached?.reserveVenues || []);
   const radiusRingIndexRef = useRef(0);
   const criteriaPassRef = useRef(1);
   const anchorPointRef = useRef(null);
