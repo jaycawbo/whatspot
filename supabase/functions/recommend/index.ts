@@ -554,8 +554,24 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ─── "Club" disambiguation ───
+    // Bare "club" → nightclub intent, unless qualified by food/dining context
+    const CLUB_FOOD_PREFIXES = /\b(supper|dinner|lunch|breakfast|brunch|country|social)\s+club\b/i;
+    const CLUB_FOOD_SUFFIXES = /\bclub\s+(sandwich|sandwiches|soda|wrap|salad)\b/i;
+    const CLUB_DINING_CONTEXT = /\b(food|dining|dinner|eat|restaurant|menu|cuisine|brunch|lunch|breakfast)\b/i;
+
+    function disambiguateClub(q: string): string {
+      if (!/\bclub\b/i.test(q)) return q;
+      // If food-qualified, leave as-is for the LLM/Google to interpret
+      if (CLUB_FOOD_PREFIXES.test(q) || CLUB_FOOD_SUFFIXES.test(q) || CLUB_DINING_CONTEXT.test(q.replace(/\bclub\b/gi, ''))) {
+        return q;
+      }
+      // Bare "club" → replace with "nightclub"
+      return q.replace(/\bclub\b/gi, 'nightclub');
+    }
+
     // For on-street searches, strip any location words that may have leaked into the refined term
-    let googleSearchQuery = refinedSearchTerm;
+    let googleSearchQuery = disambiguateClub(refinedSearchTerm);
     if (isOnStreetSearch && detectedStreetBase) {
       // Remove the street name and common location words from the refined query
       const streetWords = detectedStreetBase.split(/\s+/);
