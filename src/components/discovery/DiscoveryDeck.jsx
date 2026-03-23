@@ -95,6 +95,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     setVenues(initialVenues);
     setOverflowAppended(false);
     setCurrentIndex(0);
+    try { sessionStorage.setItem('whatspot_deck_index', '0'); } catch {}
     moreRequestedRef.current = false;
     x.set(0);
     y.set(0);
