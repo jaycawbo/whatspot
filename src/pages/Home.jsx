@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { logEvent } from '@/lib/logEvent';
 import LoadingMessages from '@/components/home/LoadingMessages';
 import { useGlobalState } from '@/context/GlobalStateContext';
@@ -9,6 +9,18 @@ import MobileSearchDrawer from '@/components/home/MobileSearchDrawer';
 import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
+
+const normalizeId = (v) => (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+
+function deduplicateVenues(venues) {
+  const seen = new Set();
+  return venues.filter(v => {
+    const id = normalizeId(v);
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
 
 export default function Home() {
   const { state, dispatch } = useGlobalState();
