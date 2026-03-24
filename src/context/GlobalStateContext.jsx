@@ -69,7 +69,13 @@ function reducer(state, action) {
     case 'SET_LOCATION':
       return {
         ...state,
-        userLocation: action.payload.coords,
+        userLocation: {
+          lat: action.payload.coords?.lat ?? state.userLocation.lat,
+          lon: action.payload.coords?.lon ?? state.userLocation.lon,
+          isGPS: action.payload.coords?.isGPS || false,
+          isPinDrop: action.payload.coords?.isPinDrop || false,
+          locationType: action.payload.coords?.locationType || null,
+        },
         locationName: action.payload.name,
       };
     case 'SET_RESULTS':

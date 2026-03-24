@@ -53,11 +53,28 @@ Deno.serve(async (req) => {
 
       if (data.status === 'OK' && data.results && data.results.length > 0) {
         const location = data.results[0].geometry.location;
-        console.log(`✅ Geocoded: [${location.lat}, ${location.lng}]`);
+        const types = data.results[0].types || [];
+        
+        // Map Google geocoding types to a simple locationType
+        const BROAD_TYPES = ['locality', 'administrative_area_level_1', 'administrative_area_level_2', 'country', 'postal_code'];
+        const NEIGHBOURHOOD_TYPES = ['neighborhood', 'sublocality', 'sublocality_level_1', 'sublocality_level_2'];
+        const STREET_TYPES = ['route', 'street_address', 'premise', 'subpremise', 'point_of_interest', 'establishment'];
+        
+        let locationType = 'other';
+        if (types.some(t => BROAD_TYPES.includes(t))) {
+          locationType = 'city';
+        } else if (types.some(t => NEIGHBOURHOOD_TYPES.includes(t))) {
+          locationType = 'neighbourhood';
+        } else if (types.some(t => STREET_TYPES.includes(t))) {
+          locationType = 'street';
+        }
+        
+        console.log(`✅ Geocoded: [${location.lat}, ${location.lng}], type: ${locationType}, raw types: ${types.join(',')}`);
         return new Response(JSON.stringify({
           success: true,
           lat: location.lat,
           lon: location.lng,
+          locationType,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

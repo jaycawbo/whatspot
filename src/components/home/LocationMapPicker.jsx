@@ -30,12 +30,12 @@ export default function LocationMapPicker({ isOpen, onClose, onLocationSelect })
       
       onLocationSelect({
         name,
-        coords: { lat: selectedPos.lat, lon: selectedPos.lng },
+        coords: { lat: selectedPos.lat, lon: selectedPos.lng, isGPS: false, isPinDrop: true, locationType: null },
       });
     } catch {
       onLocationSelect({
         name: "Map Location",
-        coords: { lat: selectedPos.lat, lon: selectedPos.lng },
+        coords: { lat: selectedPos.lat, lon: selectedPos.lng, isGPS: false, isPinDrop: true, locationType: null },
       });
     } finally {
       setLoading(false);

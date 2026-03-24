@@ -71,12 +71,12 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
             const name = data.address?.city || data.address?.town || data.address?.village || data.address?.suburb || "Current Location";
             onLocationSelect({
               name,
-              coords: { lat: latitude, lon: longitude },
+              coords: { lat: latitude, lon: longitude, isGPS: true, isPinDrop: false, locationType: null },
             });
           } catch {
             onLocationSelect({
               name: "Current Location",
-              coords: { lat: latitude, lon: longitude },
+              coords: { lat: latitude, lon: longitude, isGPS: true, isPinDrop: false, locationType: null },
             });
           }
         },
@@ -98,10 +98,9 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
       if (!error && data?.success) {
         onLocationSelect({
           name: suggestion.full_name || suggestion.display_name,
-          coords: { lat: data.lat, lon: data.lon },
+          coords: { lat: data.lat, lon: data.lon, isGPS: false, isPinDrop: false, locationType: data.locationType || null },
         });
       } else {
-        // Fallback: use the name even without coords
         onLocationSelect({
           name: suggestion.full_name || suggestion.display_name,
           coords: null,
