@@ -34,12 +34,17 @@ export default function Home() {
   useEffect(() => {
     if (feedVenues.length > 0 && !hasInitializedReserve.current) {
       hasInitializedReserve.current = true;
-      const reserve = getReserveVenues();
-      if (reserve.length > 0) {
-        setReserveVenues(reserve);
+      const activeIds = new Set(feedVenues.map(normalizeId).filter(Boolean));
+      const reserve = getReserveVenues(activeIds);
+      const prefetched = getPrefetchedVenues(activeIds);
+      const combined = [...reserve, ...prefetched];
+      if (combined.length > 0) {
+        setReserveVenues(combined);
       }
+      // Eagerly start next prefetch so buffer stays deep
+      prefetchNextBatch();
     }
-  }, [feedVenues, getReserveVenues]);
+  }, [feedVenues, getReserveVenues, getPrefetchedVenues, prefetchNextBatch]);
 
   const handleRequestMoreVenues = useCallback(async () => {
     // Phase 1: drain any already-buffered venues immediately
