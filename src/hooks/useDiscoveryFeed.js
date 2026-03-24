@@ -64,6 +64,8 @@ export function useDiscoveryFeed() {
   const anchorPointRef = useRef(null);
   const isPrefetchingRef = useRef(false);
   const prefetchedVenuesRef = useRef([]);
+  // Session-level tracking of ALL venue IDs ever sent to the client
+  const allServedIdsRef = useRef(new Set());
 
   const initAnchorPoint = useCallback(async () => {
     if (anchorPointRef.current) return;
