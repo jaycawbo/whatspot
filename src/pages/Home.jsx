@@ -174,7 +174,7 @@ export default function Home() {
               </div>
             ) : (
               <DiscoveryDeck
-                venues={[...feedVenues, ...reserveVenues]}
+                venues={deduplicateVenues([...feedVenues, ...reserveVenues])}
                 overflowVenues={overflowVenues}
                 currentQuery={currentQuery}
                 isDiscoveryMode={!currentQuery}

@@ -315,10 +315,17 @@ export function useDiscoveryFeed() {
         } catch {}
       }
 
-      // Auto-retry with next ring if this ring returned nothing (max 2 retries)
-      if (filtered.length === 0 && retryCount < 2) {
+      // Auto-retry with next ring if this ring returned nothing (max 3 retries)
+      if (filtered.length === 0 && retryCount < 3) {
         isPrefetchingRef.current = false;
         return prefetchNextBatch(retryCount + 1);
+      }
+
+      // Auto-chain another prefetch if buffer is still shallow
+      if (filtered.length > 0 && prefetchedVenuesRef.current.length < 15 && retryCount === 0) {
+        isPrefetchingRef.current = false;
+        // Fire-and-forget next batch
+        setTimeout(() => prefetchNextBatch(0), 100);
       }
 
       return { fetched: filtered.length, reserve: reserve.length };
