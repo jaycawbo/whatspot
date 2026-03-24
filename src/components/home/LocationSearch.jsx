@@ -98,10 +98,9 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
       if (!error && data?.success) {
         onLocationSelect({
           name: suggestion.full_name || suggestion.display_name,
-          coords: { lat: data.lat, lon: data.lon },
+          coords: { lat: data.lat, lon: data.lon, isGPS: false, isPinDrop: false, locationType: data.locationType || null },
         });
       } else {
-        // Fallback: use the name even without coords
         onLocationSelect({
           name: suggestion.full_name || suggestion.display_name,
           coords: null,
