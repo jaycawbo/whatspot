@@ -46,10 +46,20 @@ export default function Home() {
     }
   }, [feedVenues, getReserveVenues, getPrefetchedVenues, prefetchNextBatch]);
 
+  // Build activeIds from current deck for dedup
+  const activeIds = useMemo(() => {
+    const ids = new Set();
+    [...feedVenues, ...reserveVenues].forEach(v => {
+      const id = normalizeId(v);
+      if (id) ids.add(id);
+    });
+    return ids;
+  }, [feedVenues, reserveVenues]);
+
   const handleRequestMoreVenues = useCallback(async () => {
     // Phase 1: drain any already-buffered venues immediately
-    const reserve = getReserveVenues();
-    const prefetched = getPrefetchedVenues();
+    const reserve = getReserveVenues(activeIds);
+    const prefetched = getPrefetchedVenues(activeIds);
     const immediate = [...reserve, ...prefetched];
     if (immediate.length > 0) {
       setReserveVenues(prev => [...prev, ...immediate]);
@@ -58,8 +68,10 @@ export default function Home() {
     // Phase 2: fetch next batch and drain again once it resolves
     if (!currentQuery) {
       const result = await prefetchNextBatch();
-      const reserve2 = getReserveVenues();
-      const prefetched2 = getPrefetchedVenues();
+      const updatedActiveIds = new Set(activeIds);
+      immediate.forEach(v => { const id = normalizeId(v); if (id) updatedActiveIds.add(id); });
+      const reserve2 = getReserveVenues(updatedActiveIds);
+      const prefetched2 = getPrefetchedVenues(updatedActiveIds);
       const deferred = [...reserve2, ...prefetched2];
       if (deferred.length > 0) {
         setReserveVenues(prev => [...prev, ...deferred]);
@@ -71,7 +83,7 @@ export default function Home() {
     } else if (immediate.length === 0) {
       expandSearch();
     }
-  }, [getReserveVenues, getPrefetchedVenues, prefetchNextBatch, expandSearch, currentQuery]);
+  }, [getReserveVenues, getPrefetchedVenues, prefetchNextBatch, expandSearch, currentQuery, activeIds]);
 
   const addSearchHistory = useCallback(
     (queryText) => {
