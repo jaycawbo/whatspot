@@ -1,43 +1,65 @@
 
 
-## Fix: Discovery Feed Buffer Exhaustion (Skeleton Appearing at Swipe 7 and 13)
+## Fix Anchor Point Rotation: Search Specificity + Sequencing
 
-### Root Cause (from network traffic)
+### Files to modify
 
-The prefetch API calls only send `whatspot_skipped_venues` as `exclude_ids`. This means the API keeps returning venues already displayed in the deck. After client-side deduplication removes them, each prefetch batch adds only 0-2 genuinely new venues instead of 5-12. The buffer drains in ~7 swipes.
+1. `supabase/functions/geocode-address/index.ts` — return `location_type` from Google Geocoding result
+2. `src/components/home/LocationSearch.jsx` — pass `isGPS`, `isPinDrop`, `locationType` through `onLocationSelect`
+3. `src/components/home/LocationMapPicker.jsx` — pass `isPinDrop: true` through `onLocationSelect`
+4. `src/context/GlobalStateContext.jsx` — preserve extra fields (`isGPS`, `isPinDrop`, `locationType`) in `SET_LOCATION` reducer
+5. `src/hooks/useDiscoveryFeed.js` — fix sequencing, use `anchorPointRef` in `fetchFeed`, add specificity-aware `initAnchorPoint`
 
-Evidence from the captured network requests:
-- Prefetch at 04:29:52 excluded 16 skipped IDs but returned "Brass Taps Pizza Pub" and "Fran's Restaurant" which were already in the active deck
-- Prefetch at 04:29:55 excluded 18 IDs but returned "The Jason George" and "Church St. Garage Bar" which were in the previous prefetch response
-- After dedup, effectively ~2 new venues per batch instead of ~10
+**None of the protected files are included** (DiscoveryDeck, DiscoveryCard, ConstellationsSheet, useDiscoveryInteractions, Spots, recommend edge function).
 
-### Fix (3 files)
+---
 
-**File 1: `src/hooks/useDiscoveryFeed.js`**
+### Changes
 
-- Track ALL venue IDs ever sent to the client in a session-level ref (`allServedIdsRef` — a Set)
-- Populate it from initial fetch results, reserve venues, and prefetched venues
-- In `prefetchNextBatch`, send the full `allServedIdsRef` set as `exclude_ids` (not just skipped venues)
-- This ensures the API never returns a venue the user has already seen or that's already queued in the buffer
+**1. `supabase/functions/geocode-address/index.ts`**
+- Extract `data.results[0].types` from the Google Geocoding response (e.g. `['locality', 'political']`, `['neighborhood', 'political']`, `['street_address']`)
+- Map the first meaningful type to a `locationType` string: `locality`/`administrative_area_level_1`/`country` → `'city'`; `neighborhood`/`sublocality` → `'neighbourhood'`; `route`/`street_address` → `'street'`; default → `'other'`
+- Return `locationType` alongside `lat`/`lon` in the response
 
-**File 2: `src/pages/Home.jsx`**
+**2. `src/components/home/LocationSearch.jsx`**
+- `handleUseCurrentLocation` (line 72-79): add `isGPS: true, isPinDrop: false, locationType: null` to the coords object passed to `onLocationSelect`
+- `selectSuggestion` (line 99-101): pass `locationType` from geocode response (`data.locationType`) into coords; set `isGPS: false, isPinDrop: false`
 
-- No major changes needed — the existing `deduplicateVenues` and `activeIds` logic is sound
-- Minor: pass `activeIds` to `prefetchNextBatch` so it can merge them into excludes if needed
+**3. `src/components/home/LocationMapPicker.jsx`**
+- `handleConfirm` (line 31-33): add `isPinDrop: true, isGPS: false, locationType: null` to the coords object
 
-**File 3: `src/components/discovery/DiscoveryDeck.jsx`**
-
-- Replace fragile prefix-based append detection (`newIds.startsWith(currentIds)`) with a smarter approach: check if the new venue list contains the current card's ID at or after the current position. If so, adjust index to maintain position rather than resetting to 0
-- This prevents the deck from resetting when dedup reorders venues
-
-### Technical Detail
-
-The core fix is one line in `prefetchNextBatch` — changing the exclude list from "only skipped" to "all served":
-
-```text
-Before: exclude_ids = whatspot_skipped_venues (16 IDs)
-After:  exclude_ids = allServedIdsRef (all ~30+ IDs ever returned)
+**4. `src/context/GlobalStateContext.jsx`**
+- In `SET_LOCATION` reducer case, spread all fields from `action.payload.coords` (not just `lat`/`lon`):
+```js
+userLocation: {
+  lat: action.payload.coords?.lat ?? state.userLocation.lat,
+  lon: action.payload.coords?.lon ?? state.userLocation.lon,
+  isGPS: action.payload.coords?.isGPS || false,
+  isPinDrop: action.payload.coords?.isPinDrop || false,
+  locationType: action.payload.coords?.locationType || null,
+},
 ```
 
-This alone ensures each prefetch returns genuinely new venues, keeping the buffer 15-20 cards ahead.
+**5. `src/hooks/useDiscoveryFeed.js`**
+
+*Sequencing fix:*
+```js
+// Change from: fetchFeed → initAnchorPoint → prefetch
+// To: initAnchorPoint → fetchFeed → prefetch
+initAnchorPoint().then(() => {
+  fetchFeed().then(() => { prefetchNextBatch(); });
+});
+```
+
+*fetchFeed uses anchorPointRef:*
+```js
+lat: anchorPointRef.current?.lat ?? state.userLocation?.lat,
+lon: anchorPointRef.current?.lon ?? state.userLocation?.lon,
+```
+
+*initAnchorPoint with specificity awareness:*
+- Priority 1: `state.userLocation?.isGPS === true` or `state.userLocation?.isPinDrop === true` → use exact coords, no rotation
+- Priority 2: `state.userLocation?.locationType` exists and is NOT `'city'` → use exact coords, no rotation
+- Priority 3: Broad area (locationType is `'city'` or null) → apply existing rotation logic (profiled users: sequential anchor index from DB; guests: random from sessionStorage)
+- Remove the old Priority 1 that always used raw userLocation (which defeated rotation entirely)
 
