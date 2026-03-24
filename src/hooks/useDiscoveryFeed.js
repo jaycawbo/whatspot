@@ -237,10 +237,9 @@ export function useDiscoveryFeed() {
     hasFetchedRef.current = true;
     // Clear skipped venues from previous sessions so the feed starts fresh
     try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
-    // Fetch immediately with default anchor, then update anchor in background
-    // After initial fetch completes, fire prefetch so second batch is already loading
-    fetchFeed().then(() => {
-      initAnchorPoint().then(() => {
+    // Init anchor FIRST so fetchFeed uses the correct coordinates
+    initAnchorPoint().then(() => {
+      fetchFeed().then(() => {
         prefetchNextBatch();
       });
     });
