@@ -273,12 +273,8 @@ export function useDiscoveryFeed() {
     const currentPass = criteriaPassRef.current;
     const anchor = anchorPointRef.current ?? { lat: state.userLocation?.lat ?? 43.6532, lon: state.userLocation?.lon ?? -79.3832 };
 
-    // Only exclude skipped venues, not all seen venues
-    let skippedIds = [];
-    try {
-      const raw = sessionStorage.getItem('whatspot_skipped_venues');
-      if (raw) skippedIds = JSON.parse(raw);
-    } catch {}
+    // Exclude ALL venue IDs ever served to the client (not just skipped)
+    const excludeIds = Array.from(allServedIdsRef.current);
 
     try {
       const res = await recommend({
@@ -288,7 +284,7 @@ export function useDiscoveryFeed() {
         location_name: state.locationName,
         radius_km: currentRadius,
         open_now: state.filters?.openNow || undefined,
-        exclude_ids: skippedIds.length ? skippedIds : undefined,
+        exclude_ids: excludeIds.length ? excludeIds : undefined,
         criteria_pass: currentPass,
       });
 
