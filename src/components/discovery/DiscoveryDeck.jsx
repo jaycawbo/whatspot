@@ -102,11 +102,12 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     y.set(0);
   }, [initialVenues, x, y]);
 
-  // Proactive loading
+  // Proactive loading — fire when 5 cards remain OR 50% consumed
   useEffect(() => {
     if (!onRequestMoreVenues || moreRequestedRef.current || venues.length === 0) return;
-    const triggerAt = Math.max(venues.length - 8, Math.floor(venues.length / 2));
-    if (currentIndex >= triggerAt) {
+    const remaining = venues.length - currentIndex;
+    const halfConsumed = currentIndex >= Math.floor(venues.length / 2);
+    if (remaining <= 5 || halfConsumed) {
       moreRequestedRef.current = true;
       onRequestMoreVenues();
     }
