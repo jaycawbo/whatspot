@@ -71,12 +71,12 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
             const name = data.address?.city || data.address?.town || data.address?.village || data.address?.suburb || "Current Location";
             onLocationSelect({
               name,
-              coords: { lat: latitude, lon: longitude },
+              coords: { lat: latitude, lon: longitude, isGPS: true, isPinDrop: false, locationType: null },
             });
           } catch {
             onLocationSelect({
               name: "Current Location",
-              coords: { lat: latitude, lon: longitude },
+              coords: { lat: latitude, lon: longitude, isGPS: true, isPinDrop: false, locationType: null },
             });
           }
         },
