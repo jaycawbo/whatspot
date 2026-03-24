@@ -64,6 +64,8 @@ export function useDiscoveryFeed() {
   const anchorPointRef = useRef(null);
   const isPrefetchingRef = useRef(false);
   const prefetchedVenuesRef = useRef([]);
+  // Session-level tracking of ALL venue IDs ever sent to the client
+  const allServedIdsRef = useRef(new Set());
 
   const initAnchorPoint = useCallback(async () => {
     if (anchorPointRef.current) return;
@@ -179,6 +181,12 @@ export function useDiscoveryFeed() {
         return !skippedIds.includes(id);
       });
 
+      // Track all served IDs for exclusion in future prefetches
+      [...filtered, ...reserveVenuesRef.current].forEach(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        if (id) allServedIdsRef.current.add(id);
+      });
+
       setVenues(filtered);
       setOverflowVenues(overflow);
       radiusRef.current = effectiveRadius;
@@ -265,12 +273,8 @@ export function useDiscoveryFeed() {
     const currentPass = criteriaPassRef.current;
     const anchor = anchorPointRef.current ?? { lat: state.userLocation?.lat ?? 43.6532, lon: state.userLocation?.lon ?? -79.3832 };
 
-    // Only exclude skipped venues, not all seen venues
-    let skippedIds = [];
-    try {
-      const raw = sessionStorage.getItem('whatspot_skipped_venues');
-      if (raw) skippedIds = JSON.parse(raw);
-    } catch {}
+    // Exclude ALL venue IDs ever served to the client (not just skipped)
+    const excludeIds = Array.from(allServedIdsRef.current);
 
     try {
       const res = await recommend({
@@ -280,39 +284,34 @@ export function useDiscoveryFeed() {
         location_name: state.locationName,
         radius_km: currentRadius,
         open_now: state.filters?.openNow || undefined,
-        exclude_ids: skippedIds.length ? skippedIds : undefined,
+        exclude_ids: excludeIds.length ? excludeIds : undefined,
         criteria_pass: currentPass,
       });
 
       const results = res?.results || [];
       const reserve = res?.reserve_venues || [];
 
+      // Filter against allServedIds to catch any the API missed
+      const servedSet = allServedIdsRef.current;
       const filtered = results.filter(v => {
         const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-        return !skippedIds.includes(id);
+        return !servedSet.has(id);
+      });
+
+      const filteredReserve = reserve.filter(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        return !servedSet.has(id);
+      });
+
+      // Track newly fetched IDs
+      [...filtered, ...filteredReserve].forEach(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        if (id) allServedIdsRef.current.add(id);
       });
 
       if (filtered.length > 0) {
         prefetchedVenuesRef.current = [...prefetchedVenuesRef.current, ...filtered];
-        reserveVenuesRef.current = [
-          ...reserveVenuesRef.current,
-          ...reserve.filter(v => {
-            const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-            return !skippedIds.includes(id);
-          })
-        ];
-
-        try {
-          const raw = sessionStorage.getItem('whatspot_seen_venues');
-          const existing = raw ? JSON.parse(raw) : [];
-          const newIds = filtered.map(v =>
-            (v.place_id || v.google_place_id || '').replace(/^places\//, '')
-          ).filter(Boolean);
-          sessionStorage.setItem(
-            'whatspot_seen_venues',
-            JSON.stringify([...new Set([...existing, ...newIds])].slice(-100))
-          );
-        } catch {}
+        reserveVenuesRef.current = [...reserveVenuesRef.current, ...filteredReserve];
       }
 
       // Auto-retry with next ring if this ring returned nothing (max 3 retries)
