@@ -330,29 +330,31 @@ export function useDiscoveryFeed() {
     }
   }, [state.userLocation, state.locationName, state.filters]);
 
-  const getReserveVenues = useCallback(() => {
+  const getReserveVenues = useCallback((activeIds) => {
     let skippedIds = [];
     try {
       const raw = sessionStorage.getItem('whatspot_skipped_venues');
       if (raw) skippedIds = JSON.parse(raw);
     } catch {}
+    const skipSet = new Set(skippedIds);
     const reserve = reserveVenuesRef.current.filter(v => {
       const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-      return !skippedIds.includes(id);
+      return !skipSet.has(id) && !(activeIds instanceof Set && activeIds.has(id));
     });
     reserveVenuesRef.current = [];
     return reserve;
   }, []);
 
-  const getPrefetchedVenues = useCallback(() => {
+  const getPrefetchedVenues = useCallback((activeIds) => {
     let skippedIds = [];
     try {
       const raw = sessionStorage.getItem('whatspot_skipped_venues');
       if (raw) skippedIds = JSON.parse(raw);
     } catch {}
+    const skipSet = new Set(skippedIds);
     const prefetched = prefetchedVenuesRef.current.filter(v => {
       const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-      return !skippedIds.includes(id);
+      return !skipSet.has(id) && !(activeIds instanceof Set && activeIds.has(id));
     });
     prefetchedVenuesRef.current = [];
     return prefetched;
