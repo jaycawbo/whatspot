@@ -137,18 +137,18 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     });
   }, [nextVenue]);
 
-  // Advance to next card
+  // Advance to next card — clamped to venues.length
   const advanceCard = useCallback(() => {
     setExitDirection(null);
     setIsDragging(false);
     setCurrentIndex((i) => {
-      const next = i + 1;
+      const next = Math.min(i + 1, venues.length);
       try { sessionStorage.setItem('whatspot_deck_index', String(next)); } catch {}
       return next;
     });
     x.set(0);
     y.set(0);
-  }, [x, y]);
+  }, [x, y, venues.length]);
 
   // Open rating sheet
   const openRatingSheet = useCallback((venue) => {
