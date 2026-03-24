@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useIsMobile } from '@/hooks/use-mobile';
 import AuthModal from '@/components/auth/AuthModal';
 import { toast } from 'sonner';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
@@ -101,11 +102,12 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     y.set(0);
   }, [initialVenues, x, y]);
 
-  // Proactive loading
+  // Proactive loading — fire when 5 cards remain OR 50% consumed
   useEffect(() => {
     if (!onRequestMoreVenues || moreRequestedRef.current || venues.length === 0) return;
-    const triggerAt = Math.max(venues.length - 8, Math.floor(venues.length / 2));
-    if (currentIndex >= triggerAt) {
+    const remaining = venues.length - currentIndex;
+    const halfConsumed = currentIndex >= Math.floor(venues.length / 2);
+    if (remaining <= 5 || halfConsumed) {
       moreRequestedRef.current = true;
       onRequestMoreVenues();
     }
@@ -135,18 +137,18 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     });
   }, [nextVenue]);
 
-  // Advance to next card
+  // Advance to next card — clamped to venues.length
   const advanceCard = useCallback(() => {
     setExitDirection(null);
     setIsDragging(false);
     setCurrentIndex((i) => {
-      const next = i + 1;
+      const next = Math.min(i + 1, venues.length);
       try { sessionStorage.setItem('whatspot_deck_index', String(next)); } catch {}
       return next;
     });
     x.set(0);
     y.set(0);
-  }, [x, y]);
+  }, [x, y, venues.length]);
 
   // Open rating sheet
   const openRatingSheet = useCallback((venue) => {
@@ -372,60 +374,67 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         )}
 
         {/* Active card */}
-        <motion.div
-          className="absolute inset-0 z-10 touch-none"
-          style={{ x, y }}
-          drag={!ratingSheetOpen}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          animate={
-            isDragging
-              ? undefined
-              : exitDirection === 'rated'
-                ? { opacity: 0, y: -100, scale: 0.95 }
-                : isCardDimmed
-                  ? { opacity: 0.5, scale: 1 }
-                  : { opacity: 1, scale: 1 }
-          }
-          transition={isDragging ? { duration: 0 } : { duration: 0.4 }}
-        >
-          {/* Swipe overlays */}
+        {currentVenue ? (
           <motion.div
-            className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
-            style={{ opacity: rightOverlayOpacity, background: 'hsla(142, 71%, 45%, 0.2)' }}
+            className="absolute inset-0 z-10 touch-none"
+            style={{ x, y }}
+            drag={!ratingSheetOpen}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            animate={
+              isDragging
+                ? undefined
+                : exitDirection === 'rated'
+                  ? { opacity: 0, y: -100, scale: 0.95 }
+                  : isCardDimmed
+                    ? { opacity: 0.5, scale: 1 }
+                    : { opacity: 1, scale: 1 }
+            }
+            transition={isDragging ? { duration: 0 } : { duration: 0.4 }}
           >
-            <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Interested</span>
-          </motion.div>
+            {/* Swipe overlays */}
+            <motion.div
+              className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
+              style={{ opacity: rightOverlayOpacity, background: 'hsla(142, 71%, 45%, 0.2)' }}
+            >
+              <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Interested</span>
+            </motion.div>
 
-          <motion.div
-            className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
-            style={{ opacity: leftOverlayOpacity, background: 'hsla(0, 84%, 60%, 0.2)' }}
-          >
-            <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Not Interested</span>
-          </motion.div>
+            <motion.div
+              className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
+              style={{ opacity: leftOverlayOpacity, background: 'hsla(0, 84%, 60%, 0.2)' }}
+            >
+              <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Not Interested</span>
+            </motion.div>
 
-          <motion.div
-            className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
-            style={{ opacity: downOverlayOpacity, background: 'hsla(0, 0%, 50%, 0.2)' }}
-          >
-            <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Skip</span>
-          </motion.div>
+            <motion.div
+              className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
+              style={{ opacity: downOverlayOpacity, background: 'hsla(0, 0%, 50%, 0.2)' }}
+            >
+              <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Skip</span>
+            </motion.div>
 
-          <motion.div
-            className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none"
-            style={{ opacity: upOverlayOpacity, background: 'hsla(210, 70%, 50%, 0.2)' }}
-          >
-            <Heart className="h-10 w-10 text-white fill-white/30" />
-            <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Been here</span>
-          </motion.div>
+            <motion.div
+              className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none"
+              style={{ opacity: upOverlayOpacity, background: 'hsla(210, 70%, 50%, 0.2)' }}
+            >
+              <Heart className="h-10 w-10 text-white fill-white/30" />
+              <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Been here</span>
+            </motion.div>
 
-          <DiscoveryCard
-            venue={currentVenue}
-            index={currentIndex}
-            onDescriptorTap={onDescriptorTap}
-            onCardBodyTap={handleCardBodyTap}
-          />
-        </motion.div>
+            <DiscoveryCard
+              venue={currentVenue}
+              index={currentIndex}
+              onDescriptorTap={onDescriptorTap}
+              onCardBodyTap={handleCardBodyTap}
+            />
+          </motion.div>
+        ) : hasMore ? (
+          /* Rare transient loading gap — pulsing skeleton instead of white */
+          <div className="absolute inset-0 z-10 rounded-2xl overflow-hidden">
+            <Skeleton className="w-full h-full rounded-2xl" />
+          </div>
+        ) : null}
 
         {/* Web-only Left/Right buttons (absolute on card area) */}
         {!isMobile && (

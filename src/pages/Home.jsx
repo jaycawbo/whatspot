@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { logEvent } from '@/lib/logEvent';
 import LoadingMessages from '@/components/home/LoadingMessages';
 import { useGlobalState } from '@/context/GlobalStateContext';
@@ -9,6 +9,18 @@ import MobileSearchDrawer from '@/components/home/MobileSearchDrawer';
 import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
+
+const normalizeId = (v) => (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+
+function deduplicateVenues(venues) {
+  const seen = new Set();
+  return venues.filter(v => {
+    const id = normalizeId(v);
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
 
 export default function Home() {
   const { state, dispatch } = useGlobalState();
@@ -22,17 +34,32 @@ export default function Home() {
   useEffect(() => {
     if (feedVenues.length > 0 && !hasInitializedReserve.current) {
       hasInitializedReserve.current = true;
-      const reserve = getReserveVenues();
-      if (reserve.length > 0) {
-        setReserveVenues(reserve);
+      const activeIds = new Set(feedVenues.map(normalizeId).filter(Boolean));
+      const reserve = getReserveVenues(activeIds);
+      const prefetched = getPrefetchedVenues(activeIds);
+      const combined = [...reserve, ...prefetched];
+      if (combined.length > 0) {
+        setReserveVenues(combined);
       }
+      // Eagerly start next prefetch so buffer stays deep
+      prefetchNextBatch();
     }
-  }, [feedVenues, getReserveVenues]);
+  }, [feedVenues, getReserveVenues, getPrefetchedVenues, prefetchNextBatch]);
+
+  // Build activeIds from current deck for dedup
+  const activeIds = useMemo(() => {
+    const ids = new Set();
+    [...feedVenues, ...reserveVenues].forEach(v => {
+      const id = normalizeId(v);
+      if (id) ids.add(id);
+    });
+    return ids;
+  }, [feedVenues, reserveVenues]);
 
   const handleRequestMoreVenues = useCallback(async () => {
     // Phase 1: drain any already-buffered venues immediately
-    const reserve = getReserveVenues();
-    const prefetched = getPrefetchedVenues();
+    const reserve = getReserveVenues(activeIds);
+    const prefetched = getPrefetchedVenues(activeIds);
     const immediate = [...reserve, ...prefetched];
     if (immediate.length > 0) {
       setReserveVenues(prev => [...prev, ...immediate]);
@@ -41,8 +68,10 @@ export default function Home() {
     // Phase 2: fetch next batch and drain again once it resolves
     if (!currentQuery) {
       const result = await prefetchNextBatch();
-      const reserve2 = getReserveVenues();
-      const prefetched2 = getPrefetchedVenues();
+      const updatedActiveIds = new Set(activeIds);
+      immediate.forEach(v => { const id = normalizeId(v); if (id) updatedActiveIds.add(id); });
+      const reserve2 = getReserveVenues(updatedActiveIds);
+      const prefetched2 = getPrefetchedVenues(updatedActiveIds);
       const deferred = [...reserve2, ...prefetched2];
       if (deferred.length > 0) {
         setReserveVenues(prev => [...prev, ...deferred]);
@@ -54,7 +83,7 @@ export default function Home() {
     } else if (immediate.length === 0) {
       expandSearch();
     }
-  }, [getReserveVenues, getPrefetchedVenues, prefetchNextBatch, expandSearch, currentQuery]);
+  }, [getReserveVenues, getPrefetchedVenues, prefetchNextBatch, expandSearch, currentQuery, activeIds]);
 
   const addSearchHistory = useCallback(
     (queryText) => {
@@ -145,7 +174,7 @@ export default function Home() {
               </div>
             ) : (
               <DiscoveryDeck
-                venues={[...feedVenues, ...reserveVenues]}
+                venues={deduplicateVenues([...feedVenues, ...reserveVenues])}
                 overflowVenues={overflowVenues}
                 currentQuery={currentQuery}
                 isDiscoveryMode={!currentQuery}
