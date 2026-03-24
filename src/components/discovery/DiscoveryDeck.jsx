@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useIsMobile } from '@/hooks/use-mobile';
 import AuthModal from '@/components/auth/AuthModal';
 import { toast } from 'sonner';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
