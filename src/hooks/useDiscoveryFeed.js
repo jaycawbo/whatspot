@@ -181,6 +181,12 @@ export function useDiscoveryFeed() {
         return !skippedIds.includes(id);
       });
 
+      // Track all served IDs for exclusion in future prefetches
+      [...filtered, ...reserveVenuesRef.current].forEach(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        if (id) allServedIdsRef.current.add(id);
+      });
+
       setVenues(filtered);
       setOverflowVenues(overflow);
       radiusRef.current = effectiveRadius;
