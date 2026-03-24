@@ -1,67 +1,43 @@
 
 
-## Combined Fix: Crash After ~15 Swipes + Duplicate Venues + Seamless Endless Swiping
+## Fix: Discovery Feed Buffer Exhaustion (Skeleton Appearing at Swipe 7 and 13)
 
-### Problems
-1. **White screen after ~15 swipes** — `currentIndex` exceeds `venues.length`, card renders blank. `moreRequestedRef` is one-shot and never resets.
-2. **Duplicate venues in same session** — Prefetched/reserve venues can contain IDs already in the active deck.
-3. **Buffer should stay ahead of user** — Loading skeleton is a last resort, not a regular occurrence.
+### Root Cause (from network traffic)
 
----
+The prefetch API calls only send `whatspot_skipped_venues` as `exclude_ids`. This means the API keeps returning venues already displayed in the deck. After client-side deduplication removes them, each prefetch batch adds only 0-2 genuinely new venues instead of 5-12. The buffer drains in ~7 swipes.
 
-### File 1: `src/hooks/useDiscoveryFeed.js`
+Evidence from the captured network requests:
+- Prefetch at 04:29:52 excluded 16 skipped IDs but returned "Brass Taps Pizza Pub" and "Fran's Restaurant" which were already in the active deck
+- Prefetch at 04:29:55 excluded 18 IDs but returned "The Jason George" and "Church St. Garage Bar" which were in the previous prefetch response
+- After dedup, effectively ~2 new venues per batch instead of ~10
 
-**Duplicate prevention in drain functions:**
-- `getReserveVenues(activeIds)` and `getPrefetchedVenues(activeIds)` accept an optional `Set<string>` of IDs currently in the deck and filter against it (in addition to skipped IDs).
+### Fix (3 files)
 
-**Auto-chain prefetch for deeper buffer:**
-- After `prefetchNextBatch` completes, if `prefetchedVenuesRef.current.length < 15`, immediately chain another prefetch (recursion cap of 3 total retries, up from 2).
+**File 1: `src/hooks/useDiscoveryFeed.js`**
 
----
+- Track ALL venue IDs ever sent to the client in a session-level ref (`allServedIdsRef` — a Set)
+- Populate it from initial fetch results, reserve venues, and prefetched venues
+- In `prefetchNextBatch`, send the full `allServedIdsRef` set as `exclude_ids` (not just skipped venues)
+- This ensures the API never returns a venue the user has already seen or that's already queued in the buffer
 
-### File 2: `src/pages/Home.jsx`
+**File 2: `src/pages/Home.jsx`**
 
-**Strict deduplication before passing to deck:**
-- Build a `Set` of normalized place IDs from `[...feedVenues, ...reserveVenues]`, filter out duplicates, and pass the deduplicated array to `DiscoveryDeck`.
+- No major changes needed — the existing `deduplicateVenues` and `activeIds` logic is sound
+- Minor: pass `activeIds` to `prefetchNextBatch` so it can merge them into excludes if needed
 
-**Eagerly drain prefetched on mount:**
-- In the initial reserve effect, also drain `getPrefetchedVenues()` alongside `getReserveVenues()` so the deck starts with maximum buffer.
+**File 3: `src/components/discovery/DiscoveryDeck.jsx`**
 
-**Pass activeIds to drain functions:**
-- In `handleRequestMoreVenues`, compute a Set of IDs already in `feedVenues + reserveVenues` and pass it to `getReserveVenues(activeIds)` / `getPrefetchedVenues(activeIds)`.
+- Replace fragile prefix-based append detection (`newIds.startsWith(currentIds)`) with a smarter approach: check if the new venue list contains the current card's ID at or after the current position. If so, adjust index to maintain position rather than resetting to 0
+- This prevents the deck from resetting when dedup reorders venues
 
-**Trigger prefetch earlier:**
-- After initial drain, immediately call `prefetchNextBatch()` so a third batch is in-flight while the user swipes through the first ~20 cards.
+### Technical Detail
 
----
-
-### File 3: `src/components/discovery/DiscoveryDeck.jsx`
-
-**Reset `moreRequestedRef` on new venue arrival:**
-- In the append path of the `initialVenues` effect (line 89-92), set `moreRequestedRef.current = false` so subsequent triggers can fire. (Already partially done on line 91 but also needs resetting when venues *actually grow*.)
-
-**Lower trigger threshold:**
-- Change proactive loading to fire when **5 cards remain** OR **50% of deck consumed**, whichever comes first.
-
-**Clamp `advanceCard`:**
-- Prevent `currentIndex` from advancing past `venues.length`. If at the end and no more venues, don't advance.
-
-**Deduplicate on append:**
-- When the append path runs, filter incoming venues against IDs already in `venues` state.
-
-**Graceful skeleton fallback:**
-- If `currentVenue` is null but `hasMore` is true (rare transient gap), render a pulsing skeleton card matching `DiscoveryCard` dimensions instead of blank white space.
-
----
-
-### Buffer timeline (why spinner is rare)
+The core fix is one line in `prefetchNextBatch` — changing the exclude list from "only skipped" to "all served":
 
 ```text
-Swipe 0:   ~22 cards (12 primary + 10 reserve); prefetch batch 2 starts
-Swipe 10:  Batch 2 lands → deck ~34; batch 3 auto-chains
-Swipe 17:  5-card threshold → handleRequestMoreVenues drains buffers
-Swipe 22:  Batch 3 lands → deck ~46
+Before: exclude_ids = whatspot_skipped_venues (16 IDs)
+After:  exclude_ids = allServedIdsRef (all ~30+ IDs ever returned)
 ```
 
-The deck stays 15-20 cards ahead. The skeleton only appears if all prefetch attempts return empty or network stalls.
+This alone ensures each prefetch returns genuinely new venues, keeping the buffer 15-20 cards ahead.
 
