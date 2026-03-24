@@ -78,21 +78,34 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const initialVenueIdsRef = useRef('');
 
   useEffect(() => {
+    if (initialVenues.length === 0) return;
+
     const newIds = initialVenues
       .map(v => (v.place_id || v.google_place_id || '').replace(/^places\//, ''))
       .join(',');
 
-    if (newIds === initialVenueIdsRef.current && initialVenueIdsRef.current !== '') return;
-    
-    const currentIds = initialVenueIdsRef.current;
+    if (newIds === initialVenueIdsRef.current) return;
+
+    const prevIds = initialVenueIdsRef.current;
     initialVenueIdsRef.current = newIds;
 
-    if (currentIds !== '' && newIds.startsWith(currentIds)) {
-      setVenues(initialVenues);
-      moreRequestedRef.current = false;
-      return;
+    // If this is an append (new list contains current card), maintain position
+    if (prevIds !== '' && currentVenue) {
+      const currentId = (currentVenue.place_id || currentVenue.google_place_id || '').replace(/^places\//, '');
+      const newIndex = initialVenues.findIndex(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        return id === currentId;
+      });
+      if (newIndex >= 0) {
+        // Append — keep position on the same card
+        setVenues(initialVenues);
+        setCurrentIndex(newIndex);
+        moreRequestedRef.current = false;
+        return;
+      }
     }
 
+    // Full reset — new search
     setVenues(initialVenues);
     setOverflowAppended(false);
     setCurrentIndex(0);
@@ -100,7 +113,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     moreRequestedRef.current = false;
     x.set(0);
     y.set(0);
-  }, [initialVenues, x, y]);
+  }, [initialVenues, x, y, currentVenue]);
 
   // Proactive loading — fire when 5 cards remain OR 50% consumed
   useEffect(() => {
