@@ -162,8 +162,8 @@ export function useDiscoveryFeed() {
       const res = await recommend({
         mode: effectiveMode,
         query: query || undefined,
-        lat: state.userLocation.lat,
-        lon: state.userLocation.lon,
+        lat: anchorPointRef.current?.lat ?? state.userLocation?.lat,
+        lon: anchorPointRef.current?.lon ?? state.userLocation?.lon,
         location_name: state.locationName,
         radius_km: effectiveRadius,
         open_now: state.filters?.openNow || undefined,
