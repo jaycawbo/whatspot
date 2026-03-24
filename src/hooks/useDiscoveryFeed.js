@@ -291,32 +291,27 @@ export function useDiscoveryFeed() {
       const results = res?.results || [];
       const reserve = res?.reserve_venues || [];
 
+      // Filter against allServedIds to catch any the API missed
+      const servedSet = allServedIdsRef.current;
       const filtered = results.filter(v => {
         const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-        return !skippedIds.includes(id);
+        return !servedSet.has(id);
+      });
+
+      const filteredReserve = reserve.filter(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        return !servedSet.has(id);
+      });
+
+      // Track newly fetched IDs
+      [...filtered, ...filteredReserve].forEach(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        if (id) allServedIdsRef.current.add(id);
       });
 
       if (filtered.length > 0) {
         prefetchedVenuesRef.current = [...prefetchedVenuesRef.current, ...filtered];
-        reserveVenuesRef.current = [
-          ...reserveVenuesRef.current,
-          ...reserve.filter(v => {
-            const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-            return !skippedIds.includes(id);
-          })
-        ];
-
-        try {
-          const raw = sessionStorage.getItem('whatspot_seen_venues');
-          const existing = raw ? JSON.parse(raw) : [];
-          const newIds = filtered.map(v =>
-            (v.place_id || v.google_place_id || '').replace(/^places\//, '')
-          ).filter(Boolean);
-          sessionStorage.setItem(
-            'whatspot_seen_venues',
-            JSON.stringify([...new Set([...existing, ...newIds])].slice(-100))
-          );
-        } catch {}
+        reserveVenuesRef.current = [...reserveVenuesRef.current, ...filteredReserve];
       }
 
       // Auto-retry with next ring if this ring returned nothing (max 3 retries)
