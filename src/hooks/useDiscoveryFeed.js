@@ -70,16 +70,25 @@ export function useDiscoveryFeed() {
   const initAnchorPoint = useCallback(async () => {
     if (anchorPointRef.current) return;
 
-    // Priority 1: live user location
-    if (state.userLocation?.lat && state.userLocation?.lon) {
-      anchorPointRef.current = {
-        lat: state.userLocation.lat,
-        lon: state.userLocation.lon,
-      };
+    const loc = state.userLocation;
+
+    // Priority 1: GPS or pin drop — use exact coords, no rotation
+    if (loc?.isGPS === true || loc?.isPinDrop === true) {
+      anchorPointRef.current = { lat: loc.lat, lon: loc.lon };
+      console.log('[Anchor] Using exact coords (GPS/pin):', anchorPointRef.current);
       return;
     }
 
-    // Priority 2: authenticated user — load from Supabase and increment
+    // Priority 2: Specific location (neighbourhood, street, etc.) — use exact coords, no rotation
+    const BROAD_TYPES = ['city', 'county', 'state', 'country', null, undefined];
+    if (loc?.locationType && !BROAD_TYPES.includes(loc.locationType)) {
+      anchorPointRef.current = { lat: loc.lat, lon: loc.lon };
+      console.log('[Anchor] Using exact coords (specific location type:', loc.locationType, ')');
+      return;
+    }
+
+    // Priority 3: Broad area (city-level or no locationType) — apply rotation
+    // Authenticated user: sequential anchor index from DB
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       const { data: profile } = await supabase
@@ -95,16 +104,17 @@ export function useDiscoveryFeed() {
       radiusRingIndexRef.current = 0;
       criteriaPassRef.current = profile?.discovery_last_criteria_pass ?? 1;
 
-      // Update profile for next session
       await supabase.from('user_profiles').update({
         discovery_anchor_index: nextIndex,
         discovery_last_radius_km: RADIUS_RINGS[0],
         discovery_last_criteria_pass: 1,
       }).eq('id', user.id);
+
+      console.log('[Anchor] Rotation for authenticated user, anchor index:', anchorIndex);
       return;
     }
 
-    // Priority 3: guest — random anchor from sessionStorage or new random pick
+    // Guest: random anchor from sessionStorage
     try {
       const stored = sessionStorage.getItem('whatspot_anchor_index');
       if (stored !== null) {
@@ -117,6 +127,7 @@ export function useDiscoveryFeed() {
     } catch {
       anchorPointRef.current = TORONTO_ANCHORS[0];
     }
+    console.log('[Anchor] Rotation for guest, anchor:', anchorPointRef.current);
   }, [state.userLocation]);
 
   const fetchFeed = useCallback(async ({ query = '', radius, mode } = {}) => {
@@ -151,8 +162,8 @@ export function useDiscoveryFeed() {
       const res = await recommend({
         mode: effectiveMode,
         query: query || undefined,
-        lat: state.userLocation.lat,
-        lon: state.userLocation.lon,
+        lat: anchorPointRef.current?.lat ?? state.userLocation?.lat,
+        lon: anchorPointRef.current?.lon ?? state.userLocation?.lon,
         location_name: state.locationName,
         radius_km: effectiveRadius,
         open_now: state.filters?.openNow || undefined,
@@ -226,10 +237,9 @@ export function useDiscoveryFeed() {
     hasFetchedRef.current = true;
     // Clear skipped venues from previous sessions so the feed starts fresh
     try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
-    // Fetch immediately with default anchor, then update anchor in background
-    // After initial fetch completes, fire prefetch so second batch is already loading
-    fetchFeed().then(() => {
-      initAnchorPoint().then(() => {
+    // Init anchor FIRST so fetchFeed uses the correct coordinates
+    initAnchorPoint().then(() => {
+      fetchFeed().then(() => {
         prefetchNextBatch();
       });
     });
