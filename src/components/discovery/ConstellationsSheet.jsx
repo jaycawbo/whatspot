@@ -1,20 +1,14 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
   Drawer,
   DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerDescription,
-  DrawerFooter,
 } from '@/components/ui/drawer';
-import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
+import { motion, useMotionValue, useTransform, animate, AnimatePresence } from 'framer-motion';
+import { Progress } from '@/components/ui/progress';
 
 const SWIPE_H_THRESHOLD = 80;
-const SWIPE_UP_THRESHOLD = 80;
+const FAVOURITES_TIMEOUT = 4000;
 
-/**
- * Outlined thumbs-down icon — matches lucide stroke weight (strokeWidth 2).
- */
 function ThumbsDownIcon({ className, filled }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -24,9 +18,6 @@ function ThumbsDownIcon({ className, filled }) {
   );
 }
 
-/**
- * Outlined thumbs-up icon — matches lucide stroke weight (strokeWidth 2).
- */
 function ThumbsUpIcon({ className, filled }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -36,89 +27,97 @@ function ThumbsUpIcon({ className, filled }) {
   );
 }
 
-/**
- * Double thumbs-up icon (Netflix-style) — two thumbs side by side, matching stroke weight.
- */
-function DoubleThumbsUpIcon({ className, filled }) {
+function HeartIcon({ className, filled }) {
   return (
-    <svg className={className} viewBox="0 0 32 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      {/* Left thumb */}
-      <g>
-        <path d="M5 10V20" />
-        <path d="M12 6.5L11 10h4.5a1.5 1.5 0 0 1 1.44 1.92l-1.75 6A1.5 1.5 0 0 1 13.75 19H3a1.5 1.5 0 0 1-1.5-1.5V11.5A1.5 1.5 0 0 1 3 10h2.07a1.5 1.5 0 0 0 1.34-.83L9 3a2.35 2.35 0 0 1 3 3.5Z" />
-      </g>
-      {/* Right thumb */}
-      <g>
-        <path d="M19 10V20" />
-        <path d="M26 6.5L25 10h4.5a1.5 1.5 0 0 1 1.44 1.92l-1.75 6A1.5 1.5 0 0 1 27.75 19H17a1.5 1.5 0 0 1-1.5-1.5V11.5A1.5 1.5 0 0 1 17 10h2.07a1.5 1.5 0 0 0 1.34-.83L23 3a2.35 2.35 0 0 1 3 3.5Z" />
-      </g>
+    <svg className={className} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
     </svg>
   );
 }
 
-/**
- * Swipeable rating card content with directional overlays.
- */
-function SwipeableRatingCard({ venueName, onRate, onCancel, onOpenChange }) {
+/** Step 2: Favourites follow-up with countdown */
+function FavouritesFollowUp({ onLoved, onDismiss }) {
+  const [progress, setProgress] = useState(100);
+  const [tapped, setTapped] = useState(false);
+  const intervalRef = useRef(null);
+
+  useEffect(() => {
+    const start = Date.now();
+    intervalRef.current = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const remaining = Math.max(0, 100 - (elapsed / FAVOURITES_TIMEOUT) * 100);
+      setProgress(remaining);
+      if (remaining <= 0) {
+        clearInterval(intervalRef.current);
+        onDismiss();
+      }
+    }, 50);
+    return () => clearInterval(intervalRef.current);
+  }, [onDismiss]);
+
+  const handleTap = () => {
+    if (tapped) return;
+    setTapped(true);
+    clearInterval(intervalRef.current);
+    onLoved();
+  };
+
+  return (
+    <motion.div
+      key="favourites"
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.2 }}
+      className="flex flex-col items-center gap-4 py-6 px-4"
+    >
+      <h3 className="text-base font-semibold text-foreground">Add to Favourites?</h3>
+      <button
+        onClick={handleTap}
+        className="rounded-full p-5 transition-colors hover:bg-accent active:scale-95"
+      >
+        <HeartIcon
+          className={`h-12 w-12 transition-colors ${tapped ? 'text-green-500' : 'text-muted-foreground'}`}
+          filled={tapped}
+        />
+      </button>
+      <div className="w-48">
+        <Progress value={progress} className="h-1" />
+      </div>
+    </motion.div>
+  );
+}
+
+/** Step 1: Swipeable binary rating card */
+function SwipeableRatingCard({ venueName, onLiked, onDisliked }) {
   const x = useMotionValue(0);
-  const y = useMotionValue(0);
-  const [isDragging, setIsDragging] = useState(false);
-  const [activeGesture, setActiveGesture] = useState(null); // 'left' | 'right' | 'up' | null
 
   const rightOpacity = useTransform(x, [0, SWIPE_H_THRESHOLD], [0, 0.85]);
   const leftOpacity = useTransform(x, [-SWIPE_H_THRESHOLD, 0], [0.85, 0]);
-  const upOpacity = useTransform(y, [-SWIPE_UP_THRESHOLD, 0], [0.85, 0]);
-
-  // Track dominant gesture direction during drag
-  const handleDrag = useCallback((_, info) => {
-    const ax = Math.abs(info.offset.x);
-    const ay = Math.abs(info.offset.y);
-    if (ax < 20 && ay < 20) { setActiveGesture(null); return; }
-    if (info.offset.y < -30 && ay > ax) setActiveGesture('up');
-    else if (info.offset.x > 30 && ax > ay) setActiveGesture('right');
-    else if (info.offset.x < -30 && ax > ay) setActiveGesture('left');
-    else setActiveGesture(null);
-  }, []);
 
   const handleDragEnd = useCallback(async (_, info) => {
     const { offset } = info;
-    let acted = false;
-
     if (offset.x > SWIPE_H_THRESHOLD) {
       await animate(x, 400, { duration: 0.25 });
-      onRate('liked');
-      acted = true;
+      onLiked();
     } else if (offset.x < -SWIPE_H_THRESHOLD) {
       await animate(x, -400, { duration: 0.25 });
-      onRate('disliked');
-      acted = true;
-    } else if (offset.y < -SWIPE_UP_THRESHOLD) {
-      await animate(y, -400, { duration: 0.25 });
-      onRate('loved');
-      acted = true;
-    }
-
-    if (!acted) {
+      onDisliked();
+    } else {
       animate(x, 0, { type: 'spring', stiffness: 500, damping: 30 });
-      animate(y, 0, { type: 'spring', stiffness: 500, damping: 30 });
     }
-
-    setIsDragging(false);
-    setActiveGesture(null);
-  }, [x, y, onRate]);
+  }, [x, onLiked, onDisliked]);
 
   return (
     <motion.div
       className="relative touch-none select-none"
-      style={{ x, y }}
-      drag
-      dragConstraints={{ top: 0, bottom: 0, left: 0, right: 0 }}
+      style={{ x }}
+      drag="x"
+      dragConstraints={{ left: 0, right: 0 }}
       dragElastic={0.6}
-      onDragStart={() => setIsDragging(true)}
-      onDrag={handleDrag}
       onDragEnd={handleDragEnd}
     >
-      {/* Swipe right overlay — Liked It (green) */}
+      {/* Swipe right overlay — green */}
       <motion.div
         className="absolute inset-0 z-10 rounded-xl flex flex-col items-center justify-center gap-1 pointer-events-none bg-green-500/20"
         style={{ opacity: rightOpacity }}
@@ -127,7 +126,7 @@ function SwipeableRatingCard({ venueName, onRate, onCancel, onOpenChange }) {
         <span className="text-sm font-semibold text-green-700">Liked It</span>
       </motion.div>
 
-      {/* Swipe left overlay — Didn't Like It (red) */}
+      {/* Swipe left overlay — red */}
       <motion.div
         className="absolute inset-0 z-10 rounded-xl flex flex-col items-center justify-center gap-1 pointer-events-none bg-destructive/20"
         style={{ opacity: leftOpacity }}
@@ -136,57 +135,33 @@ function SwipeableRatingCard({ venueName, onRate, onCancel, onOpenChange }) {
         <span className="text-sm font-semibold text-destructive">Didn't Like It</span>
       </motion.div>
 
-      {/* Swipe up overlay — Favourites (green) */}
-      <motion.div
-        className="absolute inset-0 z-10 rounded-xl flex flex-col items-center justify-center gap-1 pointer-events-none bg-green-500/20"
-        style={{ opacity: upOpacity }}
-      >
-        <DoubleThumbsUpIcon className="h-10 w-10 text-green-600" filled />
-        <span className="text-sm font-semibold text-green-700">Favourites</span>
-      </motion.div>
-
       {/* Card content */}
-      <div className="relative z-0">
-        <div className="text-center pb-1 pt-2 px-4">
-          <h3 className="text-base font-semibold text-foreground truncate">{venueName}</h3>
-          <p className="text-lg font-medium text-foreground mt-1">How was it?</p>
-        </div>
+      <div className="relative z-0 py-4 px-4">
+        <h3 className="text-base font-semibold text-foreground truncate text-center">{venueName}</h3>
+        <p className="text-sm text-muted-foreground text-center mt-1 mb-4">Swipe or tap to rate</p>
 
-        <div className="flex items-center justify-center gap-4 px-6 py-4">
+        <div className="flex items-stretch">
+          {/* Left zone — Didn't Like It */}
           <button
-            onClick={() => onRate('disliked')}
-            className="flex flex-col items-center gap-2 rounded-xl border border-border bg-card px-5 py-4 hover:bg-destructive/10 active:bg-destructive/15 transition-colors min-w-[90px]"
+            onClick={onDisliked}
+            className="flex-1 flex flex-col items-center justify-center gap-2 py-5 rounded-l-xl hover:bg-destructive/10 active:bg-destructive/15 transition-colors"
           >
+            <span className="text-xs text-muted-foreground mb-1">←</span>
             <ThumbsDownIcon className="h-7 w-7 text-muted-foreground" />
             <span className="text-xs font-medium text-muted-foreground">Didn't Like It</span>
           </button>
 
+          {/* Divider */}
+          <div className="w-px bg-border my-4" />
+
+          {/* Right zone — Liked It */}
           <button
-            onClick={() => onRate('liked')}
-            className="flex flex-col items-center gap-2 rounded-xl border border-border bg-card px-5 py-4 hover:bg-green-500/10 active:bg-green-500/15 transition-colors min-w-[90px]"
+            onClick={onLiked}
+            className="flex-1 flex flex-col items-center justify-center gap-2 py-5 rounded-r-xl hover:bg-green-500/10 active:bg-green-500/15 transition-colors"
           >
+            <span className="text-xs text-muted-foreground mb-1">→</span>
             <ThumbsUpIcon className="h-7 w-7 text-muted-foreground" />
             <span className="text-xs font-medium text-muted-foreground">Liked It</span>
-          </button>
-
-          <button
-            onClick={() => onRate('loved')}
-            className="flex flex-col items-center gap-2 rounded-xl border border-border bg-card px-5 py-4 hover:bg-green-500/10 active:bg-green-500/15 transition-colors min-w-[90px]"
-          >
-            <DoubleThumbsUpIcon className="h-7 w-7 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground">Favourites</span>
-          </button>
-        </div>
-
-        <div className="pb-4 pt-0">
-          <button
-            onClick={() => {
-              onCancel?.();
-              onOpenChange(false);
-            }}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors mx-auto block py-2"
-          >
-            Cancel
           </button>
         </div>
       </div>
@@ -194,28 +169,59 @@ function SwipeableRatingCard({ venueName, onRate, onCancel, onOpenChange }) {
   );
 }
 
-/**
- * Constellations rating sheet — slides up when user swipes up on a venue card.
- * Now supports swipe gestures within the dialog itself.
- */
 export default function ConstellationsSheet({ open, onOpenChange, venue, venueName, onRate, onCancel }) {
   const displayName = venueName || venue?.name || venue?.displayName?.text || 'This place';
+  const [dialogStep, setDialogStep] = useState('rate');
+
+  // Reset step when dialog opens/closes
+  useEffect(() => {
+    if (open) setDialogStep('rate');
+  }, [open]);
+
   const handleOpenChange = (isOpen) => {
-    if (!isOpen) {
-      onCancel?.();
-    }
+    if (!isOpen) onCancel?.();
     onOpenChange(isOpen);
   };
+
+  const handleLiked = useCallback(() => {
+    onRate('liked');
+    setDialogStep('favourites');
+  }, [onRate]);
+
+  const handleDisliked = useCallback(() => {
+    onRate('disliked');
+    onOpenChange(false);
+  }, [onRate, onOpenChange]);
+
+  const handleLoved = useCallback(() => {
+    onRate('loved');
+    onOpenChange(false);
+  }, [onRate, onOpenChange]);
+
+  const handleFavDismiss = useCallback(() => {
+    onOpenChange(false);
+  }, [onOpenChange]);
 
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>
       <DrawerContent className="max-h-[50vh]">
-        <SwipeableRatingCard
-          venueName={displayName}
-          onRate={onRate}
-          onCancel={onCancel}
-          onOpenChange={onOpenChange}
-        />
+        <AnimatePresence mode="wait">
+          {dialogStep === 'rate' ? (
+            <motion.div key="rate" exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+              <SwipeableRatingCard
+                venueName={displayName}
+                onLiked={handleLiked}
+                onDisliked={handleDisliked}
+              />
+            </motion.div>
+          ) : (
+            <FavouritesFollowUp
+              key="favourites"
+              onLoved={handleLoved}
+              onDismiss={handleFavDismiss}
+            />
+          )}
+        </AnimatePresence>
       </DrawerContent>
     </Drawer>
   );
