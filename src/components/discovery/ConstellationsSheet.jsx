@@ -198,7 +198,8 @@ function SwipeableRatingCard({ venueName, onRate, onCancel, onOpenChange }) {
  * Constellations rating sheet — slides up when user swipes up on a venue card.
  * Now supports swipe gestures within the dialog itself.
  */
-export default function ConstellationsSheet({ open, onOpenChange, venueName, onRate, onCancel }) {
+export default function ConstellationsSheet({ open, onOpenChange, venue, venueName, onRate, onCancel }) {
+  const displayName = venueName || venue?.name || venue?.displayName?.text || 'This place';
   const handleOpenChange = (isOpen) => {
     if (!isOpen) {
       onCancel?.();
@@ -210,7 +211,7 @@ export default function ConstellationsSheet({ open, onOpenChange, venueName, onR
     <Drawer open={open} onOpenChange={handleOpenChange}>
       <DrawerContent className="max-h-[50vh]">
         <SwipeableRatingCard
-          venueName={venueName}
+          venueName={displayName}
           onRate={onRate}
           onCancel={onCancel}
           onOpenChange={onOpenChange}
