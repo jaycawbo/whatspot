@@ -146,7 +146,7 @@ function SwipeableRatingCard({ venueName, onLiked, onDisliked }) {
             onClick={onDisliked}
             className="flex-1 flex flex-col items-center justify-center gap-2 py-5 rounded-l-xl hover:bg-destructive/10 active:bg-destructive/15 transition-colors"
           >
-            <span className="text-xs text-muted-foreground mb-1">←</span>
+            <span className="text-xs text-muted-foreground mb-1">​</span>
             <ThumbsDownIcon className="h-7 w-7 text-muted-foreground" />
             <span className="text-xs font-medium text-muted-foreground">Didn't Like It</span>
           </button>
