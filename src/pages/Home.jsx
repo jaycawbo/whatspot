@@ -160,6 +160,11 @@ export default function Home() {
               centered={false}
             />
             <CategoryTiles onSelectCategory={handleSelectCategory} />
+            {currentQuery && !feedLoading && (
+              <p className="text-xs text-muted-foreground text-center max-w-md mx-auto pt-1 pointer-events-none">
+                Showing you the best results based on your search. With Whatspot's proprietary algorithm, you only ever see what's most relevant and truly the cream of the crop.
+              </p>
+            )}
           </div>
         )}
 

@@ -490,10 +490,10 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         )}
       </div>
 
-      {/* Post-search instructional copy (in flow) */}
-      {showSearchCopy && (
+      {/* Post-search instructional copy — mobile only (desktop/tablet copy lives in Home.jsx) */}
+      {showSearchCopy && isMobile && (
         <p className="mt-3 shrink-0 text-xs text-muted-foreground text-center max-w-[90%] mx-auto pointer-events-none">
-          Showing you the best options based on your search. Swipe through to see additional results.
+          Showing you the best results based on your search. With Whatspot's proprietary algorithm, you only ever see what's most relevant and truly the cream of the crop.
         </p>
       )}
 
