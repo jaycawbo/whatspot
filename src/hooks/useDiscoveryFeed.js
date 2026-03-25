@@ -340,6 +340,20 @@ export function useDiscoveryFeed() {
 
       const results = res?.results || [];
       const reserve = res?.reserve_venues || [];
+      const staged = res?.staged_venues || [];
+
+      // Accumulate staged venues into the full scored pool
+      if (staged.length > 0) {
+        const existingIds = new Set(fullScoredPoolRef.current.map(v =>
+          (v.place_id || v.google_place_id || '').replace(/^places\//, '')
+        ));
+        const newStaged = staged.filter(v => {
+          const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+          return !existingIds.has(id);
+        });
+        fullScoredPoolRef.current = [...fullScoredPoolRef.current, ...newStaged];
+        console.log('[Prefetch] Staged pool now has', fullScoredPoolRef.current.length, 'venues');
+      }
 
       // Filter against allServedIds to catch any the API missed
       const servedSet = allServedIdsRef.current;
