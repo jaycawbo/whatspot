@@ -64,6 +64,8 @@ export function useDiscoveryFeed() {
   const anchorPointRef = useRef(null);
   const isPrefetchingRef = useRef(false);
   const prefetchedVenuesRef = useRef([]);
+  // Full scored pool including staged venues for criteria relaxation
+  const fullScoredPoolRef = useRef([]);
   // Session-level tracking of ALL venue IDs ever sent to the client
   const allServedIdsRef = useRef(new Set());
 
@@ -149,14 +151,10 @@ export function useDiscoveryFeed() {
       if (raw) session_context = JSON.parse(raw);
     } catch {}
 
-    // For discovery mode, only exclude skipped venues (not all seen venues)
-    // This keeps the exclude list small so the backend has a full candidate pool
-    const excludeIds = effectiveMode === 'discovery' ? (() => {
-      try {
-        const raw = sessionStorage.getItem('whatspot_skipped_venues');
-        return raw ? JSON.parse(raw) : [];
-      } catch { return []; }
-    })() : [];
+    // For discovery mode, exclude ALL served IDs (not just skipped)
+    const excludeIds = effectiveMode === 'discovery'
+      ? Array.from(allServedIdsRef.current)
+      : [];
 
     try {
       const res = await recommend({
@@ -174,6 +172,7 @@ export function useDiscoveryFeed() {
       const results = res?.results || [];
       const overflow = res?.nearby_overflow || [];
       const reserve = res?.reserve_venues || [];
+      const staged = res?.staged_venues || [];
 
       // Filter out skipped venues
       let skippedIds = [];
@@ -197,6 +196,19 @@ export function useDiscoveryFeed() {
         const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
         if (id) allServedIdsRef.current.add(id);
       });
+
+      // Accumulate staged venues into the full scored pool
+      if (staged.length > 0) {
+        const existingIds = new Set(fullScoredPoolRef.current.map(v =>
+          (v.place_id || v.google_place_id || '').replace(/^places\//, '')
+        ));
+        const newStaged = staged.filter(v => {
+          const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+          return !existingIds.has(id);
+        });
+        fullScoredPoolRef.current = [...fullScoredPoolRef.current, ...newStaged];
+        console.log('[Feed] Staged pool now has', fullScoredPoolRef.current.length, 'venues');
+      }
 
       setVenues(filtered);
       setOverflowVenues(overflow);
