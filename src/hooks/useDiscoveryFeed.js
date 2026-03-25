@@ -286,6 +286,29 @@ export function useDiscoveryFeed() {
         criteriaPassRef.current = MAX_CRITERIA_PASS;
       }
 
+      // On criteria relaxation, check staged pool for newly eligible venues
+      const servedSet = allServedIdsRef.current;
+      const stagedEligible = fullScoredPoolRef.current.filter(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        return !servedSet.has(id);
+      });
+
+      if (stagedEligible.length >= 10) {
+        // Enough staged venues — release them without an API call
+        stagedEligible.forEach(v => {
+          const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+          if (id) allServedIdsRef.current.add(id);
+        });
+        prefetchedVenuesRef.current = [...prefetchedVenuesRef.current, ...stagedEligible];
+        fullScoredPoolRef.current = fullScoredPoolRef.current.filter(v => {
+          const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+          return !servedSet.has(id);
+        });
+        console.log('[Prefetch] Released', stagedEligible.length, 'staged venues on criteria relaxation');
+        isPrefetchingRef.current = false;
+        return { fetched: stagedEligible.length, reserve: 0 };
+      }
+
       try {
         sessionStorage.removeItem('whatspot_seen_venues');
       } catch {}
@@ -298,6 +321,10 @@ export function useDiscoveryFeed() {
     // Exclude ALL venue IDs ever served to the client (not just skipped)
     const excludeIds = Array.from(allServedIdsRef.current);
 
+    // Calculate ring-specific tile radius for annular targeting
+    const prevRadius = radiusRingIndexRef.current > 0 ? RADIUS_RINGS[radiusRingIndexRef.current - 1] : 0;
+    const tileRadiusKm = prevRadius > 0 ? (currentRadius + prevRadius) / 2 : undefined;
+
     try {
       const res = await recommend({
         mode: 'discovery',
@@ -308,6 +335,7 @@ export function useDiscoveryFeed() {
         open_now: state.filters?.openNow || undefined,
         exclude_ids: excludeIds.length ? excludeIds : undefined,
         criteria_pass: currentPass,
+        ...(tileRadiusKm ? { tile_radius_km: tileRadiusKm } : {}),
       });
 
       const results = res?.results || [];
