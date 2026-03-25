@@ -318,6 +318,7 @@ Deno.serve(async (req) => {
       category,
       query,
       radius_km,
+      tile_radius_km,
       lat: originalLat,
       lon: originalLon,
       location_name: originalLocationName,
@@ -606,30 +607,56 @@ Deno.serve(async (req) => {
       console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationBias 3km)`);
     } else {
       if (isDiscoveryMode) {
-        // Discovery mode — two parallel searches for venue type diversity
-        const [foodResults, drinkResults] = await Promise.all([
-          googlePlacesBroadSearch(
-            GOOGLE_KEY,
-            `restaurant OR cafe OR bistro in ${googleLocationContext}`,
-            lat, lon, admission.maxRadius, open_now, googlePriceLevels
-          ),
-          googlePlacesBroadSearch(
-            GOOGLE_KEY,
-            `bar OR pub OR lounge OR nightclub OR brewery in ${googleLocationContext}`,
-            lat, lon, admission.maxRadius, open_now, googlePriceLevels
-          ),
-        ]);
+        // Discovery mode — tiled multi-query system for geographic diversity
+        const DISCOVERY_QUERIES = [
+          "restaurant OR cafe OR bistro OR diner OR brasserie",
+          "bar OR pub OR lounge OR nightclub OR brewery OR dive bar",
+          "snack bar OR sandwich shop OR burger joint OR food market OR hotel restaurant",
+        ];
+
+        // Generate tile centers: center + 4 cardinal offsets
+        const tileSearchRadius = tile_radius_km || admission.maxRadius;
+        const latOffset = (tileSearchRadius * 0.5) / 111;
+        const lonOffset = (tileSearchRadius * 0.5) / (111 * Math.cos(lat * Math.PI / 180));
+        const tileRadius = tileSearchRadius * 0.75;
+        const tiles = [
+          { tlat: lat, tlon: lon, tradius: tileSearchRadius },               // center
+          { tlat: lat + latOffset, tlon: lon, tradius: tileRadius },          // north
+          { tlat: lat - latOffset, tlon: lon, tradius: tileRadius },          // south
+          { tlat: lat, tlon: lon + lonOffset, tradius: tileRadius },          // east
+          { tlat: lat, tlon: lon - lonOffset, tradius: tileRadius },          // west
+        ];
+
+        // Build all tile × query combinations
+        const tileCalls: Promise<any[]>[] = [];
+        for (const tile of tiles) {
+          for (const q of DISCOVERY_QUERIES) {
+            tileCalls.push(
+              safe(`tile-search`, () => googlePlacesBroadSearch(
+                GOOGLE_KEY,
+                `${q} in ${googleLocationContext}`,
+                tile.tlat, tile.tlon, tile.tradius, open_now, googlePriceLevels
+              ), [])
+            );
+          }
+        }
+
+        const allTileResults = await Promise.all(tileCalls);
+        const totalRaw = allTileResults.reduce((s, r) => s + r.length, 0);
+
         // Merge and deduplicate by place_id
         const seenPlaceIds = new Set<string>();
         googleResults = [];
-        for (const r of [...foodResults, ...drinkResults]) {
-          const pid = (r.place_id || '').replace(/^places\//, '');
-          if (!seenPlaceIds.has(pid)) {
-            seenPlaceIds.add(pid);
-            googleResults.push(r);
+        for (const batch of allTileResults) {
+          for (const r of batch) {
+            const pid = (r.place_id || '').replace(/^places\//, '');
+            if (!seenPlaceIds.has(pid)) {
+              seenPlaceIds.add(pid);
+              googleResults.push(r);
+            }
           }
         }
-        console.log(`📊 Discovery: ${foodResults.length} food + ${drinkResults.length} drink = ${googleResults.length} unique venues`);
+        console.log(`📊 Discovery tiled: ${tiles.length} tiles × ${DISCOVERY_QUERIES.length} queries = ${tileCalls.length} calls, ${totalRaw} raw → ${googleResults.length} unique venues`);
       } else {
         googleResults = await googlePlacesBroadSearch(
           GOOGLE_KEY,
@@ -1017,6 +1044,24 @@ Deno.serve(async (req) => {
     const reserveVenues = candidates
       .filter((v: any) => !finalVenueIds.has(v.place_id))
       .slice(0, 10);
+
+    // ─── Build staged venues (below current criteria but scored) for discovery ───
+    let stagedVenues: any[] = [];
+    if (isDiscoveryMode) {
+      const allSelectedIds = new Set([...finalVenueIds, ...reserveVenues.map((v: any) => v.place_id)]);
+      // Venues that passed Google but failed criteria thresholds — score them anyway
+      const belowCriteria = dedup(streetFilteredVenues)
+        .filter((v: any) => !allSelectedIds.has(v.place_id))
+        .map((v: any) => {
+          const score = calculateVenueScore(v.rating, v.review_count, v.isRelaxedAdmission);
+          return { ...v, score, staged_for_relaxation: true };
+        })
+        .filter((v: any) => v.score > 0)
+        .sort((a: any, b: any) => b.score - a.score)
+        .slice(0, 30);
+      stagedVenues = belowCriteria;
+      console.log(`📦 Staged venues (for future relaxation): ${stagedVenues.length}`);
+    }
     console.log(`📦 Reserve venues: ${reserveVenues.length}`);
 
     // ─── Photo enrichment for reserve venues (lightweight, 3 photos each) ───
@@ -1056,6 +1101,7 @@ Deno.serve(async (req) => {
         gated: false,
         nearby_overflow: overflowVenues || [],
         reserve_venues: reserveVenues,
+        staged_venues: stagedVenues || [],
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
