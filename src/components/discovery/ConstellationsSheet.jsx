@@ -159,7 +159,7 @@ function SwipeableRatingCard({ venueName, onLiked, onDisliked }) {
             onClick={onLiked}
             className="flex-1 flex flex-col items-center justify-center gap-2 py-5 rounded-r-xl hover:bg-green-500/10 active:bg-green-500/15 transition-colors"
           >
-            <span className="text-xs text-muted-foreground mb-1">→</span>
+            <span className="text-xs text-muted-foreground mb-1">​</span>
             <ThumbsUpIcon className="h-7 w-7 text-muted-foreground" />
             <span className="text-xs font-medium text-muted-foreground">Liked It</span>
           </button>
