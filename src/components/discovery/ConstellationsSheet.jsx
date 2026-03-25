@@ -211,7 +211,7 @@ export default function ConstellationsSheet({ open, onOpenChange, venue, venueNa
     <Drawer open={open} onOpenChange={handleOpenChange}>
       <DrawerContent className="max-h-[50vh]">
         <SwipeableRatingCard
-          venueName={venueName}
+          venueName={displayName}
           onRate={onRate}
           onCancel={onCancel}
           onOpenChange={onOpenChange}
