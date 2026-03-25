@@ -64,6 +64,8 @@ export function useDiscoveryFeed() {
   const anchorPointRef = useRef(null);
   const isPrefetchingRef = useRef(false);
   const prefetchedVenuesRef = useRef([]);
+  // Full scored pool including staged venues for criteria relaxation
+  const fullScoredPoolRef = useRef([]);
   // Session-level tracking of ALL venue IDs ever sent to the client
   const allServedIdsRef = useRef(new Set());
 
@@ -149,14 +151,10 @@ export function useDiscoveryFeed() {
       if (raw) session_context = JSON.parse(raw);
     } catch {}
 
-    // For discovery mode, only exclude skipped venues (not all seen venues)
-    // This keeps the exclude list small so the backend has a full candidate pool
-    const excludeIds = effectiveMode === 'discovery' ? (() => {
-      try {
-        const raw = sessionStorage.getItem('whatspot_skipped_venues');
-        return raw ? JSON.parse(raw) : [];
-      } catch { return []; }
-    })() : [];
+    // For discovery mode, exclude ALL served IDs (not just skipped)
+    const excludeIds = effectiveMode === 'discovery'
+      ? Array.from(allServedIdsRef.current)
+      : [];
 
     try {
       const res = await recommend({
@@ -174,6 +172,7 @@ export function useDiscoveryFeed() {
       const results = res?.results || [];
       const overflow = res?.nearby_overflow || [];
       const reserve = res?.reserve_venues || [];
+      const staged = res?.staged_venues || [];
 
       // Filter out skipped venues
       let skippedIds = [];
@@ -197,6 +196,19 @@ export function useDiscoveryFeed() {
         const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
         if (id) allServedIdsRef.current.add(id);
       });
+
+      // Accumulate staged venues into the full scored pool
+      if (staged.length > 0) {
+        const existingIds = new Set(fullScoredPoolRef.current.map(v =>
+          (v.place_id || v.google_place_id || '').replace(/^places\//, '')
+        ));
+        const newStaged = staged.filter(v => {
+          const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+          return !existingIds.has(id);
+        });
+        fullScoredPoolRef.current = [...fullScoredPoolRef.current, ...newStaged];
+        console.log('[Feed] Staged pool now has', fullScoredPoolRef.current.length, 'venues');
+      }
 
       setVenues(filtered);
       setOverflowVenues(overflow);
@@ -274,6 +286,29 @@ export function useDiscoveryFeed() {
         criteriaPassRef.current = MAX_CRITERIA_PASS;
       }
 
+      // On criteria relaxation, check staged pool for newly eligible venues
+      const servedSet = allServedIdsRef.current;
+      const stagedEligible = fullScoredPoolRef.current.filter(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        return !servedSet.has(id);
+      });
+
+      if (stagedEligible.length >= 10) {
+        // Enough staged venues — release them without an API call
+        stagedEligible.forEach(v => {
+          const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+          if (id) allServedIdsRef.current.add(id);
+        });
+        prefetchedVenuesRef.current = [...prefetchedVenuesRef.current, ...stagedEligible];
+        fullScoredPoolRef.current = fullScoredPoolRef.current.filter(v => {
+          const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+          return !servedSet.has(id);
+        });
+        console.log('[Prefetch] Released', stagedEligible.length, 'staged venues on criteria relaxation');
+        isPrefetchingRef.current = false;
+        return { fetched: stagedEligible.length, reserve: 0 };
+      }
+
       try {
         sessionStorage.removeItem('whatspot_seen_venues');
       } catch {}
@@ -286,6 +321,10 @@ export function useDiscoveryFeed() {
     // Exclude ALL venue IDs ever served to the client (not just skipped)
     const excludeIds = Array.from(allServedIdsRef.current);
 
+    // Calculate ring-specific tile radius for annular targeting
+    const prevRadius = radiusRingIndexRef.current > 0 ? RADIUS_RINGS[radiusRingIndexRef.current - 1] : 0;
+    const tileRadiusKm = prevRadius > 0 ? (currentRadius + prevRadius) / 2 : undefined;
+
     try {
       const res = await recommend({
         mode: 'discovery',
@@ -296,10 +335,25 @@ export function useDiscoveryFeed() {
         open_now: state.filters?.openNow || undefined,
         exclude_ids: excludeIds.length ? excludeIds : undefined,
         criteria_pass: currentPass,
+        ...(tileRadiusKm ? { tile_radius_km: tileRadiusKm } : {}),
       });
 
       const results = res?.results || [];
       const reserve = res?.reserve_venues || [];
+      const staged = res?.staged_venues || [];
+
+      // Accumulate staged venues into the full scored pool
+      if (staged.length > 0) {
+        const existingIds = new Set(fullScoredPoolRef.current.map(v =>
+          (v.place_id || v.google_place_id || '').replace(/^places\//, '')
+        ));
+        const newStaged = staged.filter(v => {
+          const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+          return !existingIds.has(id);
+        });
+        fullScoredPoolRef.current = [...fullScoredPoolRef.current, ...newStaged];
+        console.log('[Prefetch] Staged pool now has', fullScoredPoolRef.current.length, 'venues');
+      }
 
       // Filter against allServedIds to catch any the API missed
       const servedSet = allServedIdsRef.current;
