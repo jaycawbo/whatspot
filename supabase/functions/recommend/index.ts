@@ -1,7 +1,53 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
+
+// ─── Suppression windows (in days) by interaction type ───
+const SUPPRESSION_DAYS: Record<string, number | null> = {
+  passive_skip: 21,
+  skip_for_now: 30,
+  interested: 60,
+  not_interested: 90,
+  been_here: null, // indefinite
+};
+
+/**
+ * Query skip_history and return venue IDs that should be suppressed.
+ */
+async function getSuppressedVenueIds(userId: string): Promise<Set<string>> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const sb = createClient(supabaseUrl, supabaseKey);
+
+  const { data, error } = await sb
+    .from('skip_history')
+    .select('venue_id, interaction_type, created_at')
+    .eq('user_id', userId);
+
+  if (error || !data) return new Set();
+
+  const now = Date.now();
+  const suppressed = new Set<string>();
+
+  for (const row of data) {
+    const days = SUPPRESSION_DAYS[row.interaction_type];
+    if (days === null) {
+      // Indefinite suppression (been_here)
+      suppressed.add(row.venue_id);
+    } else if (days !== undefined) {
+      const createdAt = new Date(row.created_at).getTime();
+      const windowMs = days * 24 * 60 * 60 * 1000;
+      if (now - createdAt < windowMs) {
+        suppressed.add(row.venue_id);
+      }
+    }
+  }
+
+  return suppressed;
+}
 
 // ─── Fixed scoring constants — never modified by relaxation level ───
 const SCORING = {
@@ -342,6 +388,22 @@ Deno.serve(async (req) => {
     let lat = originalLat;
     let lon = originalLon;
     let location_name = originalLocationName;
+
+    // ─── Extract authenticated user ID for skip_history suppression ───
+    let authUserId: string | null = null;
+    try {
+      const authHeader = req.headers.get('authorization');
+      if (authHeader) {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user } } = await sb.auth.getUser(token);
+        authUserId = user?.id || null;
+      }
+    } catch {
+      // Not authenticated — skip suppression
+    }
 
     const GOOGLE_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY');
     if (!GOOGLE_KEY) throw new Error('GOOGLE_PLACES_API_KEY not configured');
@@ -743,6 +805,19 @@ Deno.serve(async (req) => {
       .filter((v: any) => !isDiscoveryMode || !v.lat || v.lat <= 43.7730);
 
     console.log(`✅ ${filteredVenues.length} passed filters`);
+
+    // ─── STEP 3a: Skip history suppression (authenticated users only) ───
+    if (authUserId) {
+      const suppressedIds = await getSuppressedVenueIds(authUserId);
+      if (suppressedIds.size > 0) {
+        const beforeSuppression = filteredVenues.length;
+        filteredVenues = filteredVenues.filter((v: any) => {
+          const placeId = (v.place_id || '').replace(/^places\//, '');
+          return !suppressedIds.has(placeId);
+        });
+        console.log(`🚫 Skip history suppressed ${beforeSuppression - filteredVenues.length} venues (${suppressedIds.size} in history)`);
+      }
+    }
 
     // ─── STEP 3b: Street-level address validation (STRICT) ───
     let streetFilterApplied = false;
