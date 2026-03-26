@@ -806,6 +806,19 @@ Deno.serve(async (req) => {
 
     console.log(`✅ ${filteredVenues.length} passed filters`);
 
+    // ─── STEP 3a: Skip history suppression (authenticated users only) ───
+    if (authUserId) {
+      const suppressedIds = await getSuppressedVenueIds(authUserId);
+      if (suppressedIds.size > 0) {
+        const beforeSuppression = filteredVenues.length;
+        filteredVenues = filteredVenues.filter((v: any) => {
+          const placeId = (v.place_id || '').replace(/^places\//, '');
+          return !suppressedIds.has(placeId);
+        });
+        console.log(`🚫 Skip history suppressed ${beforeSuppression - filteredVenues.length} venues (${suppressedIds.size} in history)`);
+      }
+    }
+
     // ─── STEP 3b: Street-level address validation (STRICT) ───
     let streetFilterApplied = false;
     let streetFilteredVenues = filteredVenues;
