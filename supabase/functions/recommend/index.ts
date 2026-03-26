@@ -756,7 +756,7 @@ Deno.serve(async (req) => {
 
     // ─── STEP 3: Filter + admission tagging ───
     console.log('🔍 STEP 3: Filtering...');
-    const filteredVenues = googleResults
+    let filteredVenues = googleResults
       .map((place: any) => {
         const distance_km = calculateDistance(lat, lon, place.lat, place.lon);
         if (distance_km > admission.maxRadius) return null;
