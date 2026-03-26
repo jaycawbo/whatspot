@@ -517,10 +517,10 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
             onClick={() => performAction('down', currentVenue)}
             onMouseEnter={() => setHoveredButton('down')}
             onMouseLeave={() => setHoveredButton(null)}
-            aria-label="Skip"
+            aria-label="Skip for now"
           >
             <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Skip</span>
+            <span className="text-sm text-muted-foreground">Skip for now</span>
           </button>
         </div>
       )}
