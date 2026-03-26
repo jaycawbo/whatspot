@@ -59,6 +59,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     handleNotInterested,
     handleSkip,
     handleRated,
+    writePassiveSkip,
     logRatingSheetOpened,
     logRatingSheetCancelled,
     isAuthenticated,
@@ -66,6 +67,17 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     executePending,
     clearPending,
   } = useDiscoveryInteractions();
+
+  // Write passive_skip when a new card becomes active
+  const lastPassiveSkipRef = useRef(null);
+  useEffect(() => {
+    if (!currentVenue) return;
+    const placeId = (currentVenue.place_id || currentVenue.google_place_id || '').replace(/^places\//, '');
+    if (placeId && placeId !== lastPassiveSkipRef.current) {
+      lastPassiveSkipRef.current = placeId;
+      writePassiveSkip(currentVenue);
+    }
+  }, [currentVenue, writePassiveSkip]);
 
   const x = useMotionValue(0);
   const y = useMotionValue(0);
