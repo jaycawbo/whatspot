@@ -1,7 +1,53 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
+
+// ─── Suppression windows (in days) by interaction type ───
+const SUPPRESSION_DAYS: Record<string, number | null> = {
+  passive_skip: 21,
+  skip_for_now: 30,
+  interested: 60,
+  not_interested: 90,
+  been_here: null, // indefinite
+};
+
+/**
+ * Query skip_history and return venue IDs that should be suppressed.
+ */
+async function getSuppressedVenueIds(userId: string): Promise<Set<string>> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const sb = createClient(supabaseUrl, supabaseKey);
+
+  const { data, error } = await sb
+    .from('skip_history')
+    .select('venue_id, interaction_type, created_at')
+    .eq('user_id', userId);
+
+  if (error || !data) return new Set();
+
+  const now = Date.now();
+  const suppressed = new Set<string>();
+
+  for (const row of data) {
+    const days = SUPPRESSION_DAYS[row.interaction_type];
+    if (days === null) {
+      // Indefinite suppression (been_here)
+      suppressed.add(row.venue_id);
+    } else if (days !== undefined) {
+      const createdAt = new Date(row.created_at).getTime();
+      const windowMs = days * 24 * 60 * 60 * 1000;
+      if (now - createdAt < windowMs) {
+        suppressed.add(row.venue_id);
+      }
+    }
+  }
+
+  return suppressed;
+}
 
 // ─── Fixed scoring constants — never modified by relaxation level ───
 const SCORING = {
