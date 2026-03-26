@@ -1,73 +1,52 @@
 
 
-## Been To Dialog: Two-Step Rating Redesign
+## Fix: Favourites Follow-Up Dialog Not Showing
 
-### File to modify
-`src/components/discovery/ConstellationsSheet.jsx` — single file, no protected files touched.
+### Root Cause
 
-### Design
+In `DiscoveryDeck.jsx` line 216, `handleRate` immediately calls `setRatingSheetOpen(false)` for ALL ratings, including `'liked'`. This closes the drawer before `ConstellationsSheet` can transition to the Favourites follow-up step.
 
-**Step 1 — Binary Rating Dialog (replaces current 3-button layout)**
+The ConstellationsSheet component already has the two-step logic correctly implemented — `handleLiked` calls `onRate('liked')` then `setDialogStep('favourites')`. But the parent kills the drawer before step 2 renders.
 
-Horizontal two-zone layout inside the existing Drawer:
+### Fix (single file: `DiscoveryDeck.jsx`)
 
-```text
-┌─────────────────────────────────────┐
-│       "Swipe or tap to rate"        │
-│                                     │
-│   ← 👎 Didn't Like  │  Liked It 👍 →│
-│                                     │
-└─────────────────────────────────────┘
+Modify `handleRate` to only close the sheet for `'disliked'` and `'loved'` ratings. For `'liked'`, leave the sheet open so ConstellationsSheet can show the Favourites follow-up:
+
+```javascript
+const handleRate = useCallback(async (rating) => {
+  // Only close immediately for disliked and loved (final states)
+  // For 'liked', ConstellationsSheet will show the Favourites follow-up
+  if (rating !== 'liked') {
+    setRatingSheetOpen(false);
+  }
+  if (!ratingPendingVenue) return;
+
+  const success = await handleRated(ratingPendingVenue, rating);
+  if (success === false) {
+    setAuthModalOpen(true);
+    return;
+  }
+
+  // Only advance card for final states
+  if (rating !== 'liked') {
+    await new Promise((r) => setTimeout(r, 400));
+    advanceCard();
+  }
+}, [ratingPendingVenue, handleRated, advanceCard]);
 ```
 
-- Left zone: ThumbsDownIcon + "Didn't Like It" + left arrow
-- Right zone: ThumbsUpIcon + "Liked It" + right arrow
-- Subtle vertical divider between zones
-- Remove the third "Favourites" button and swipe-up gesture entirely
-- Remove cancel button (tapping outside drawer dismisses)
+When the Favourites timer expires or heart is tapped, ConstellationsSheet calls `onOpenChange(false)`, which triggers `handleRatingCancel` in the parent — this already handles cleanup. We also need to make sure `handleRatingCancel` advances the card:
 
-Swipe gestures (horizontal only, 80px threshold):
-- Swipe right → `onRate('liked')` then show Favourites follow-up
-- Swipe left → `onRate('disliked')` and dismiss
-- Tap either zone triggers same action as corresponding swipe
-
-Overlays: green for right, muted red/destructive for left (same pattern as current).
-
-**Step 2 — Favourites Follow-Up Dialog**
-
-After a "liked" action, instead of immediately closing, transition to a second view within the same Drawer:
-
-```text
-┌─────────────────────────────────────┐
-│       "Add to Favourites?"          │
-│                                     │
-│            ♡ (heart)                │
-│                                     │
-│      ━━━━━━━━━━━━ (4s bar)         │
-└─────────────────────────────────────┘
+```javascript
+// In handleRatingCancel, add card advancement
+const handleRatingCancel = useCallback(() => {
+  setRatingSheetOpen(false);
+  if (ratingPendingVenue) {
+    advanceCard();
+  }
+  setRatingPendingVenue(null);
+}, [ratingPendingVenue, advanceCard]);
 ```
 
-- Outlined heart icon, fills with primary green on tap
-- Thin progress bar depleting over 4 seconds using `useEffect` + interval
-- Tap heart → call `onRate('loved')`, dismiss
-- Timer expires or tap outside → dismiss (venue stays as "liked")
-- Uses `AnimatePresence` to crossfade between step 1 and step 2
-
-### Implementation details
-
-- Add `dialogStep` state: `'rate'` | `'favourites'`
-- On swipe-right/tap-liked: call `onRate('liked')`, set `dialogStep = 'favourites'`
-- On swipe-left/tap-disliked: call `onRate('disliked')`, close drawer
-- FavouritesFollowUp component: 4-second countdown via `setInterval`, auto-closes on expiry
-- Heart tap: call `onRate('loved')`, close drawer
-- Keep ThumbsDownIcon and ThumbsUpIcon SVGs, remove DoubleThumbsUpIcon
-- Add a simple heart SVG icon for the favourites step
-- Remove `y` motion value and up-swipe logic entirely — only horizontal drag remains
-
-### Rating flow mapping (unchanged in useDiscoveryInteractions.js)
-- `'disliked'` → "Didn't Like It" list
-- `'liked'` → "Liked It" list
-- `'loved'` → "Favourites" list
-
-The hook is a protected file and already handles all three ratings correctly — no changes needed there.
+### No other files changed. ConstellationsSheet already has the correct two-step flow.
 
