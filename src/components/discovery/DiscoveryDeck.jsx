@@ -213,7 +213,11 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
   // Handle rating from sheet
   const handleRate = useCallback(async (rating) => {
-    setRatingSheetOpen(false);
+    // Only close immediately for disliked and loved (final states)
+    // For 'liked', ConstellationsSheet will show the Favourites follow-up
+    if (rating !== 'liked') {
+      setRatingSheetOpen(false);
+    }
     if (!ratingPendingVenue) return;
 
     const success = await handleRated(ratingPendingVenue, rating);
@@ -223,10 +227,13 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       return;
     }
 
-    setExitDirection('rated');
-    setRatingPendingVenue(null);
-    await new Promise((r) => setTimeout(r, 400));
-    advanceCard();
+    // Only advance card for final states
+    if (rating !== 'liked') {
+      setExitDirection('rated');
+      setRatingPendingVenue(null);
+      await new Promise((r) => setTimeout(r, 400));
+      advanceCard();
+    }
   }, [ratingPendingVenue, handleRated, advanceCard]);
 
   // Handle rating cancel
@@ -235,8 +242,11 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       logRatingSheetCancelled(ratingPendingVenue);
     }
     setRatingSheetOpen(false);
+    if (ratingPendingVenue) {
+      advanceCard();
+    }
     setRatingPendingVenue(null);
-  }, [ratingPendingVenue, logRatingSheetCancelled]);
+  }, [ratingPendingVenue, logRatingSheetCancelled, advanceCard]);
 
   // Drag handlers — track isDragging to disable transition during drag (Fix 2)
   const handleDragStart = useCallback(() => {
