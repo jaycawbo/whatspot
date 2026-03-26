@@ -389,6 +389,22 @@ Deno.serve(async (req) => {
     let lon = originalLon;
     let location_name = originalLocationName;
 
+    // ─── Extract authenticated user ID for skip_history suppression ───
+    let authUserId: string | null = null;
+    try {
+      const authHeader = req.headers.get('authorization');
+      if (authHeader) {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user } } = await sb.auth.getUser(token);
+        authUserId = user?.id || null;
+      }
+    } catch {
+      // Not authenticated — skip suppression
+    }
+
     const GOOGLE_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY');
     if (!GOOGLE_KEY) throw new Error('GOOGLE_PLACES_API_KEY not configured');
     if (!OPENAI_KEY) throw new Error('CHATGPT_API_KEY not configured');
