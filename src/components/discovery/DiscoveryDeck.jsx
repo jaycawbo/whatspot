@@ -436,7 +436,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
               className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
               style={{ opacity: downOverlayOpacity, background: 'hsla(0, 0%, 50%, 0.2)' }}
             >
-              <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Skip</span>
+              <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Skip for now</span>
             </motion.div>
 
             <motion.div
