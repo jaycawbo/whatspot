@@ -213,33 +213,46 @@ async function fetchWithConcurrency<T, R>(items: T[], fn: (item: T) => Promise<R
 
 // ─── LLM helper ───
 
-const OPENAI_KEY = Deno.env.get('CHATGPT_API_KEY') ?? '';
-const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
-const LLM_MODEL = 'gpt-4o-mini';
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? '';
 
-async function callLLM(apiKey: string, systemPrompt: string, userPrompt: string, tools?: any[], toolChoice?: any, options?: { max_tokens?: number; temperature?: number }): Promise<any> {
+async function callLLM(model: string, systemPrompt: string, userPrompt: string, tools?: any[], toolChoice?: any, options?: { max_tokens?: number; temperature?: number }): Promise<any> {
   const body: any = {
-    model: LLM_MODEL,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
-    ],
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
   };
-  if (tools) {
-    body.tools = tools;
-    body.tool_choice = toolChoice;
-  }
-  if (options?.max_tokens !== undefined) body.max_tokens = options.max_tokens;
-  if (options?.temperature !== undefined) body.temperature = options.temperature;
 
-  const resp = await fetch(OPENAI_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
+  if (tools && tools.length > 0) {
+    // Convert OpenAI-style tool format to Gemini format
+    const functionDeclarations = tools.map((t: any) => ({
+      name: t.function.name,
+      description: t.function.description,
+      parameters: t.function.parameters,
+    }));
+    body.tools = [{ function_declarations: functionDeclarations }];
+    if (toolChoice?.function?.name) {
+      body.tool_config = {
+        function_calling_config: {
+          mode: 'ANY',
+          allowed_function_names: [toolChoice.function.name],
+        },
+      };
+    }
+  }
+
+  if (options?.temperature !== undefined || options?.max_tokens !== undefined) {
+    body.generationConfig = {};
+    if (options.temperature !== undefined) body.generationConfig.temperature = options.temperature;
+    if (options.max_tokens !== undefined) body.generationConfig.maxOutputTokens = options.max_tokens;
+  }
+
+  const resp = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+  );
 
   if (!resp.ok) {
     const txt = await resp.text();
@@ -247,14 +260,14 @@ async function callLLM(apiKey: string, systemPrompt: string, userPrompt: string,
   }
 
   const data = await resp.json();
-  const choice = data.choices?.[0];
+  const part = data.candidates?.[0]?.content?.parts?.[0];
 
-  // If tool call, parse the arguments
-  if (choice?.message?.tool_calls?.[0]) {
-    return JSON.parse(choice.message.tool_calls[0].function.arguments);
+  // If function call, return args directly (already a parsed object in Gemini)
+  if (part?.functionCall) {
+    return part.functionCall.args;
   }
-  // Otherwise return content as string
-  return choice?.message?.content || '';
+  // Otherwise return text content
+  return part?.text || '';
 }
 
 // ─── Google Places helpers (inlined) ───
@@ -407,7 +420,7 @@ Deno.serve(async (req) => {
 
     const GOOGLE_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY');
     if (!GOOGLE_KEY) throw new Error('GOOGLE_PLACES_API_KEY not configured');
-    if (!OPENAI_KEY) throw new Error('CHATGPT_API_KEY not configured');
+    if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
 
     const isDiscoveryMode = mode === 'discovery' || (!query && mode !== 'browse_category');
     const searchTerm = isDiscoveryMode ? 'restaurant OR bar OR cafe' : (mode === 'browse_category' && category ? category : query);
@@ -457,7 +470,7 @@ Deno.serve(async (req) => {
 
     const [refinementResult, locationDetectionResult] = await Promise.all([
       safe('step1-refinement', () => callLLM(
-        OPENAI_KEY,
+        'gemini-2.0-flash',
         'You extract cuisine keywords from search queries for Google Places API. IMPORTANT: Do NOT include any location names, street names, city names, or neighbourhood names in your output. Only return food/cuisine/dining keywords.',
         `The user is searching for "${searchTerm}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "Toronto", etc.).\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise cuisine/food keywords suitable for a Google Places search.${sessionContextString}`,
         [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'], additionalProperties: false } } }],
@@ -465,7 +478,7 @@ Deno.serve(async (req) => {
         { max_tokens: 100, temperature: 0 },
       ), null),
       safe('step1b-location', () => callLLM(
-        OPENAI_KEY,
+        'gemini-2.0-flash',
         'You detect neighbourhood, district, or city names in search queries.',
         `Given the search query "${searchTerm}" and current location "${location_name}", identify if the query mentions a specific neighbourhood, district, or city name that is different from or more specific than the current location. Return the detected location string or "NONE" if no specific location is mentioned.`,
         [{ type: 'function', function: { name: 'detect_location', description: 'Return detected location or NONE', parameters: { type: 'object', properties: { detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' } }, required: ['detected_location'], additionalProperties: false } } }],
@@ -561,7 +574,7 @@ Deno.serve(async (req) => {
         const previousResultNames = (lastSearch?.results || []).map((r: any) => r.name);
 
         refinementIntent = await callLLM(
-          OPENAI_KEY,
+          'gemini-2.0-flash',
           'You detect whether a search query is asking to modify/replace specific results from a previous search, or is a fresh new search.',
           `Given the query "${searchTerm}" and the session history, determine if this query is asking to modify previous results rather than start a fresh search. Specifically detect phrases like "replace", "swap", "different option", "something else", "instead of", "change #[number]", or "not that one".\n\nPrevious search query: "${lastSearch?.query || ''}"\nPrevious results: ${previousResultNames.map((n: string, i: number) => `#${i + 1} ${n}`).join(', ')}\n\nReturn a JSON object.${sessionContextString}`,
           [{
@@ -929,7 +942,7 @@ Deno.serve(async (req) => {
     if (isDiscoveryMode) {
       // Discovery mode — skip confidence scoring, only generate descriptors and chips
       const discoveryResult = await safe('discovery-llm', () => callLLM(
-        OPENAI_KEY,
+        'gemini-2.5-pro',
         `You are a knowledgeable local friend who knows the city's food and drink scene intimately.`,
         `Here are nearby venues to describe:\n${candidateList}\n\nReturn a JSON object with:\n- "descriptors": array of ${candidates.length} arrays, one per venue in order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "chips": array of 3-4 short follow-up search suggestions for discovering more venues nearby.`,
         [
@@ -962,7 +975,7 @@ Deno.serve(async (req) => {
     } else {
       // Normal search mode — full confidence scoring, descriptors, summary and chips
       const comprehensiveResult = await safe('comprehensive-llm', () => callLLM(
-        OPENAI_KEY,
+        'gemini-2.5-pro',
         `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues honestly and only include genuinely suitable matches.`,
         `The user searched for "${searchTerm}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.5. Order by confidence descending. Maximum 5 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
         [

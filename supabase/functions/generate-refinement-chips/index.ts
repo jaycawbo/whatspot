@@ -21,28 +21,24 @@ serve(async (req) => {
       });
     }
 
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
+    const apiKey = Deno.env.get("GEMINI_API_KEY");
     if (!apiKey) {
-      console.error("LOVABLE_API_KEY not configured");
+      console.error("GEMINI_API_KEY not configured");
       return new Response(JSON.stringify({ chips: [] }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-5-mini",
-        max_tokens: 150,
-        temperature: 0.7,
-        messages: [
-          {
-            role: "system",
-            content: `You generate short search refinement chips for a venue discovery app. 
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: {
+            parts: [
+              {
+                text: `You generate short search refinement chips for a venue discovery app.
 Given a search query, return exactly 6 short noun phrases that a user might want to add to refine their search.
 Rules:
 - Each phrase must be 1-4 words
@@ -51,27 +47,32 @@ Rules:
 - No duplicates
 - Return ONLY a JSON array of 6 strings, nothing else. No markdown, no explanation.
 Example output: ["outdoor seating", "craft cocktails", "cozy vibes", "late night hours", "pet-friendly patio", "happy hour deals"]`,
+              },
+            ],
           },
-          {
-            role: "user",
-            content: `Search query: "${query}"`,
-          },
-        ],
-      }),
-    });
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: `Search query: "${query}"` }],
+            },
+          ],
+          generationConfig: { maxOutputTokens: 150, temperature: 0.7 },
+        }),
+      },
+    );
 
     if (!response.ok) {
       const status = response.status;
       const text = await response.text();
-      console.error(`AI gateway error [${status}]:`, text);
+      console.error(`Gemini error [${status}]:`, text);
       return new Response(JSON.stringify({ chips: [] }), {
-        status: status === 429 || status === 402 ? status : 200,
+        status: status === 429 ? status : 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const data = await response.json();
-    const raw = data.choices?.[0]?.message?.content?.trim();
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
     let chips: string[] = [];
     try {

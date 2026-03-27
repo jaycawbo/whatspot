@@ -17,8 +17,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    if (!GEMINI_API_KEY) {
       return new Response(JSON.stringify({ error: 'AI service not configured' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -27,55 +27,62 @@ Deno.serve(async (req) => {
 
     const reviewsText = reviews.slice(0, 10).join('\n---\n');
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-3-flash-preview',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a concise venue review analyst. Given reviews for "${venue_name}", extract two things:
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: {
+            parts: [
+              {
+                text: `You are a concise venue review analyst. Given reviews for "${venue_name}", extract two things:
 1. A 2-3 sentence summary of what people enjoy about this place, covering food quality, atmosphere, service, and value as applicable.
 2. A list of 1-5 specific dishes or drinks that reviewers recommend ordering.
 Use the provided tool to return structured output.`,
+              },
+            ],
           },
-          {
-            role: 'user',
-            content: `Here are the reviews:\n\n${reviewsText}`,
-          },
-        ],
-        tools: [
-          {
-            type: 'function',
-            function: {
-              name: 'venue_insights',
-              description: 'Return a review summary and recommended items for a venue.',
-              parameters: {
-                type: 'object',
-                properties: {
-                  review_summary: {
-                    type: 'string',
-                    description: 'A 2-3 sentence summary of what people enjoy about this place.',
-                  },
-                  recommended_items: {
-                    type: 'array',
-                    items: { type: 'string' },
-                    description: 'List of 1-5 specific dishes or drinks reviewers recommend.',
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: `Here are the reviews:\n\n${reviewsText}` }],
+            },
+          ],
+          tools: [
+            {
+              function_declarations: [
+                {
+                  name: 'venue_insights',
+                  description: 'Return a review summary and recommended items for a venue.',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      review_summary: {
+                        type: 'string',
+                        description: 'A 2-3 sentence summary of what people enjoy about this place.',
+                      },
+                      recommended_items: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'List of 1-5 specific dishes or drinks reviewers recommend.',
+                      },
+                    },
+                    required: ['review_summary', 'recommended_items'],
                   },
                 },
-                required: ['review_summary', 'recommended_items'],
-                additionalProperties: false,
-              },
+              ],
+            },
+          ],
+          tool_config: {
+            function_calling_config: {
+              mode: 'ANY',
+              allowed_function_names: ['venue_insights'],
             },
           },
-        ],
-        tool_choice: { type: 'function', function: { name: 'venue_insights' } },
-      }),
-    });
+        }),
+      },
+    );
 
     if (!response.ok) {
       const status = response.status;
@@ -85,14 +92,8 @@ Use the provided tool to return structured output.`,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      if (status === 402) {
-        return new Response(JSON.stringify({ error: 'AI credits exhausted.' }), {
-          status: 402,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
       const errText = await response.text();
-      console.error('AI gateway error:', status, errText);
+      console.error('Gemini API error:', status, errText);
       return new Response(JSON.stringify({ error: 'AI service error' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -100,11 +101,10 @@ Use the provided tool to return structured output.`,
     }
 
     const aiData = await response.json();
-    const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
+    const functionCall = aiData.candidates?.[0]?.content?.parts?.[0]?.functionCall;
 
-    if (toolCall?.function?.arguments) {
-      const parsed = JSON.parse(toolCall.function.arguments);
-      return new Response(JSON.stringify(parsed), {
+    if (functionCall?.args) {
+      return new Response(JSON.stringify(functionCall.args), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
