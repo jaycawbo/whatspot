@@ -1,0 +1,94 @@
+# WhatSpot — Tech Stack & Architecture
+
+## Stack
+- Frontend: React/Vite built in Lovable, deployed on Vercel
+- Database: Supabase (project: coxecffaunsrnbddrack)
+- Maps: Leaflet + CartoDB Voyager tiles (Mapbox migration pending)
+- LLM: GPT-4o-mini via OpenAI API (secret: CHATGPT_API_KEY)
+- Version control: GitHub (whatspot-OG-v2)
+- Mobile: PWA first, Capacitor wrap planned
+
+## Database Tables
+| Table | Purpose |
+|-------|---------|
+| user_venue_interactions | Source of truth for all swipe interactions. Columns: user_id, anonymous_id, google_place_id, interaction_type (interested/not_interested/skipped/rated), rating (liked/disliked/loved) |
+| user_events | Append-only analytics log. event_type check constraint includes: search, view, save, dismiss, click_map, share, interested, not_interested, skipped, rated |
+| venue_signals | Venue-level aggregates: save_count, interested_count, liked_count, loved_count, not_interested_count, disliked_count |
+| venues | Google Places venue data, google_place_id as PK |
+| user_profiles | Auth profiles. Columns include: discovery_anchor_index (int), discovery_last_radius_km (int), discovery_last_criteria_pass (int) |
+| constellations | Named venue sets |
+| constellation_validations | Credibility propagation |
+| search_history | Query history |
+| favorites | DEPRECATED — archived, no new writes |
+
+## Interaction → Spots Mapping
+| Gesture | interaction_type | rating | Spots Tab |
+|---------|-----------------|--------|-----------|
+| Swipe right | interested | null | Interested |
+| Swipe left | not_interested | null | Not Interested |
+| Swipe down | skipped | null | Not in Spots (sessionStorage only — rethink pending) |
+| Swipe up → 👎 | rated | disliked | Didn't Like It |
+| Swipe up → 👍 | rated | liked | Liked It |
+| Swipe up → 👍👍 | rated | loved | Favourites |
+
+## Key Frontend Files (never regress these)
+- `src/pages/Home.jsx` — discovery feed, imports logEvent, useDiscoveryFeed, passes prefetchNextBatch/getReserveVenues/getPrefetchedVenues
+- `src/components/discovery/DiscoveryDeck.jsx` — 4-way swipe, overlays, proactive load trigger at Math.max(venues.length-8, floor(venues.length/2))
+- `src/components/discovery/DiscoveryCard.jsx` — full-bleed photo card
+- `src/components/discovery/ConstellationsSheet.jsx` — rating bottom sheet
+- `src/hooks/useDiscoveryInteractions.js` — all 4 swipe handlers write to whatspot_skipped_venues exclusion list
+- `src/hooks/useDiscoveryFeed.js` — feed fetching, ripple ring system, prefetchNextBatch, anchor point rotation
+- `src/pages/Spots.jsx` — 5 filter tabs reading from user_venue_interactions
+- `src/lib/logEvent.js` — passive event logging (null user_id for anonymous)
+- `src/lib/identity.js` — getAnonId() localStorage, getSessionId() sessionStorage
+
+## Supabase Edge Functions
+- `recommend/index.ts` — main engine (see pipeline below)
+- `get-place-photos`, `geocode-address`, `search-location`, `google-places-broad-search`
+- `google-places-details`, `search-google-place`, `generate-refinement-chips`
+- `venue-ai-insights` — Gemini, returns review_summary + recommended_items
+- `generate-spots-tags` — reads user_venue_interactions joined to venues
+- `aggregate-venue-signals` — daily pg_cron 3am
+
+## Recommend Pipeline
+| Step | Action |
+|------|--------|
+| 0 | Weather, time/day/season, Ticketmaster events |
+| 1+1b | Query refinement + neighbourhood geocoding (parallel) |
+| 1c | Refinement intent detection (skipped if no session) |
+| 2 | Google Places broad search — discovery runs TWO parallel searches: food/cafe + bar/pub/nightclub |
+| 3 | Filter: minRating, minReview, chain blocklist, FOOD_DRINK_TYPES allowlist, Steeles lat cap (43.7730), exclude_ids |
+| 4 | Score: normalizedRating × (0.75 + 0.25 × trustFactor) |
+| LLM | Confidence scoring + descriptors + summary + chips (gpt-4o-mini, max_tokens:1500) |
+| 5 | Photo enrichment — 8 primary (full) + 10 reserve (3 photos each, parallel) |
+
+## Discovery Mode Architecture
+- Returns 12 primary + 10 reserve = 22 venues per request
+- Candidate pool: 30
+- Criteria pass ladder (7 passes, minRating 4.0→0, minReviews 25→1, score 1.0→0.3)
+- Radius rings: [2, 4, 6, 8, 10, 12] km — ripple expands before criteria relaxes
+- Chain blocklist: 60+ national chains excluded in discovery only
+- FOOD_DRINK_TYPES allowlist: venues must have at least one food/drink type
+- Northern boundary: lat > 43.7730 excluded (Steeles Ave)
+- Auto-prefetch fires immediately after initial fetch completes
+- prefetchNextBatch auto-retries up to 2 rings if current ring empty
+
+## Anchor Point System
+- 9 Toronto points: center (43.6532, -79.3832) + 8 cardinal/intercardinal at 1km
+- Auth users: sequential rotation via user_profiles.discovery_anchor_index
+- Guest users: random anchor stored in sessionStorage (whatspot_anchor_index)
+- Override priority: live location > explicit area search > anchor rotation
+
+## SessionStorage Keys
+| Key | Purpose |
+|-----|---------|
+| whatspot_seen_venues | Capped at 100 IDs, passed as exclude_ids |
+| whatspot_skipped_venues | Cleared on mount, all 4 interactions write here |
+| whatspot_session_history | Last 20 searches, passed as session_context |
+| whatspot_session_id | Session identifier |
+| whatspot_anchor_index | Guest anchor point index |
+
+## Identity
+- anonymous_id: localStorage (whatspot_anon_id)
+- session_id: sessionStorage (whatspot_session_id)
+- RLS: user_events allows null user_id inserts
