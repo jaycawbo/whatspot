@@ -7,7 +7,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { lovable } from '@/integrations/lovable';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/AuthContext';
 import { Heart } from 'lucide-react';
 
@@ -27,17 +27,21 @@ export default function AuthModal({ open, onOpenChange }) {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await lovable.auth.signInWithOAuth('google', {
-        redirect_uri: window.location.origin,
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+        },
       });
-      if (result.error) {
-        setError(result.error.message || 'Failed to sign in');
+      if (error) {
+        setError(error.message || 'Failed to sign in');
+        setIsLoading(false);
       }
-      // If redirected, the page will reload after auth
+      // On success Supabase redirects — page will reload after auth
     } catch (err) {
       setError(err.message || 'Something went wrong');
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   return (

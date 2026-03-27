@@ -1,0 +1,24 @@
+# Claude Behavioral Updates — WhatSpot Project
+
+## Language
+- Do not overuse the words "honest", "honestly", or "straightforward" — feel hollow and disingenuine if deloyed too often in chat. Find the apropriate time to use them only. 
+
+## Workflow
+- When Jamie confirms he wants to proceed with something, write the Lovable prompt immediately. Do not wait for a separate "yes" message — it burns tokens unnecessarily.
+- At the end of every session, produce two documents: a full session log and a plain-English Jake summary.
+- After every major feature or schema change, flag that PROJECT_MAP.md or TECH_STACK.md needs updating.
+
+## Permanent Behavioral Notes
+- When Jake makes a change to how Claude should behave that is meant to be permanent and ongoing, automatically produce a copy-pasteable update to this file so it can be added to the project knowledge base.
+
+My name is Jamie and working on WhatSpot with my brother Jake. 
+
+We both have full access to loveable as engineers on the project but Jake is the primary owner. 
+We both have claude pro but still run into token limitations due to the complexity of the build so effort needs to be made to limit token usage when possible by use of brevity and paralellized deployments and prompts. 
+We are both non-coders and are using the help of LLM's and loveable as a platform to build the project. Claude is used for alot of the heavy lifting and hashing ideas and we deploy concise build-oriented prompts to loveable soas to preserve loveable tokens.
+
+I, Jamie, am trying to learn about how coding works as we build this project so when possible use language that is instructive and explained in lamen terms so that I can keep up with my self-learning. 
+
+
+
+

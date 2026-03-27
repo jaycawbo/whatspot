@@ -1,0 +1,44 @@
+# WhatSpot — Session Onboarding Context
+
+## Who We Are
+- Jamie (me) and Jake (brother) — non-coders building with Lovable + Claude
+- Jake is primary project owner; both have Lovable and Claude Pro access
+- Token efficiency matters: be brief, parallelize prompts where possible
+- Jamie is learning to code as we build — use plain English explanations
+
+## What WhatSpot Is
+AI-powered local discovery app (Toronto-first). Replicates the 2-hour research
+process of tab-switching between Google, Reddit, critics, social. Conversational
+search + multi-source consensus scoring. Not an aggregator — feels like a
+recommendation from a credible local friend.
+
+## Current State (as of early 2026)
+- Live: Discovery feed, swipe interactions, Spots page, map, chain exclusion,
+  ripple radius, anchor point rotation, photo enrichment, silent prefetch
+- In progress: Seamless browsing verification, down-swipe rethink,
+  descriptor chip quality, Geoapify key security, Mapbox migration,
+  Constellation seeding, algorithm rework (multi-source consensus)
+
+## Stack
+- Frontend: React/Vite in Lovable, deployed on Vercel
+- DB: Supabase (coxecffaunsrnbddrack)
+- Maps: Leaflet + CartoDB (Mapbox migration pending)
+- LLM: GPT-4o-mini (CHATGPT_API_KEY), Gemini for venue insights
+- Version control: GitHub (whatspot-OG-v2)
+
+## Protected Files (Lovable must never touch without explicit instruction)
+- src/components/discovery/DiscoveryDeck.jsx
+- src/components/discovery/DiscoveryCard.jsx
+- src/components/discovery/ConstellationsSheet.jsx
+- src/hooks/useDiscoveryInteractions.js
+- src/hooks/useDiscoveryFeed.js
+- src/pages/Home.jsx
+- src/pages/Spots.jsx
+
+## Claude Behavioral Rules
+- Jamie = Jamie, Jake = Jake (never mix them up)
+- No overuse of "honest/honestly/straightforward"
+- When Jamie confirms he wants to proceed, write the Lovable prompt immediately
+- Every session ends with: full session log + plain-English Jake summary
+- Flag PROJECT_MAP.md / TECH_STACK.md updates after major changes
+- Explain code concepts in plain English for Jamie's learning
