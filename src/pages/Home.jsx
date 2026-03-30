@@ -9,6 +9,9 @@ import MobileSearchDrawer from '@/components/home/MobileSearchDrawer';
 import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
+import AuthModal from '@/components/auth/AuthModal';
+import { useAuth } from '@/lib/AuthContext';
+import { useGuestLimits, MAX_GUEST_SEARCHES } from '@/hooks/useGuestLimits';
 
 const normalizeId = (v) => (v.place_id || v.google_place_id || '').replace(/^places\//, '');
 
@@ -26,6 +29,9 @@ export default function Home() {
   const { state, dispatch } = useGlobalState();
   const isMobile = useIsMobile();
   const searchBarRef = useRef(null);
+  const { isAuthenticated } = useAuth();
+  const { hasReachedSearchLimit, incrementSearch } = useGuestLimits(isAuthenticated);
+  const [searchAuthModalOpen, setSearchAuthModalOpen] = useState(false);
 
   const { venues: feedVenues, overflowVenues, isLoading: feedLoading, currentQuery, searchFeed, expandSearch, getReserveVenues, getPrefetchedVenues, prefetchNextBatch } = useDiscoveryFeed();
   const [reserveVenues, setReserveVenues] = useState([]);
@@ -105,6 +111,12 @@ export default function Home() {
       const nextQuery = queryText.trim();
       if (!nextQuery) return;
 
+      if (hasReachedSearchLimit()) {
+        setSearchAuthModalOpen(true);
+        return;
+      }
+      incrementSearch();
+
       dispatch({ type: 'SET_QUERY', payload: nextQuery });
       dispatch({ type: 'SET_CATEGORY', payload: null });
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: null });
@@ -116,11 +128,17 @@ export default function Home() {
         neighborhood_context: state.locationName,
       });
     },
-    [dispatch, addSearchHistory, searchFeed]
+    [dispatch, addSearchHistory, searchFeed, hasReachedSearchLimit, incrementSearch]
   );
 
   const handleSelectCategory = useCallback(
     (category) => {
+      if (hasReachedSearchLimit()) {
+        setSearchAuthModalOpen(true);
+        return;
+      }
+      incrementSearch();
+
       dispatch({ type: 'SET_QUERY', payload: category.prompt });
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: category.prompt });
       dispatch({ type: 'SET_CATEGORY', payload: category.label });
@@ -132,7 +150,7 @@ export default function Home() {
         neighborhood_context: state.locationName,
       });
     },
-    [dispatch, addSearchHistory, searchFeed]
+    [dispatch, addSearchHistory, searchFeed, hasReachedSearchLimit, incrementSearch]
   );
 
   const handleAppendChip = useCallback(
@@ -211,6 +229,12 @@ export default function Home() {
           />
         )}
       </div>
+
+      <AuthModal
+        open={searchAuthModalOpen}
+        onOpenChange={setSearchAuthModalOpen}
+        description={`You've used your ${MAX_GUEST_SEARCHES} free searches. Sign in to keep searching.`}
+      />
     </div>
   );
 }
