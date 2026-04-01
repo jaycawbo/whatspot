@@ -79,7 +79,7 @@ function buildResponse(rows) {
 function queueHoursRefresh(googlePlaceId) {
   if (isDbOnly()) return;
   supabase.functions
-    .invoke('google-places-details', { body: { place_id: googlePlaceId, fields: ['hours'] } })
+    .invoke('refresh-venue-hours', { body: { place_ids: [googlePlaceId] } })
     .catch(() => {}); // best-effort, never throws
 }
 
