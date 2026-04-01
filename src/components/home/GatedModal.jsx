@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -7,26 +7,36 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Lock } from 'lucide-react';
+import AuthModal from '@/components/auth/AuthModal';
 
 export default function GatedModal({ isOpen, onClose }) {
+  const [showAuth, setShowAuth] = useState(false);
+
+  const handleLogin = () => {
+    onClose();
+    setShowAuth(true);
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-sm text-center">
-        <DialogHeader>
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
-            <Lock className="h-5 w-5 text-foreground" />
+    <>
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-w-sm text-center">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Unlimited discovery when you login</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground pt-1">
+              You've used your free previews. Sign in for unlimited swipes and searches.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2 pt-2">
+            <Button onClick={handleLogin} className="w-full">Sign In</Button>
+            <Button variant="ghost" size="sm" onClick={onClose} className="text-muted-foreground">
+              Maybe later
+            </Button>
           </div>
-          <DialogTitle>Sign in to continue</DialogTitle>
-          <DialogDescription>
-            You've reached the limit for anonymous searches. Create a free account to keep discovering venues.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-2 pt-2">
-          <Button onClick={() => { /* TODO: navigate to sign in */ }}>Sign In</Button>
-          <Button variant="outline" onClick={() => { /* TODO: navigate to sign up */ }}>Create Account</Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      <AuthModal open={showAuth} onOpenChange={setShowAuth} />
+    </>
   );
 }

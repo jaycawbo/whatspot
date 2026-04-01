@@ -7,8 +7,10 @@ import SearchBar from '@/components/home/SearchBar';
 import CategoryTiles from '@/components/home/CategoryTiles';
 import MobileSearchDrawer from '@/components/home/MobileSearchDrawer';
 import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
+import GatedModal from '@/components/home/GatedModal';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
+import { useGuestLimits } from '@/hooks/useGuestLimits';
 
 const normalizeId = (v) => (v.place_id || v.google_place_id || '').replace(/^places\//, '');
 
@@ -28,6 +30,7 @@ export default function Home() {
   const searchBarRef = useRef(null);
 
   const { venues: feedVenues, overflowVenues, isLoading: feedLoading, currentQuery, searchFeed, expandSearch, getReserveVenues, getPrefetchedVenues, prefetchNextBatch } = useDiscoveryFeed();
+  const { showGate, closeGate, incrementSearch } = useGuestLimits();
   const [reserveVenues, setReserveVenues] = useState([]);
   const hasInitializedReserve = useRef(false);
 
@@ -104,6 +107,7 @@ export default function Home() {
     (queryText) => {
       const nextQuery = queryText.trim();
       if (!nextQuery) return;
+      if (incrementSearch()) return; // guest limit hit — gate shown
 
       dispatch({ type: 'SET_QUERY', payload: nextQuery });
       dispatch({ type: 'SET_CATEGORY', payload: null });
@@ -116,11 +120,13 @@ export default function Home() {
         neighborhood_context: state.locationName,
       });
     },
-    [dispatch, addSearchHistory, searchFeed]
+    [dispatch, addSearchHistory, searchFeed, incrementSearch]
   );
 
   const handleSelectCategory = useCallback(
     (category) => {
+      if (incrementSearch()) return; // guest limit hit — gate shown
+
       dispatch({ type: 'SET_QUERY', payload: category.prompt });
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: category.prompt });
       dispatch({ type: 'SET_CATEGORY', payload: category.label });
@@ -132,7 +138,7 @@ export default function Home() {
         neighborhood_context: state.locationName,
       });
     },
-    [dispatch, addSearchHistory, searchFeed]
+    [dispatch, addSearchHistory, searchFeed, incrementSearch]
   );
 
   const handleAppendChip = useCallback(
@@ -146,6 +152,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
+      <GatedModal isOpen={showGate} onClose={closeGate} />
 
       <div className="flex flex-col flex-1 pt-14">
         {!isMobile && (
