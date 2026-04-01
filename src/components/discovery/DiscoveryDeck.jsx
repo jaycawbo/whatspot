@@ -212,28 +212,21 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   }, [handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, advanceCard]);
 
   // Handle rating from sheet
-  const handleRate = useCallback(async (rating) => {
-    // Only close immediately for disliked and loved (final states)
-    // For 'liked', ConstellationsSheet will show the Favourites follow-up
-    if (rating !== 'liked') {
-      setRatingSheetOpen(false);
-    }
+  const handleRate = useCallback(async (rating, notes) => {
+    setRatingSheetOpen(false);
     if (!ratingPendingVenue) return;
 
-    const success = await handleRated(ratingPendingVenue, rating);
+    const success = await handleRated(ratingPendingVenue, rating, notes);
     if (success === false) {
       setAuthModalOpen(true);
       setRatingPendingVenue(null);
       return;
     }
 
-    // Only advance card for final states
-    if (rating !== 'liked') {
-      setExitDirection('rated');
-      setRatingPendingVenue(null);
-      await new Promise((r) => setTimeout(r, 400));
-      advanceCard();
-    }
+    setExitDirection('rated');
+    setRatingPendingVenue(null);
+    await new Promise((r) => setTimeout(r, 400));
+    advanceCard();
   }, [ratingPendingVenue, handleRated, advanceCard]);
 
   // Handle rating cancel

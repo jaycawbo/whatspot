@@ -38,7 +38,7 @@ export function useDiscoveryInteractions() {
   const executingRef = useRef(false);
   const undoTimerRef = useRef(null);
 
-  const writeInteraction = useCallback(async (venue, interactionType, rating = null) => {
+  const writeInteraction = useCallback(async (venue, interactionType, rating = null, notes = null) => {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
     if (!placeId) return;
 
@@ -59,6 +59,7 @@ export function useDiscoveryInteractions() {
           venue_id: placeId,
           interaction_type: interactionType,
           rating: rating,
+          ...(notes !== null ? { notes } : {}),
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_id,venue_id' }
@@ -231,6 +232,12 @@ export function useDiscoveryInteractions() {
     const previousType = await upsertSkipHistory(placeId, 'interested');
     await handleListTransition(venue, 'interested', previousType);
     await saveWithLabel(venue, 'Interested');
+
+    // Trigger post-save label microinteraction
+    try {
+      window.dispatchEvent(new CustomEvent('whatspot:show-label-sheet', { detail: { venue } }));
+    } catch {}
+
     return true;
   }, [isAuthenticated, saveWithLabel, writeInteraction, upsertSkipHistory, handleListTransition]);
 
@@ -280,15 +287,16 @@ export function useDiscoveryInteractions() {
     return true;
   }, [writeInteraction, isAuthenticated, upsertSkipHistory, handleListTransition, showUndoToast]);
 
-  const handleRated = useCallback(async (venue, rating) => {
+  const handleRated = useCallback(async (venue, rating, notes = null) => {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
 
     markVenueExcluded(placeId);
-    writeInteraction(venue, 'rated', rating);
+    writeInteraction(venue, 'rated', rating, notes);
 
+    // liked and loved both → Favourites
     const labelMap = {
       disliked: "Didn't Like It",
-      liked: 'Liked It',
+      liked: 'Favourites',
       loved: 'Favourites',
     };
 
@@ -301,6 +309,14 @@ export function useDiscoveryInteractions() {
     const previousType = await upsertSkipHistory(placeId, 'been_here');
     await handleListTransition(venue, 'been_here', previousType);
     await saveWithLabel(venue, labelMap[rating]);
+
+    // Trigger post-save label microinteraction for liked/loved
+    if (rating === 'liked' || rating === 'loved') {
+      try {
+        window.dispatchEvent(new CustomEvent('whatspot:show-label-sheet', { detail: { venue } }));
+      } catch {}
+    }
+
     return true;
   }, [isAuthenticated, saveWithLabel, writeInteraction, upsertSkipHistory, handleListTransition]);
 

@@ -8,9 +8,11 @@ import CategoryTiles from '@/components/home/CategoryTiles';
 import MobileSearchDrawer from '@/components/home/MobileSearchDrawer';
 import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
 import GatedModal from '@/components/home/GatedModal';
+import PostSaveLabelSheet from '@/components/spots/PostSaveLabelSheet';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
 import { useGuestLimits } from '@/hooks/useGuestLimits';
+import { useAuth } from '@/lib/AuthContext';
 
 const normalizeId = (v) => (v.place_id || v.google_place_id || '').replace(/^places\//, '');
 
@@ -28,10 +30,20 @@ export default function Home() {
   const { state, dispatch } = useGlobalState();
   const isMobile = useIsMobile();
   const searchBarRef = useRef(null);
+  const { isAuthenticated } = useAuth();
 
   const { venues: feedVenues, overflowVenues, isLoading: feedLoading, currentQuery, searchFeed, expandSearch, getReserveVenues, getPrefetchedVenues, prefetchNextBatch } = useDiscoveryFeed();
   const { showGate, closeGate, incrementSearch } = useGuestLimits();
   const [reserveVenues, setReserveVenues] = useState([]);
+  const [labelSheetVenue, setLabelSheetVenue] = useState(null);
+
+  // Listen for post-save label microinteraction events from swipe handlers
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const handler = (e) => setLabelSheetVenue(e.detail?.venue || null);
+    window.addEventListener('whatspot:show-label-sheet', handler);
+    return () => window.removeEventListener('whatspot:show-label-sheet', handler);
+  }, [isAuthenticated]);
   const hasInitializedReserve = useRef(false);
 
   useEffect(() => {
@@ -153,6 +165,12 @@ export default function Home() {
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
       <GatedModal isOpen={showGate} onClose={closeGate} />
+      {labelSheetVenue && (
+        <PostSaveLabelSheet
+          venue={labelSheetVenue}
+          onClose={() => setLabelSheetVenue(null)}
+        />
+      )}
 
       <div className="flex flex-col flex-1 pt-14">
         {!isMobile && (
