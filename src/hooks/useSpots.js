@@ -6,59 +6,51 @@ const SPOTS_KEY = ['spots'];
 
 // Label → interaction mapping
 const LABEL_TO_INTERACTION = {
-  'Interested': { interaction_type: 'interested', rating: null },
-  'Not Interested': { interaction_type: 'not_interested', rating: null },
-  "Didn't Like It": { interaction_type: 'rated', rating: 'disliked' },
-  'Liked It': { interaction_type: 'rated', rating: 'liked' },
-  'Favourites': { interaction_type: 'rated', rating: 'loved' },
+  'Interested':      { interaction_type: 'interested',    rating: null },
+  'Not Interested':  { interaction_type: 'not_interested', rating: null },
+  "Didn't Like It":  { interaction_type: 'rated',          rating: 'disliked' },
+  'Favourites':      { interaction_type: 'rated',          rating: 'liked' },
+  'Been To':         { interaction_type: 'rated',          rating: 'liked' },
 };
 
-// Reverse: interaction → label
+// Reverse: interaction → display label
 function interactionToLabel(interaction_type, rating) {
   if (interaction_type === 'rated') {
-    if (rating === 'loved') return 'Favourites';
-    if (rating === 'liked') return 'Liked It';
+    if (rating === 'loved')    return 'Favourites';
+    if (rating === 'liked')    return 'Favourites';   // liked and loved both → Favourites
     if (rating === 'disliked') return "Didn't Like It";
   }
-  if (interaction_type === 'interested') return 'Interested';
+  if (interaction_type === 'interested')    return 'Interested';
   if (interaction_type === 'not_interested') return 'Not Interested';
-  if (interaction_type === 'skipped') return 'Not Interested';
+  if (interaction_type === 'skipped')        return 'Not Interested';
   return 'Interested';
 }
 
-/**
- * Hook for managing the user's single "Spots" list.
- * Uses user_venue_interactions + venues tables in Supabase.
- */
 export function useSpots() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const {
-    data: spots = [],
-    isLoading,
-    error,
-  } = useQuery({
+  const { data: spots = [], isLoading, error } = useQuery({
     queryKey: SPOTS_KEY,
     queryFn: async () => {
       if (!user) return [];
       const { data, error } = await supabase
         .from('user_venue_interactions')
-        .select('id, interaction_type, rating, created_at, venue_id, venues!fk_uvi_venue(*)')
+        .select('id, interaction_type, rating, notes, created_at, venue_id, venues!fk_uvi_venue(*)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data || []).map((row) => {
-        const label = interactionToLabel(row.interaction_type, row.rating);
-        return {
-          favoriteId: row.id,
-          labels: [label],
-          createdAt: row.created_at,
-          venueId: row.venue_id,
-          google_place_id: row.venue_id,
-          ...row.venues,
-        };
-      });
+      return (data || []).map((row) => ({
+        favoriteId: row.id,
+        labels: [interactionToLabel(row.interaction_type, row.rating)],
+        interactionType: row.interaction_type,
+        rating: row.rating,
+        notes: row.notes || null,
+        createdAt: row.created_at,
+        venueId: row.venue_id,
+        google_place_id: row.venue_id,
+        ...row.venues,
+      }));
     },
     enabled: !!user,
     staleTime: 30_000,
@@ -74,7 +66,7 @@ export function useSpots() {
     return spot?.labels || [];
   };
 
-  // Save a venue to Spots (upsert venue, then write user_venue_interactions)
+  // Save a venue to Spots
   const saveMutation = useMutation({
     mutationFn: async ({ venue, labels = [] }) => {
       if (!user) throw new Error('Not authenticated');
@@ -82,7 +74,6 @@ export function useSpots() {
       const googlePlaceId = venue.place_id?.replace(/^places\//, '') || venue.google_place_id;
       if (!googlePlaceId) throw new Error('No place_id available');
 
-      // 1. Upsert venue into venues table
       const { error: venueError } = await supabase
         .from('venues')
         .upsert(
@@ -101,10 +92,8 @@ export function useSpots() {
           },
           { onConflict: 'google_place_id' }
         );
-
       if (venueError) throw venueError;
 
-      // 2. Derive interaction from first label
       const firstLabel = labels[0] || 'Interested';
       const mapping = LABEL_TO_INTERACTION[firstLabel] || { interaction_type: 'interested', rating: null };
 
@@ -121,7 +110,6 @@ export function useSpots() {
           },
           { onConflict: 'user_id,venue_id' }
         );
-
       if (intError) throw intError;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: SPOTS_KEY }),
@@ -162,18 +150,48 @@ export function useSpots() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: SPOTS_KEY }),
   });
 
+  // Move to list — bypasses Favourites guard for explicit user moves
+  const moveToListMutation = useMutation({
+    mutationFn: async ({ placeId, listName }) => {
+      if (!user) throw new Error('Not authenticated');
+      const mapping = LABEL_TO_INTERACTION[listName] || { interaction_type: 'interested', rating: null };
+      const { error } = await supabase
+        .from('user_venue_interactions')
+        .update({
+          interaction_type: mapping.interaction_type,
+          rating: mapping.rating,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id)
+        .eq('venue_id', placeId);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: SPOTS_KEY }),
+  });
+
+  // Update/save a note for a venue
+  const updateNoteMutation = useMutation({
+    mutationFn: async ({ placeId, notes }) => {
+      if (!user) throw new Error('Not authenticated');
+      const { error } = await supabase
+        .from('user_venue_interactions')
+        .update({ notes, updated_at: new Date().toISOString() })
+        .eq('user_id', user.id)
+        .eq('venue_id', placeId);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: SPOTS_KEY }),
+  });
+
   const allLabels = [...new Set(spots.flatMap((s) => s.labels || []))];
 
   const saveOrUpdateLabel = async ({ venue, label }) => {
     if (!user) throw new Error('Not authenticated');
     const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
     const currentLabels = getLabels(placeId);
-
     if (currentLabels.includes('Favourites') && label !== 'Favourites') return;
-
     if (isSaved(placeId)) {
-      const newLabels = [label];
-      await updateLabelsMutation.mutateAsync({ placeId, labels: newLabels });
+      await updateLabelsMutation.mutateAsync({ placeId, labels: [label] });
     } else {
       await saveMutation.mutateAsync({ venue, labels: [label] });
     }
@@ -188,6 +206,8 @@ export function useSpots() {
     saveSpot: saveMutation.mutateAsync,
     removeSpot: removeMutation.mutateAsync,
     updateLabels: updateLabelsMutation.mutateAsync,
+    moveToList: moveToListMutation.mutateAsync,
+    updateNote: updateNoteMutation.mutateAsync,
     saveOrUpdateLabel,
     isSaving: saveMutation.isPending,
     isRemoving: removeMutation.isPending,
