@@ -13,6 +13,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
 import { useGuestLimits } from '@/hooks/useGuestLimits';
 import { useAuth } from '@/lib/AuthContext';
+import { useVenueListMembership } from '@/hooks/useVenueListMembership';
 
 const normalizeId = (v) => (v.place_id || v.google_place_id || '').replace(/^places\//, '');
 
@@ -34,6 +35,7 @@ export default function Home() {
 
   const { venues: feedVenues, overflowVenues, isLoading: feedLoading, currentQuery, searchFeed, expandSearch, getReserveVenues, getPrefetchedVenues, prefetchNextBatch } = useDiscoveryFeed();
   const { showGate, closeGate, incrementSearch } = useGuestLimits();
+  const listMembershipMap = useVenueListMembership();
   const [reserveVenues, setReserveVenues] = useState([]);
   const [labelSheetVenue, setLabelSheetVenue] = useState(null);
 
@@ -208,6 +210,7 @@ export default function Home() {
                 overflowVenues={overflowVenues}
                 currentQuery={currentQuery}
                 isDiscoveryMode={!currentQuery}
+                listMembershipMap={listMembershipMap}
                 onDescriptorTap={(tag) => {
                   dispatch({ type: 'SET_QUERY', payload: tag });
                   searchFeed(tag);
