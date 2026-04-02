@@ -30,7 +30,7 @@ function isLocationQuery(query) {
   return false;
 }
 
-export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenues = [], currentQuery = '', onDescriptorTap, onExpandSearch, onNewSearch, onRequestMoreVenues, isDiscoveryMode = false }) {
+export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenues = [], currentQuery = '', onDescriptorTap, onExpandSearch, onNewSearch, onRequestMoreVenues, isDiscoveryMode = false, listMembershipMap = null }) {
   // Restore swipe index from sessionStorage for back-navigation
   const savedIndex = useRef(() => {
     try {
@@ -455,6 +455,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
               index={currentIndex}
               onDescriptorTap={onDescriptorTap}
               onCardBodyTap={handleCardBodyTap}
+              listLabel={listMembershipMap ? listMembershipMap.get((currentVenue?.place_id || currentVenue?.google_place_id || '').replace(/^places\//, '')) ?? null : null}
             />
           </motion.div>
         ) : hasMore ? (
