@@ -1,0 +1,188 @@
+# WhatSpot — Cost Awareness Guidelines
+# Added: March 28 2026 | Updated: April 2 2026
+
+## Standing Instruction to Claude
+Every time a new feature, architectural decision, API call pattern, or background 
+process is designed or modified, Claude must proactively flag any cost implications 
+BEFORE writing or approving any code. This is non-negotiable.
+
+## Google Places API — Current Protection Layers (as of April 2, 2026)
+✅ API manually disabled (since March 29, still disabled)
+✅ Localhost referrer restriction — key only accepts requests from localhost:8081/* and localhost:8080/*
+✅ 50 requests/day quota cap set on Places API (New) in Google Cloud Console
+
+Note: Google Cloud does NOT offer a true hard spend cap. Budget alerts send emails only — charges continue past threshold. Quota cap on requests is the closest available protection. At $0.032/Text Search call, 50 calls/day = $1.60/day max exposure during testing.
+
+For production: create a separate API key restricted to the Vercel deployment URL. Never use the localhost-restricted key for production. Two keys, two restrictions.
+
+## Google Places API — Cost Control (CRITICAL)
+
+### What went wrong (March 2026)
+We accumulated $447 in Google Places charges during testing. Root causes:
+- Photo enrichment: getPlacePhotos() was called live for every venue on 
+  every discovery session. 32,794 photo calls = $314. Photos must be 
+  pre-fetched once during census and stored in Supabase. Never fetch 
+  live in production or testing.
+- Text Search tiling: 15 parallel Google calls per discovery load. 
+  3,713 text searches = $133. Tiling is the right architecture but 
+  must sit behind a Supabase-first lookup that skips Google entirely 
+  when we have local coverage.
+
+## The Incident That Expanded the problem:
+On March 27 2026, $106 was charged to the Google Places API in a single day with 
+ZERO user swipes. Root cause: the discovery feed auto-initialized on page load and 
+fired the tiling system (15 parallel API calls per batch) plus photo enrichment 
+repeatedly in the background during local testing. 1,140 Text Search calls and 
+5,399 Photo calls were made with no user interaction.
+
+### The rule
+In a testing environment, Google Places API costs should be near $0.
+If you are seeing Google charges during development, something is wrong.
+
+### Architecture required before re-enabling the API
+1. Supabase-first lookup — check venues table before calling Google
+2. Photo URLs stored in venues table from census — never fetched live
+3. Google fallback only fires when Supabase returns <15 venues for area
+4. Hard cap: maximum 3 Google API calls per session in fallback mode
+5. Monthly budget alert set to $10 in Google Cloud billing console
+6. Hard spend cap enabled in Google Cloud — auto-disables API at limit
+
+### Current status
+Places API manually disabled March 29, 2026. Do not re-enable until 
+Supabase-first architecture is built and tested.
+
+### How to re-enable safely
+Only re-enable after:
+- Census has seeded Toronto venues in Supabase
+- recommend/index.ts has Supabase-first lookup implemented
+- Photo URLs are pre-stored, not fetched live
+- Budget cap is set in Google Cloud console
+
+## Photo Architecture Rule (permanent)
+- NEVER store photo_reference strings — they expire unpredictably and storing them violates Google ToS
+- ONLY store resolved photo URLs — fetched once, stored permanently, zero API cost on future display
+- Google Places (New) returns up to 10 photos per venue (not 5 as previously noted anywhere)
+- Incremental hydration: 1 photo fetched per surface event, stored permanently in photo_urls array, until photos_complete = true after 10 collected
+- IntersectionObserver required on DiscoveryCard.jsx — photos only load when card enters visible viewport, never eagerly
+- photos_complete = true means zero API calls ever again for that venue's photos
+
+## Data Onboarding — Three Tiers (not a one-time sweep)
+
+### Tier 1 — Census (one-time, ~$110)
+| Phase | What | Cost |
+|-------|------|------|
+| Nearby Search | ~900 grid cells covering Toronto | ~$29 |
+| Basic Place Details | ~8,000 unique venues, lean fields only | ~$80 |
+| Photos at census | Zero — hydrate lazily on first serve | $0 |
+| Total upfront | | ~$110 |
+
+Stores lean skeleton only. Fields: name, rating, review count, lat/lng, types,
+price level, business status, google_place_id. Nothing else.
+Gets all Toronto venues into Supabase fast and cheap.
+What does NOT get stored at census: photos, opening hours, review text, editorial 
+summary, booleans, website, phone. These are enrichment fields fetched lazily on first serve.
+
+### Tier 2 — Enrichment (lazy, on first serve)
+The first time a venue surfaces in the discovery feed:
+- Fire one Place Details call → fetch hours, reviews, editorial summary, booleans
+- Store permanently in Supabase → set enriched = true
+- Never pay this cost again for that venue
+Guard: if enriched = false on any subsequent serve, enrich then. Should not happen
+after first serve but guard exists as a safety net.
+
+### Tier 3 — Photo hydration (incremental, per serve)
+- On first serve: resolve one photo URL, store in photo_urls array,
+  photos_fetched_count increments to 1
+- On each subsequent serve: fetch one more photo URL if photos_complete = false
+- After 10 photos collected: photos_complete = true, zero API calls ever again
+- Venues that never surface never cost a penny beyond the census call
+
+### The result
+By the time meaningful user volume exists, a large portion of the directory
+will already be fully hydrated at minimal incremental cost spread organically
+over weeks and months of real usage. Testing period photo cost (Jamie + Jake
+only): ~$5-7 total.
+
+## Testing Mode Safeguards
+Add VITE_TESTING_MODE=true to .env during development:
+- Max 1 photo per venue (vs 3)
+- Reserve venues load zero photos until primary deck is consumed
+- Prefetch fires after swipe 5, not on page load
+- Session photo fetch counter capped at 30
+Set VITE_TESTING_MODE=false in .env.production
+
+## APIs With Real Money At Stake
+
+### Google Places API (New)
+- Text Search Pro/Enterprise: ~$0.032 per call
+- Place Details Photos: ~$0.01 per call
+- Tiling system = 15 calls per batch — at scale this is extremely expensive
+- Photo enrichment fires per venue — multiplies costs rapidly
+- ANY background process that calls Google Places without user interaction is a 
+  billing risk
+- Auto-prefetch firing on page load = guaranteed runaway costs in testing
+
+### Gemini API
+- gemini-2.0-flash: cheap, low risk
+- gemini-2.5-pro: more expensive — flag any loops or repeated calls using this model
+- gemini-2.5-flash: now stable, lower cost than 2.5-pro, candidate replacement for descriptor pass
+
+### Supabase
+- Edge function invocations have limits on free tier
+- Excessive edge function calls during testing can exhaust monthly quota
+
+## Rules Claude Must Follow
+
+### Before building any feature:
+1. Identify every external API call the feature makes
+2. State the cost per call for each API
+3. Estimate cost per user session at typical usage
+4. Flag any background processes, auto-triggers, or loops that could fire without 
+   explicit user action
+5. Recommend a safe testing approach that minimizes API calls
+
+### Before enabling any background process:
+- Auto-prefetch, polling, page-load triggers, silent fetches — ALL require explicit 
+  cost warning
+- State: "This will fire X API calls per Y event, costing approximately $Z per 1000 
+  users"
+
+### Before any testing session:
+- Confirm a Google Cloud spending cap is active
+- Remind Jamie to check Google Cloud billing after every test session
+- Suggest disabling expensive background processes during development/testing
+
+### When architecting at scale:
+- Always calculate cost per 1000 users, not just per single user
+- Flag when a pattern that costs $0.10 per user becomes $100 per 1000 users
+- Recommend caching strategies that reduce repeat API calls
+
+## Permanent Cost Controls (must always be in place)
+
+### Google Cloud Console
+- Budget alert: $10/day hard cap — if not set, remind Jamie to set it immediately
+- Check: console.cloud.google.com → Billing → Budgets & Alerts
+
+### Code-Level Controls
+- Auto-prefetch must NEVER fire on page load — only on explicit user action
+- Photo enrichment must be limited to primary results only during testing
+- Tiling (15 parallel calls) must be disabled during development — use 2-call 
+  fallback instead
+- All background processes must have rate limiting and call count caps
+
+### Testing Protocol
+- Never open the app in a browser during a Claude Code session without first 
+  confirming expensive background processes are disabled
+- Test with mock data locally before enabling live API calls
+- Monitor Google Cloud billing dashboard after every test session
+
+## How to Flag Costs (Claude's format)
+When a cost risk is identified, Claude must say:
+
+⚠️ COST WARNING: [what the risk is]
+- API affected: [which API]
+- Cost per call: [price]
+- Risk scenario: [what could cause runaway costs]
+- Recommended safeguard: [how to prevent it]
+
+This warning must appear BEFORE any code is written or approved.

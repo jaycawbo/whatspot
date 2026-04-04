@@ -1,0 +1,20 @@
+# WhatSpot — Active To-Do List
+# Last updated: April 2, 2026
+
+## Build Order (priority sequence)
+1. Toronto census sweep script — one-time ~$110, populates Supabase with all Toronto food/drink venues (Claude Code task)
+2. Supabase-first lookup in recommend/index.ts — check local DB before Google; Google only as fallback (hard cap: 3 calls/session)
+3. Re-enable Google Places API — only after steps 1 and 2 verified working
+4. IntersectionObserver on DiscoveryCard.jsx — viewport-only photo loading (requires explicitly unlocking protected file)
+5. One-photo-per-surface hydration logic — incremental photo collection, photos_complete flag
+6. VITE_TESTING_MODE flag — testing safeguards including 30-photo session cap
+7. Weighted shuffle — score jitter so discovery order varies between sessions
+8. Anchor rotation verification — confirm discovery_anchor_index incrementing between sessions
+9. Spots page UI elevation — hero product needs to look and feel like one
+10. Constellation data model — design schema before building UI
+11. Descriptor chip fix — Gemini 2.5 Pro silently failing inside safe() wrapper, returning empty arrays
+
+## Open Threads (unresolved decisions)
+- Down-swipe rethink: currently writes to sessionStorage only, not Supabase. Behaviour and destination tab still undecided.
+- gemini-2.5-flash as replacement for gemini-2.5-pro on descriptor pass — candidate but not yet actioned
+- Mapbox migration — still listed as pending, CartoDB is current solution, no decision made on whether to proceed

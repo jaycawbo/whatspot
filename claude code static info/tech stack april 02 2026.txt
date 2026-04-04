@@ -1,12 +1,50 @@
-# WhatSpot — Tech Stack & Architecture
+# WhatSpot — Tech Stack, Architecture & Infrastructure
+
+## Primary Build Tool
+- Claude Code is the primary build tool — all code edits, file changes, deployments
+- Claude.ai is for planning, architecture, and drafting instructions only
+- Lovable may still be used occasionally but is no longer the primary build platform
 
 ## Stack
 - Frontend: React/Vite built in Lovable, deployed on Vercel
-- Database: Supabase (project: coxecffaunsrnbddrack)
+- Database: Supabase (project: rtihqiogvamfaqitmowx) — Jamie's personal account
 - Maps: Leaflet + CartoDB Voyager tiles (Mapbox migration pending)
-- LLM: GPT-4o-mini via OpenAI API (secret: CHATGPT_API_KEY)
-- Version control: GitHub (whatspot-OG-v2)
+- LLM: Gemini via Google AI API (GEMINI_API_KEY). gemini-2.0-flash for Steps 1/1b/1c + chips (fast/cheap). gemini-2.5-pro for discovery descriptors + search scoring (complex). gemini-2.5-flash now stable with thinking — candidate to replace 2.5-pro on descriptor pass.
+- Version control: GitHub (whatspot-OG-v2) — Jake's account, Jamie is collaborator
 - Mobile: PWA first, Capacitor wrap planned
+
+## Dev Environment (Jamie's Machine)
+- OS: Windows
+- Node.js v24.14.1
+- Git installed with Git Bash
+- VS Code as primary IDE
+- Claude Code installed via: npm install -g @anthropic-ai/claude-code
+- Claude Code runs from VS Code integrated terminal (PowerShell)
+- Repo cloned to: C:\Users\User\Documents\GitHub\whatspot
+- Token monitor: pip install claude-monitor → run with: python -m claude_monitor --plan pro
+- App runs locally on localhost:8081 (npm run dev)
+
+## Supabase
+- Project ref: rtihqiogvamfaqitmowx
+- Project URL: https://rtihqiogvamfaqitmowx.supabase.co
+- Old Lovable project ref (no longer in use): coxecffaunsrnbddrack
+- Jamie has primary access
+
+## Supabase Secrets
+- GOOGLE_PLACES_API_KEY ✅
+- GEMINI_API_KEY ✅
+- TICKETMASTER_API_KEY ✅
+
+## Deploy Commands
+Always run in VS Code PowerShell terminal in this order:
+1. $env:SUPABASE_ACCESS_TOKEN="sbp_0e9704cbda7b9e381b2a67a9ad0c2101d193b8bc"
+2. npx supabase functions deploy [function-name] --project-ref rtihqiogvamfaqitmowx --use-api
+
+## Workflow Notes
+- Claude Code token limit: ~44,000 per 5-hour window on Pro plan
+- Peak hours (1pm–7pm GMT / 8am–2pm ET): limits burn faster
+- Use Claude.ai for planning, send single precise instructions to Claude Code
+- CLAUDE.md in repo root auto-loads context for Claude Code each session
 
 ## Database Tables
 | Table | Purpose |
@@ -14,7 +52,7 @@
 | user_venue_interactions | Source of truth for all swipe interactions. Columns: user_id, anonymous_id, google_place_id, interaction_type (interested/not_interested/skipped/rated), rating (liked/disliked/loved) |
 | user_events | Append-only analytics log. event_type check constraint includes: search, view, save, dismiss, click_map, share, interested, not_interested, skipped, rated |
 | venue_signals | Venue-level aggregates: save_count, interested_count, liked_count, loved_count, not_interested_count, disliked_count |
-| venues | Google Places venue data, google_place_id as PK |
+| venues | Google Places venue data. Columns: google_place_id (PK, unique), name, address, lat, lng, category, rating, review_count, price_level, photo_urls (text[], grows 0→10), photos_fetched_count (int, default 0), photos_complete (boolean, default false), enriched (boolean, default false). Note: photo_url (singular) is deprecated and replaced by photo_urls (array). |
 | user_profiles | Auth profiles. Columns include: discovery_anchor_index (int), discovery_last_radius_km (int), discovery_last_criteria_pass (int) |
 | constellations | Named venue sets |
 | constellation_validations | Credibility propagation |
@@ -41,9 +79,10 @@
 - `src/pages/Spots.jsx` — 5 filter tabs reading from user_venue_interactions
 - `src/lib/logEvent.js` — passive event logging (null user_id for anonymous)
 - `src/lib/identity.js` — getAnonId() localStorage, getSessionId() sessionStorage
+- `src/hooks/useGuestLimits.js` — guest swipe limit system, gates anonymous users toward signup
 
 ## Supabase Edge Functions
-- `recommend/index.ts` — main engine (see pipeline below)
+- `recommend/index.ts` — main engine
 - `get-place-photos`, `geocode-address`, `search-location`, `google-places-broad-search`
 - `google-places-details`, `search-google-place`, `generate-refinement-chips`
 - `venue-ai-insights` — Gemini, returns review_summary + recommended_items
@@ -56,10 +95,10 @@
 | 0 | Weather, time/day/season, Ticketmaster events |
 | 1+1b | Query refinement + neighbourhood geocoding (parallel) |
 | 1c | Refinement intent detection (skipped if no session) |
-| 2 | Google Places broad search — discovery runs TWO parallel searches: food/cafe + bar/pub/nightclub |
+| 2 | Google Places broad search — discovery runs 5-tile × 3-query = 15 parallel calls: food/cafe + bar/pub/nightclub + snack/market/hotel restaurant |
 | 3 | Filter: minRating, minReview, chain blocklist, FOOD_DRINK_TYPES allowlist, Steeles lat cap (43.7730), exclude_ids |
 | 4 | Score: normalizedRating × (0.75 + 0.25 × trustFactor) |
-| LLM | Confidence scoring + descriptors + summary + chips (gpt-4o-mini, max_tokens:1500) |
+| LLM | Confidence scoring + descriptors + summary + chips (gemini-2.5-pro, max_tokens:1500) |
 | 5 | Photo enrichment — 8 primary (full) + 10 reserve (3 photos each, parallel) |
 
 ## Discovery Mode Architecture
@@ -72,6 +111,7 @@
 - Northern boundary: lat > 43.7730 excluded (Steeles Ave)
 - Auto-prefetch fires immediately after initial fetch completes
 - prefetchNextBatch auto-retries up to 2 rings if current ring empty
+- Tiling system: CONFIRMED WORKING as of April 2, 2026
 
 ## Anchor Point System
 - 9 Toronto points: center (43.6532, -79.3832) + 8 cardinal/intercardinal at 1km
@@ -88,7 +128,20 @@
 | whatspot_session_id | Session identifier |
 | whatspot_anchor_index | Guest anchor point index |
 
+## Local Environment Variables (.env)
+- GOOGLE_PLACES_API_KEY ✅
+- SUPABASE_URL ✅ (https://rtihqiogvamfaqitmowx.supabase.co)
+- SUPABASE_SERVICE_ROLE_KEY ✅
+- VITE_SUPABASE_URL ✅
+- VITE_SUPABASE_ANON_KEY ✅
+
 ## Identity
 - anonymous_id: localStorage (whatspot_anon_id)
 - session_id: sessionStorage (whatspot_session_id)
 - RLS: user_events allows null user_id inserts
+
+## Google OAuth
+- Native Supabase OAuth in AuthModal.jsx
+- supabase.auth.signInWithOAuth({ provider: 'google' })
+- Google Cloud OAuth client configured with Supabase callback URL
+- Redirect URLs registered: http://localhost:8080, http://localhost:8081
