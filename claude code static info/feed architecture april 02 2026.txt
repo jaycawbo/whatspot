@@ -1,0 +1,48 @@
+# WhatSpot — Feed Architecture
+# Last updated: April 2, 2026
+
+## Two-Track Detection Logic
+- On every discovery request, count venues in Supabase for the requested city
+- 15+ venues found → serve from Supabase entirely, zero Google calls
+- Fewer than 15 → fall back to Google tiling system, hard cap 3 API calls per session
+- Toronto will be fully seeded so Google fallback should almost never fire for Toronto users
+
+## Tiling System (confirmed working April 2, 2026)
+- 5 tile centers: anchor point + N/S/E/W cardinal offsets at radius * 0.5
+- 3 query types per tile = 15 parallel Google calls:
+  - A: "restaurant OR cafe OR bistro OR diner OR brasserie"
+  - B: "bar OR pub OR lounge OR nightclub OR brewery OR dive bar"
+  - C: "snack bar OR sandwich shop OR burger joint OR food market OR hotel restaurant"
+- 15 calls → up to 300 raw results → ~120-160 unique after dedup by place_id
+- Ring expansion targets annular rings only — new territory, not re-querying covered area
+- Staged criteria buffering: venues below current pass threshold held in memory, released on criteria relaxation without a new API call
+
+## Anchor Rotation — Bugs Fixed (March 28, 2026)
+Two bugs were found and fixed in useDiscoveryFeed.js:
+- Bug 1: fetchFeed() was firing before initAnchorPoint() — initial deck always used raw userLocation, bypassing anchor entirely
+- Bug 2: fetchFeed() always sent state.userLocation to backend, never reading anchorPointRef
+- Fix: init anchor before fetch, fetchFeed now uses anchorPointRef ?? state.userLocation
+- initAnchorPoint now respects search specificity:
+  - Live GPS or map pin drop → exact coordinates, no rotation
+  - Specific neighbourhood ("Little Portugal") → geocoded centroid, no rotation
+  - Broad city ("Toronto") → anchor rotation applies normally
+- locationType, isGPS, isPinDrop flags passed through state.userLocation
+- Verification still needed: confirm discovery_anchor_index is actually incrementing between sessions
+
+## Weighted Shuffle (decided, not yet implemented)
+- Pure score-ranked output creates identical experience every session (Blue Blood Steakhouse always card #1)
+- Formula: display_weight = score + (random() * 0.3)
+- Higher scored venues still surface first on average but order is never identical between sessions
+- Should be applied after scoring, before the results/reserve/staged split in recommend/index.ts
+
+## Exclude List
+- allServedIdsRef tracks ALL venues ever returned to client in a session
+- Both fetchFeed and prefetchNextBatch send full allServedIdsRef as exclude_ids
+- Prevents any venue repeating regardless of which swipe interaction triggered it
+
+## Google Places API Constraints (permanent reference)
+- Text Search: max 20 results per call, ranked by relevance not distance
+- Nearby Search: max 20 results per call, ranked by distance
+- Pagination: nextPageToken available but requires mandatory 2 second delay between pages
+- Place Details: up to 5 reviews per venue maximum
+- Radius expansion alone does NOT bring new venues via Text Search — tiling solves this by querying from multiple center points, forcing geographic diversity

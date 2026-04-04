@@ -49,6 +49,35 @@ async function getSuppressedVenueIds(userId: string): Promise<Set<string>> {
   return suppressed;
 }
 
+async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: number, excludeIds: string[]): Promise<any[]> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const sb = createClient(supabaseUrl, supabaseKey);
+
+  // Bounding box pre-filter (1.5× buffer), exact haversine applied in JS
+  const latBuf = (radiusKm * 1.5) / 111;
+  const lngBuf = (radiusKm * 1.5) / (111 * Math.cos(lat * Math.PI / 180));
+
+  const { data, error } = await sb
+    .from('venues')
+    .select('google_place_id, name, lat, lng, rating, review_count, price_level, types, business_status, photo_urls, enriched, updated_at, address')
+    .gte('lat', lat - latBuf)
+    .lte('lat', Math.min(lat + latBuf, 43.773))
+    .gte('lng', lon - lngBuf)
+    .lte('lng', lon + lngBuf)
+    .or('business_status.eq.OPERATIONAL,business_status.is.null');
+
+  if (error || !data) return [];
+
+  const excludeSet = new Set(excludeIds.map((id: string) => id.replace(/^places\//, '')));
+
+  return data.filter((v: any) => {
+    if (!v.lat || !v.lng) return false;
+    if (excludeSet.has(v.google_place_id)) return false;
+    return calculateDistance(lat, lon, v.lat, v.lng) <= radiusKm;
+  });
+}
+
 // ─── Fixed scoring constants — never modified by relaxation level ───
 const SCORING = {
   RATING_FLOOR: 4.0,
@@ -364,6 +393,12 @@ const priceLevelMap: Record<string, string> = {
   PRICE_LEVEL_VERY_EXPENSIVE: '$$$$',
 };
 
+function mapIntPriceLevel(level: number | null | undefined): string | null {
+  if (level == null) return null;
+  const map: Record<number, string> = { 0: '$', 1: '$', 2: '$$', 3: '$$$', 4: '$$$$' };
+  return map[level] ?? null;
+}
+
 // ─── Main handler ───
 
 Deno.serve(async (req) => {
@@ -473,7 +508,7 @@ Deno.serve(async (req) => {
         'gemini-2.0-flash',
         'You extract cuisine keywords from search queries for Google Places API. IMPORTANT: Do NOT include any location names, street names, city names, or neighbourhood names in your output. Only return food/cuisine/dining keywords.',
         `The user is searching for "${searchTerm}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "Toronto", etc.).\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise cuisine/food keywords suitable for a Google Places search.${sessionContextString}`,
-        [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'], additionalProperties: false } } }],
+        [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'] } } }],
         { type: 'function', function: { name: 'refine_query' } },
         { max_tokens: 100, temperature: 0 },
       ), null),
@@ -481,7 +516,7 @@ Deno.serve(async (req) => {
         'gemini-2.0-flash',
         'You detect neighbourhood, district, or city names in search queries.',
         `Given the search query "${searchTerm}" and current location "${location_name}", identify if the query mentions a specific neighbourhood, district, or city name that is different from or more specific than the current location. Return the detected location string or "NONE" if no specific location is mentioned.`,
-        [{ type: 'function', function: { name: 'detect_location', description: 'Return detected location or NONE', parameters: { type: 'object', properties: { detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' } }, required: ['detected_location'], additionalProperties: false } } }],
+        [{ type: 'function', function: { name: 'detect_location', description: 'Return detected location or NONE', parameters: { type: 'object', properties: { detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' } }, required: ['detected_location'] } } }],
         { type: 'function', function: { name: 'detect_location' } },
         { max_tokens: 100, temperature: 0 },
       ), null),
@@ -591,7 +626,6 @@ Deno.serve(async (req) => {
                   refined_query: { type: 'string', description: 'The underlying search intent stripped of refinement language' },
                 },
                 required: ['is_refinement', 'keep_results', 'replace_count', 'refined_query'],
-                additionalProperties: false,
               },
             },
           }],
@@ -613,6 +647,51 @@ Deno.serve(async (req) => {
     }
     } // end !isDiscoveryMode for street detection + step 1c
 
+    // ─── SUPABASE-FIRST DISCOVERY TRACK ───
+    let filteredVenues: any[] = [];
+    let servedFromSupabase = false;
+    let googleCallCap = Infinity;
+
+    if (isDiscoveryMode) {
+      const sbVenues = await safe('supabase-first', () =>
+        getSupabaseVenuesForArea(lat, lon, admission.maxRadius, exclude_ids), []);
+      console.log(`🗄️ Supabase-first: ${sbVenues.length} venues found for area`);
+
+      if (sbVenues.length >= 15) {
+        console.log('✅ Serving from Supabase');
+        servedFromSupabase = true;
+        filteredVenues = sbVenues
+          .filter((v: any) => !isChain(v.name || ''))
+          .filter((v: any) => hasFoodDrinkType(v.types))
+          .map((v: any) => {
+            const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
+            const isRelaxedAdmission = (v.rating ?? 0) < SCORING.RATING_FLOOR || (v.review_count ?? 0) < SCORING.REVIEW_FLOOR;
+            return {
+              name: v.name,
+              address: v.address || '',
+              lat: v.lat,
+              lon: v.lng,
+              distance_km,
+              rating: v.rating,
+              review_count: v.review_count,
+              price_level: mapIntPriceLevel(v.price_level),
+              place_id: `places/${v.google_place_id}`,
+              category: (v.types ?? []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+              cuisine_type: (v.types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+              isRelaxedAdmission,
+              unknownPrice: false,
+              _rawTypes: v.types ?? [],
+              _photoUrls: v.photo_urls ?? [],
+            };
+          })
+          .filter((v: any) => (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount);
+      } else {
+        console.warn('⚠️ Supabase coverage insufficient for area — falling back to Google');
+        googleCallCap = 3;
+      }
+    }
+
+    if (!servedFromSupabase) {
     // ─── STEP 2: Google Places broad search ───
     const reversePriceLevelMap: Record<string, string[]> = {
       '$': ['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE'],
@@ -694,13 +773,15 @@ Deno.serve(async (req) => {
         const latOffset = (tileSearchRadius * 0.5) / 111;
         const lonOffset = (tileSearchRadius * 0.5) / (111 * Math.cos(lat * Math.PI / 180));
         const tileRadius = tileSearchRadius * 0.75;
-        const tiles = [
+        const allTiles = [
           { tlat: lat, tlon: lon, tradius: tileSearchRadius },               // center
           { tlat: lat + latOffset, tlon: lon, tradius: tileRadius },          // north
           { tlat: lat - latOffset, tlon: lon, tradius: tileRadius },          // south
           { tlat: lat, tlon: lon + lonOffset, tradius: tileRadius },          // east
           { tlat: lat, tlon: lon - lonOffset, tradius: tileRadius },          // west
         ];
+        // On Supabase fallback, cap to center tile only (3 API calls max)
+        const tiles = googleCallCap <= 3 ? allTiles.slice(0, 1) : allTiles;
 
         // Build all tile × query combinations
         const tileCalls: Promise<any[]>[] = [];
@@ -769,7 +850,7 @@ Deno.serve(async (req) => {
 
     // ─── STEP 3: Filter + admission tagging ───
     console.log('🔍 STEP 3: Filtering...');
-    let filteredVenues = googleResults
+    filteredVenues = googleResults
       .map((place: any) => {
         const distance_km = calculateDistance(lat, lon, place.lat, place.lon);
         if (distance_km > admission.maxRadius) return null;
@@ -817,6 +898,7 @@ Deno.serve(async (req) => {
       .filter((v: any) => !isDiscoveryMode || hasFoodDrinkType(v._rawTypes))
       .filter((v: any) => !isDiscoveryMode || !v.lat || v.lat <= 43.7730);
 
+    } // end !servedFromSupabase (Steps 2–3)
     console.log(`✅ ${filteredVenues.length} passed filters`);
 
     // ─── STEP 3a: Skip history suppression (authenticated users only) ───
@@ -940,42 +1022,97 @@ Deno.serve(async (req) => {
     let overflowVenues: any[] = [];
 
     if (isDiscoveryMode) {
-      // Discovery mode — skip confidence scoring, only generate descriptors and chips
-      const discoveryResult = await safe('discovery-llm', () => callLLM(
-        'gemini-2.5-pro',
-        `You are a knowledgeable local friend who knows the city's food and drink scene intimately.`,
-        `Here are nearby venues to describe:\n${candidateList}\n\nReturn a JSON object with:\n- "descriptors": array of ${candidates.length} arrays, one per venue in order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "chips": array of 3-4 short follow-up search suggestions for discovering more venues nearby.`,
-        [
-          {
-            type: 'function',
-            function: {
-              name: 'discovery_venue_content',
-              description: 'Generate descriptors and chips for discovery feed',
-              parameters: {
-                type: 'object',
-                properties: {
-                  descriptors: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
-                  chips: { type: 'array', items: { type: 'string' } }
-                },
-                required: ['descriptors', 'chips'],
-                additionalProperties: false
+      // ─── Descriptor cache lookup ───
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const sbDesc = createClient(supabaseUrl, supabaseKey);
+
+      // Only check/generate descriptors for the 12 that will be served
+      const top12 = candidates.slice(0, 12);
+      const batchIds = top12.map((v: any) => (v.place_id || '').replace(/^places\//, ''));
+
+      const { data: cachedRows } = await sbDesc
+        .from('venues')
+        .select('google_place_id, descriptors')
+        .in('google_place_id', batchIds);
+
+      const cachedMap = new Map<string, string[]>();
+      for (const row of (cachedRows || [])) {
+        if (row.descriptors && row.descriptors.length > 0) {
+          cachedMap.set(row.google_place_id, row.descriptors);
+        }
+      }
+
+      const needsLLM = top12.filter((v: any) => !cachedMap.has((v.place_id || '').replace(/^places\//, '')));
+
+      let newDescriptors: string[][] = [];
+      let chips: string[] = [];
+
+      if (needsLLM.length === 0) {
+        console.log('⚡ All descriptors cached — skipping LLM');
+      } else {
+        console.log(`🤖 LLM needed for ${needsLLM.length}/${top12.length} venues`);
+        const partialList = needsLLM.map((v: any, i: number) =>
+          `${i + 1}. ${v.name} (${v.cuisine_type || 'restaurant'}, ${v.rating}★, ${v.review_count} reviews, ${v.price_level || 'price unknown'}, ${v.distance_km?.toFixed(1)}km)`
+        ).join('\n');
+
+        const discoveryResult = await safe('discovery-llm', () => callLLM(
+          'gemini-2.5-flash',
+          `You are a knowledgeable local friend who knows the city's food and drink scene intimately.`,
+          `Here are nearby venues to describe:\n${partialList}\n\nReturn a JSON object with:\n- "descriptors": array of ${needsLLM.length} arrays, one per venue in order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "chips": array of 3-4 short follow-up search suggestions for discovering more venues nearby.`,
+          [
+            {
+              type: 'function',
+              function: {
+                name: 'discovery_venue_content',
+                description: 'Generate descriptors and chips for discovery feed',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    descriptors: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
+                    chips: { type: 'array', items: { type: 'string' } }
+                  },
+                  required: ['descriptors', 'chips'],
+                }
               }
             }
-          }
-        ],
-        { type: 'function', function: { name: 'discovery_venue_content' } }
-      ), { descriptors: [], chips: [] });
+          ],
+          { type: 'function', function: { name: 'discovery_venue_content' } }
+        ), { descriptors: [], chips: [] });
 
-      finalVenues = candidates.slice(0, 12).map((v: any, i: number) => ({
-        ...v,
-        descriptors: discoveryResult.descriptors?.[i] || [],
-      }));
-      suggested_chips = discoveryResult.chips || [];
+        newDescriptors = discoveryResult.descriptors || [];
+        chips = discoveryResult.chips || [];
+
+        // Fire-and-forget write-back of new descriptors to Supabase
+        const writeRows = needsLLM
+          .map((v: any, i: number) => ({
+            google_place_id: (v.place_id || '').replace(/^places\//, ''),
+            descriptors: newDescriptors[i] || [],
+          }))
+          .filter((r: any) => r.descriptors.length > 0);
+
+        if (writeRows.length > 0) {
+          sbDesc.from('venues')
+            .upsert(writeRows, { onConflict: 'google_place_id' })
+            .then(() => {})
+            .catch(() => {});
+        }
+      }
+
+      // Merge cached + new descriptors in original top12 order
+      let llmIdx = 0;
+      finalVenues = top12.map((v: any) => {
+        const rawId = (v.place_id || '').replace(/^places\//, '');
+        const cached = cachedMap.get(rawId);
+        if (cached) return { ...v, descriptors: cached };
+        return { ...v, descriptors: newDescriptors[llmIdx++] || [] };
+      });
+      suggested_chips = chips;
 
     } else {
       // Normal search mode — full confidence scoring, descriptors, summary and chips
       const comprehensiveResult = await safe('comprehensive-llm', () => callLLM(
-        'gemini-2.5-pro',
+        'gemini-2.5-flash',
         `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues honestly and only include genuinely suitable matches.`,
         `The user searched for "${searchTerm}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.5. Order by confidence descending. Maximum 5 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
         [
@@ -1018,7 +1155,6 @@ Deno.serve(async (req) => {
                   chips: { type: 'array', items: { type: 'string' } }
                 },
                 required: ['rankings', 'descriptors', 'chips'],
-                additionalProperties: false
               }
             }
           }
@@ -1158,7 +1294,9 @@ Deno.serve(async (req) => {
       await Promise.all(
         reserveVenues.map(async (venue: any) => {
           if (!venue.place_id) { venue.image_urls = []; return; }
-          venue.image_urls = await safe('reserve-photos', () => getPlacePhotos(GOOGLE_KEY, venue.place_id, 3), []);
+          venue.image_urls = venue._photoUrls?.length
+            ? venue._photoUrls.slice(0, 3)
+            : await safe('reserve-photos', () => getPlacePhotos(GOOGLE_KEY, venue.place_id, 3), []);
         }),
       );
     }
@@ -1168,7 +1306,9 @@ Deno.serve(async (req) => {
     const enriched = await Promise.all(
       finalVenues.map(async (venue: any) => {
         if (!venue.place_id) return { ...venue, image_urls: [] };
-        const urls = await safe('photos', () => getPlacePhotos(GOOGLE_KEY, venue.place_id, 4), []);
+        const urls = venue._photoUrls?.length
+          ? venue._photoUrls.slice(0, 4)
+          : await safe('photos', () => getPlacePhotos(GOOGLE_KEY, venue.place_id, 4), []);
         return { ...venue, image_urls: urls };
       }),
     );
