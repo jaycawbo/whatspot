@@ -10,6 +10,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import AuthModal from '@/components/auth/AuthModal';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useGuestLimits, MAX_GUEST_SWIPES } from '@/hooks/useGuestLimits';
 
 const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
@@ -44,6 +45,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const [exitDirection, setExitDirection] = useState(null);
   const [hoveredButton, setHoveredButton] = useState(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalDescription, setAuthModalDescription] = useState(null);
   const [ratingSheetOpen, setRatingSheetOpen] = useState(false);
   const [ratingPendingVenue, setRatingPendingVenue] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -67,6 +69,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     executePending,
     clearPending,
   } = useDiscoveryInteractions();
+
+  const { hasReachedSwipeLimit, incrementSwipe } = useGuestLimits(isAuthenticated);
 
   // Write passive_skip when a new card becomes active
   const lastPassiveSkipRef = useRef(null);
@@ -189,6 +193,24 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       return;
     }
 
+    // Guest swipe limit: block after MAX_GUEST_SWIPES
+    if (!isAuthenticated) {
+      if (hasReachedSwipeLimit()) {
+        setAuthModalDescription(`You've used your ${MAX_GUEST_SWIPES} free swipes. Sign in to keep exploring and save your spots.`);
+        setAuthModalOpen(true);
+        return;
+      }
+      // Free swipe: animate out without saving
+      incrementSwipe();
+      setExitDirection(direction);
+      const exitX = direction === 'right' ? 500 : direction === 'left' ? -500 : 0;
+      const exitY = direction === 'down' ? 500 : 0;
+      await animate(x, exitX, { duration: 0.3 });
+      if (direction === 'down') await animate(y, exitY, { duration: 0.3 });
+      advanceCard();
+      return;
+    }
+
     let success = true;
     if (direction === 'right') {
       success = await handleInterested(venue);
@@ -199,6 +221,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     }
 
     if (success === false) {
+      setAuthModalDescription(null);
       setAuthModalOpen(true);
       return;
     }
@@ -209,7 +232,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     await animate(x, exitX, { duration: 0.3 });
     if (direction === 'down') await animate(y, exitY, { duration: 0.3 });
     advanceCard();
-  }, [handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, advanceCard]);
+  }, [isAuthenticated, hasReachedSwipeLimit, incrementSwipe, handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, advanceCard]);
 
   // Handle rating from sheet
   const handleRate = useCallback(async (rating, notes) => {
@@ -540,7 +563,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       />
 
       {/* Auth modal */}
-      <AuthModal open={authModalOpen} onOpenChange={handleAuthClose} />
+      <AuthModal open={authModalOpen} onOpenChange={handleAuthClose} description={authModalDescription} />
     </div>
   );
 }
