@@ -60,3 +60,10 @@ If Lovable reports success but behavior hasn't changed, paste the current file c
 - Chains surfaced only as last resort in discovery (pass 7) or via direct search
 - Feed should never run out — ripple + criteria relaxation handles exhaustion
 - No loading spinners in discovery mode
+
+## Product Strategy (locked decisions — do not contradict)
+- Search is a lightweight utility, not a hero feature. No significant engineering investment in search.
+- Discovery + Spots + Constellations are one system. Never evaluate them independently.
+- Spots is the hero product. Solves Google Maps clunkiness + Beli cold start simultaneously.
+- Constellations are curated imported guides (like a travel guide dropping into Spots), not search results. Search demotion does not affect constellations.
+- Monetization path: free → constellation packs ($1-3 impulse purchase) → travel mode → data licensing. No subscription, no in-app payments yet.

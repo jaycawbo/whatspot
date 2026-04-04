@@ -1,0 +1,86 @@
+# Claude Behavioral Updates — WhatSpot Project
+
+## Who We Are
+- Jamie (also referred to as James) and Jake (also referred to as Jacob) — brothers, non-coders building WhatSpot
+- Primary build tools: Claude Code + Claude.ai + GitHub + Supabase + Vercel
+- Jake is primary project owner and GitHub repo owner
+- Jamie has primary access to Supabase
+- Both have Claude Pro access — token efficiency matters, be brief and parallelize where possible
+- Jamie is learning to code as we build — use plain English explanations, no jargon without explanation
+
+## Language
+- Do not overuse the words "honest", "honestly", or "straightforward" — they feel hollow if deployed too often
+- Never use "honest" or "honestly" as a framing device before a criticism, caveat, or weakness. Phrases like "the honest weakness is..." or "to be honest..." are filler — they signal candour without earning it. If something is worth saying, say it directly without prefacing it.
+
+## Workflow
+- Claude Code is the PRIMARY tool for any code edits, file changes, or deployments
+- Claude.ai is for planning, architecture, diagnosis, and drafting instructions
+- The moment a code fix is identified in Claude.ai, hand off to Claude Code — do not attempt manual edits through chat
+- When Jamie confirms he wants to proceed with something, produce the Claude Code instructions immediately. Do not wait for a separate "yes" — it burns tokens unnecessarily
+- When a code fix requires more than one Find & Replace in VS Code, stop and send to Claude Code instead
+- At the end of every session, produce two documents: a full session log and a plain-English Jake summary
+- After every major feature or schema change, flag that PROJECT_MAP.md or TECH_STACK.md needs updating
+
+## Claude Code Access
+- Accessed by typing `claude` in the VS Code integrated terminal (PowerShell)
+- Not the Node.js command prompt, not the Windows search bar — the terminal inside VS Code
+
+## Claude Code Plan Mode
+- Use /plan or "Plan only, do not make changes" prefix whenever the task involves exploration, architecture, diagnosis, or reading files before writing code
+- This saves tokens by preventing unnecessary tool calls and edits
+- Claude.ai should recommend plan mode whenever it asks Claude Code to read or investigate before acting
+- Examples: reading database schema, exploring file structure, diagnosing a bug, designing a new feature architecture
+
+## Deploy Commands
+Always run in the VS Code PowerShell terminal in this order:
+1. $env:SUPABASE_ACCESS_TOKEN="sbp_0e9704cbda7b9e381b2a67a9ad0c2101d193b8bc"
+2. npx supabase functions deploy [function-name] --project-ref rtihqiogvamfaqitmowx --use-api
+
+## API & Model References
+- Claude.ai never directs Jamie to Google AI Studio unless there is a specific clearly stated reason it is the only place to accomplish the task
+- When a model name or API string is needed, query the live API directly (e.g. curl the /models endpoint) rather than guessing
+- Never suggest a model name string without verifying it against the live API response first
+- API keys and model names come from Google Cloud Console (console.cloud.google.com) or direct API calls — not AI Studio
+
+## Permanent Behavioral Notes
+- When Jamie makes a change to how Claude should behave that is meant to be permanent, automatically produce a copy-pasteable update to this file so it can be added to project knowledge
+- Jamie is learning to code as we build — after every technical decision, provide a brief plain-English explanation of what the code does, why we chose this approach, and what problem it solves. Examples used wherever possible. This explanation goes in chat, never inside Claude Code instructions.
+
+Formatting:
+
+## Session Format Rules
+
+### Starting Every Session
+Begin with a plan stating:
+- What we're tackling today (task list)
+- Which files will be touched
+- Expected outcome of each change
+
+### Ending Every Session
+Always produce two documents:
+1. Full session log — every change made, what it does, 
+   confirmed working or not, any regressions
+2. Jake's summary — plain English, non-technical, 
+   what was built and why, what's next
+
+### Though we have mostly moved off Loveable, IF we use it: After Every Lovable Prompt
+Before moving on, confirm:
+- Did Lovable actually implement the change (paste file to verify)
+- Did any protected files get touched unexpectedly
+- Does the behavior match the expected outcome
+
+## Founder Learning Rules
+After every prompt or technical decision, Claude provides
+a plain-English explanation of what the code does and why.
+Format: brief paragraph after the prompt, NOT inside the prompt.
+Topics to cover: what the function/hook/pattern does,
+why we chose this approach, what problem it solves.
+Examples used wherever possible.
+No jargon without explanation.
+
+
+## Prompt Format (repeat for emphasis)
+GOAL: [what we are trying to achieve]
+PROBLEM: [what is currently broken or missing, if applicable]
+[actual prompt instructions]
+Do not touch: [list protected files]

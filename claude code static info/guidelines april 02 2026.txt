@@ -1,0 +1,126 @@
+# WhatSpot — Prompting Rules, Guidelines & Product Strategy
+
+## Primary Build Tool
+Claude Code is the primary build tool for all code edits, file changes, and deployments.
+Claude.ai is for planning, architecture, and drafting instructions only.
+Lovable may still be used occasionally but is no longer the primary build platform.
+
+## Prompt Format (required for every Claude Code or Lovable prompt)
+Every prompt must open with:
+GOAL: [what we are trying to achieve]
+PROBLEM: [what is currently broken or missing]
+
+## Protected Files (Claude Code and Lovable must not touch unless explicitly instructed)
+- src/components/discovery/DiscoveryDeck.jsx
+- src/components/discovery/DiscoveryCard.jsx
+- src/components/discovery/ConstellationsSheet.jsx
+- src/hooks/useDiscoveryInteractions.js
+- src/hooks/useDiscoveryFeed.js (touch only when explicitly required)
+- src/pages/Home.jsx (touch only when explicitly required)
+- src/pages/Spots.jsx (touch only when explicitly required)
+
+## Before Deploying Any Prompt
+1. Ask Claude Code to list every file it intends to modify
+2. If the list includes a protected file not mentioned in the prompt, stop and clarify
+3. For bug fixes, ask Claude Code to confirm it can see the specific lines being changed before approving
+
+## Lovable Regression Pattern (applies when Lovable is used)
+Always ask Lovable to list files it will modify before approving any prompt.
+If Lovable reports success but behavior hasn't changed, paste the current file contents to verify — Lovable frequently reports success without actually implementing changes.
+
+## Service Worker / Cache Issues
+If the preview shows old layout after a deploy:
+DevTools → Application → Service Workers → Unregister → hard refresh
+
+## Code Style
+- All new hooks follow existing patterns in useDiscoveryFeed.js
+- Discovery mode changes never affect search mode and vice versa
+- sessionStorage operations always wrapped in try/catch
+- Never set isLoading:true in prefetch functions — prefetch must be silent
+- useRef for values that don't need re-render, useState for values that do
+
+## Session Workflow
+1. Begin each session: state plan (tasks, files, expected outcomes)
+2. End each session: write session log + Jake summary
+3. After major feature: update PROJECT_MAP.md
+4. After schema change: update TECH_STACK.md
+
+## Discovery Mode Rules
+- Discovery and search mode are strictly separated
+- Discovery filters (chain blocklist, FOOD_DRINK_TYPES, lat cap) never apply to search
+- Users can always search for chains, gyms, etc directly
+- Chains = national/international only. Local multi-location (Sam James, Balzac's) are NOT chains
+
+## Data Philosophy
+- Store everything in Supabase — no localStorage for user data
+- Anonymous users get sessionStorage only
+- All interactions logged to user_events (append-only)
+- user_venue_interactions is source of truth for interaction state
+
+## WhatSpot Product Vision
+- Local discovery tool — not an aggregator of easy-to-find info
+- Discovery should feel like a recommendation from a credible local friend
+- Chains surfaced only as last resort in discovery (pass 7) or via direct search
+- Feed should never run out — ripple + criteria relaxation handles exhaustion
+- No loading spinners in discovery mode
+
+## Product Strategy (locked decisions — do not contradict)
+- Search is a lightweight utility, not a hero feature. No significant engineering investment in search.
+- Discovery + Spots + Constellations are one system. Never evaluate them independently.
+- Spots is the hero product. Solves Google Maps clunkiness + Beli cold start simultaneously.
+- Constellations are curated imported guides (like a travel guide dropping into Spots), not search results. Search demotion does not affect constellations.
+- Monetization path: free → constellation packs ($1-3 impulse purchase) → travel mode → data licensing. No subscription, no in-app payments yet.
+
+## The Product in One Sentence
+Discover places you didn't know about. Organize everywhere you've been and want to go. Import curated guides from people whose taste you trust.
+
+## The Three Pillars (one system, not three features)
+1. Discovery — ambient swipe feed, no prompt required, value on day one
+2. Spots — personal venue OS (interested, visited, loved, didn't like)
+3. Constellations — curated importable guides that drop into your Spots page
+
+Discovery and Spots are one system. Without Discovery feeding it, Spots is just Beli with less funding. Without Spots giving it meaning, Discovery is just a novelty. Never evaluate them separately when making product decisions.
+
+## Search (demoted, not removed)
+Search stays as a lightweight utility — "find a specific venue to add to Spots."
+No significant engineering investment. Not positioned as a differentiator.
+Reason: Google Maps now has conversational LLM search built in. You cannot out-Google Google.
+
+## Constellations (unaffected by search demotion)
+A Constellation is a pre-built named venue collection — "Toronto's Best Pasta," "Bourdain's Toronto" — that drops permanently into a user's Spots page as an importable layer with map overlay. Closer to buying a travel guide than performing a search. No search bar required. Build order: design data model first, build UI only after Spots has enough users that an import means something.
+
+## Why Spots Wins
+- Google Maps saved places: universally clunky, unshareable
+- Beli: requires friend network to deliver value (cold start problem), ranking mechanic is tedious (forces comparing a steakhouse to a taco truck)
+- WhatSpot: Discovery solves cold start entirely — full value day one, zero friends required
+
+## Competitive Landscape (confirmed April 2, 2026)
+- Beli: $12M raised, 75M+ reviews, 30,000 cities. Weakness: friend-dependent, cold start, ranking tedium. App Store reviews confirm users find it no different from Google Maps without friends on it.
+- Truffle: Auto-tracks from Instagram Stories. Parasitic on Instagram, no independent discovery.
+- Savor: Dish-level tracking, AI photo recognition. Niche, not a direct competitor.
+- The Infatuation: Editorial only, complementary not competitive.
+- Gap confirmed: nobody has ambient discovery + frictionless post-visit capture + personal venue OS as a combined system. That gap is real.
+
+## Monetization Path
+Phase 1 — Free (build the habit)
+  Discovery and Spots completely free.
+  Goal: Spots page with 40+ venues feels irreplaceable to the user.
+
+Phase 2 — Constellation packs (first revenue)
+  $1-3 per pack, impulse purchase, drops permanently into Spots.
+  No subscription friction. Value immediately visible on import.
+
+Phase 3 — Travel mode
+  When user leaves home city, a premium layer activates filtering the destination
+  through the taste profile their home Spots page has built.
+  Pay-per-trip or small monthly fee.
+
+Phase 4 — Data
+  Post-visit swipe signals captured at higher volume and velocity than Google
+  (their review flow is too high friction). Long-term play, not near-term revenue.
+
+## What We Are NOT Doing
+- Monthly subscription as primary model
+- In-app restaurant payments (Jake's Toast/Square layer idea is smart — revisit when restaurant density exists, not now)
+- Advertising
+- Building search as a hero feature

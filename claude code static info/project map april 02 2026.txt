@@ -1,0 +1,45 @@
+# WhatSpot — Project Map
+
+## Live Features ✅
+- Discovery feed with ripple radius expansion and criteria pass ladder
+- 4-way swipe interactions (right/left/up/down)
+- All interactions write to exclusion list (no venue repeats in session)
+- Reserve venue photo enrichment (3 photos each)
+- Silent prefetch — new venues append without loading spinner
+- Spots page — 5 tabs reading from user_venue_interactions
+- Session memory — search history passed to recommend
+- Anonymous event logging
+- CartoDB Voyager map tiles
+- Custom pill-shaped map markers (rating + venue type icon + color by save status)
+- Chain exclusion in discovery (60+ chains)
+- FOOD_DRINK_TYPES allowlist (no gyms, banks etc in discovery)
+- Club → nightclub intent disambiguation in search
+- Steeles Ave northern boundary cap
+- 9 anchor point rotation (auth sequential, guest random)
+- Guest swipe limit system (useGuestLimits.js) — gates anonymous users, nudges toward signup
+
+## Pending / In Progress 🔴
+### Build Order (priority sequence)
+1. Toronto census sweep script — one-time ~$110, populates Supabase with all Toronto food/drink venues (Claude Code task)
+2. Supabase-first lookup in recommend/index.ts — check local DB before Google; Google only as fallback (hard cap: 3 calls/session)
+3. Re-enable Google Places API — only after steps 1 and 2 verified working
+4. IntersectionObserver on DiscoveryCard.jsx — viewport-only photo loading (requires explicitly unlocking protected file)
+5. One-photo-per-surface hydration logic — incremental photo collection, photos_complete flag
+6. VITE_TESTING_MODE flag — testing safeguards including 30-photo session cap
+7. Weighted shuffle — score jitter so discovery order varies between sessions
+8. Anchor rotation verification — confirm discovery_anchor_index incrementing between sessions
+9. Spots page UI elevation — hero product needs to look and feel like one
+10. Constellation data model — design schema before building UI
+11. Descriptor chip fix — Gemini 2.5 Pro silently failing inside safe() wrapper, returning empty arrays
+
+## Strategic Decisions (locked)
+- Search is demoted — lightweight utility only ("find a specific venue"), not a hero feature, no significant engineering investment
+- Discovery + Spots + Constellations are the product story — they are one system, not separate features
+- Constellations survive search demotion — they are curated imported guides, not search results
+- Spots is the hero product — solves Google Maps clunkiness and Beli's cold start problem simultaneously
+- Monetization: free → constellation packs ($1-3) → travel mode → data
+- No subscription model, no in-app payments (revisit when restaurant density exists)
+
+## Deprecated
+- favorites table (archived, 25 frozen rows)
+- HeartButton component (removed from DiscoveryCard)
