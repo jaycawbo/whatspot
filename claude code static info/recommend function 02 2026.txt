@@ -1,0 +1,118 @@
+# WhatSpot — recommend/index.ts Summary
+# Last verified: April 2, 2026
+
+## What This Function Does
+Main discovery and search engine. Accepts a request, queries Google Places,
+filters/scores venues, runs an LLM pass, and returns structured results.
+
+## Request Parameters (key ones)
+- `lat`, `lon` — user/anchor coordinates
+- `searchTerm` — user query (empty in discovery mode)
+- `mode: "discovery"` — triggers discovery path (vs search path)
+- `criteria_pass` — integer 1-7, controls discovery quality threshold
+- `radius_km` — ripple ring radius
+- `tile_radius_km` — override for annular ring targeting on prefetch
+- `exclude_ids` — array of place_ids already seen this session
+- `open_now`, `price_levels` — optional filters
+- `session_context` — last 20 searches (search mode only)
+- `relaxation_level` — 0-3, loosens radius/rating in search mode
+
+## Pipeline (in order)
+
+### Discovery Mode
+1. Skip Steps 1, 1b, 1c (no query refinement)
+2. Generate 5 tile centers (center + N/S/E/W at radius*0.5 offset)
+3. Run 3 queries per tile = 15 parallel Google calls:
+   - Query A: "restaurant OR cafe OR bistro OR diner OR brasserie"
+   - Query B: "bar OR pub OR lounge OR nightclub OR brewery OR dive bar"
+   - Query C: "snack bar OR sandwich shop OR burger joint OR food market OR hotel restaurant"
+4. Deduplicate by place_id → typically 80-160 unique venues
+5. Filter (see below)
+6. Score all venues
+7. Split into: results (top 12) + reserve_venues (next 10) + staged_venues (up to 30, below criteria)
+8. LLM descriptor pass (gemini-2.5-pro) → 3 descriptors per venue
+9. Photo enrichment
+
+### Search Mode
+1. Step 1: Gemini query refinement (gemini-2.0-flash)
+2. Step 1b: Neighbourhood detection + geocode override
+3. Step 1c: Refinement intent detection (if session history exists)
+4. Single Google Places call (or street-restricted call if street detected)
+5. Filter, score, LLM confidence scoring + descriptors + summary + chips
+6. Returns up to 8 venues
+
+## Filters Applied (Discovery Only)
+- `isChain(name)` — checks against CHAIN_BLOCKLIST (60+ nationals)
+- `hasFoodDrinkType(types)` — venue must have at least one type in FOOD_DRINK_TYPES
+- `lat <= 43.7730` — Steeles Ave northern boundary cap
+- `distance_km <= admission.maxRadius`
+- `rating >= minRating`, `review_count >= minReviewCount` (per criteria pass)
+- `score > admission.minScore`
+- Skip history suppression (auth users only, reads skip_history table)
+
+## Chain Blocklist (CHAIN_BLOCKLIST)
+National/international chains only. Local multi-location independents (e.g. Sam James,
+Balzac's, Burger's Priest, Burger Drops) are NOT on this list and will surface normally.
+Key entries: McDonald's, Subway, Starbucks, Tim Hortons, Burger King, KFC, Pizza Hut,
+Domino's, Taco Bell, Popeyes, Dairy Queen, Harvey's, A&W, Second Cup, Boston Pizza,
+Swiss Chalet, St. Louis, Milestones, Earls, Cactus Club, The Keg, Five Guys,
+Shake Shack, Chipotle, Panera, Nando's, Pizza Pizza, Little Caesars, Papa John's,
+Red Lobster, Olive Garden + ~15 others.
+
+## FOOD_DRINK_TYPES Allowlist
+~130 venue types. Covers all restaurant cuisines, bars, cafes, pubs, cocktail bars,
+wine bars, breweries, bakeries, dessert shops, food courts, nightclubs, etc.
+Explicitly excludes: gyms, banks, retail, spas, and anything non-food/drink.
+Key types included: restaurant, bar, cafe, pub, bistro, diner, cocktail_bar, wine_bar,
+night_club, brewery, winery, fast_food_restaurant, food_court, all *_restaurant types.
+
+## Discovery Criteria Pass Ladder
+| Pass | Min Rating | Min Reviews | Min Score |
+|------|-----------|-------------|-----------|
+| 1    | 4.0       | 25          | 1.0       |
+| 2    | 3.8       | 20          | 0.9       |
+| 3    | 3.5       | 15          | 0.8       |
+| 4    | 3.3       | 10          | 0.7       |
+| 5    | 3.0       | 5           | 0.6       |
+| 6    | 2.5       | 3           | 0.5       |
+| 7    | 0         | 1           | 0.3       |
+
+## Scoring Formula
+
+normalizedRating = (rating - 4.0) / (5.0 - 4.0) × 10
+trustFactor = clamp((reviewCount - 25) / (500 - 25), 0, 1)
+score = normalizedRating × (0.75 + 0.25 × trustFactor)
+// If relaxedAdmission: score × 0.85
+// If unknownPrice with price filter active: score × 0.7
+
+## Response Shape
+```json
+{
+  "results": [],          // top 12 (discovery) or up to 8 (search)
+  "reserve_venues": [],   // next 10, already scored + photos (3 each)
+  "staged_venues": [],    // up to 30, below current criteria, staged_for_relaxation: true
+  "suggested_chips": [],  // 3-4 follow-up search suggestions
+  "search_summary": null, // search mode only
+  "relaxation_applied": false,
+  "relaxation_level": 0,
+  "nearby_overflow": []   // search mode only, venues >2km
+}
+```
+
+## Known Issues (as of April 2, 2026)
+- Descriptor chips and `descriptors: []` on all discovery results — gemini-2.5-pro LLM call silently failing inside safe() wrapper. Likely timeout or model ID issue. Needs investigation.
+- Weighted shuffle not yet implemented — Blue Blood Steakhouse will always be card #1.
+- Google Places API manually disabled — Supabase-first architecture must be built before re-enabling.
+- Tiling system: CONFIRMED WORKING as of April 2, 2026. Runtime error from March 28 resolved.
+
+## LLM Models Used
+- `gemini-2.0-flash` — Steps 1, 1b, 1c (fast, cheap, simple extraction)
+- `gemini-2.5-pro` — Discovery descriptors + Search confidence scoring (complex)
+- `gemini-2.5-flash` — Now stable with thinking capability, candidate to replace 2.5-pro on descriptor pass at lower cost
+
+## Suppression Windows (skip_history table, auth users only)
+- passive_skip: 21 days
+- skip_for_now: 30 days
+- interested: 60 days
+- not_interested: 90 days
+- been_here: indefinite
