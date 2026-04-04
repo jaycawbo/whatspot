@@ -1178,6 +1178,48 @@ Deno.serve(async (req) => {
     // ─── Strip internal fields ───
     const resultsForFrontend = resultsWithDescriptors.map(({ isRelaxedAdmission, unknownPrice, ...rest }: any) => rest);
 
+    // ─── STEP 6: Fire-and-forget venue ingestion ───
+    // Writes primary + reserve venues to the venues table on first discovery.
+    // This populates the DB pool that New/Trending/Popular tabs draw from.
+    // Never blocks the response. The protect_snapshot_review_count DB trigger
+    // ensures snapshot_review_count_at_ingestion is never overwritten on update.
+    // trending_current_review_count is intentionally excluded — owned by the daily trending job.
+    try {
+      const priceLevelIntMap: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
+      const venueRows = [...resultsForFrontend, ...(reserveVenues || [])].map((v: any) => {
+        const rawId = (v.place_id || v.google_place_id || '');
+        const placeId = rawId.replace(/^places\//, '');
+        if (!placeId) return null;
+        return {
+          google_place_id: placeId,
+          name: v.name || null,
+          address: v.address || null,
+          lat: v.lat ?? null,
+          lng: v.lon ?? null,
+          rating: v.rating ?? null,
+          review_count: v.review_count ?? null,
+          price_level: priceLevelIntMap[v.price_level] ?? null,
+          image_urls: Array.isArray(v.image_urls) && v.image_urls.length ? v.image_urls : null,
+          descriptors: Array.isArray(v.descriptors) && v.descriptors.length ? v.descriptors : null,
+          types: Array.isArray(v._rawTypes) && v._rawTypes.length ? v._rawTypes : null,
+          snapshot_review_count_at_ingestion: v.review_count ?? null,
+        };
+      }).filter(Boolean);
+
+      if (venueRows.length > 0) {
+        const sbIngest = createClient(
+          Deno.env.get('SUPABASE_URL')!,
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+        );
+        sbIngest.from('venues').upsert(venueRows, {
+          onConflict: 'google_place_id',
+          ignoreDuplicates: false,
+        }).then(() => {}).catch(() => {});
+      }
+    } catch {
+      // Ingestion errors must never propagate to the user
+    }
+
     return new Response(
       JSON.stringify({
         results: resultsForFrontend,

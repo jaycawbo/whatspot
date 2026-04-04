@@ -6,7 +6,8 @@ const GlobalStateContext = createContext();
 const initialFilters = {
   openNow: true,
   priceLevels: [],
-  radius: 2,
+  cuisines: [],
+  radius: 5,
 };
 
 function getInitialState() {
@@ -35,6 +36,7 @@ function getInitialState() {
     userLocation: location,
     locationName,
     filters: initialFilters,
+    feedTab: 'for_you',
     anonymousId,
     searchHistory: history,
     results: [],
@@ -66,6 +68,8 @@ function reducer(state, action) {
       return { ...state, view: action.payload };
     case 'SET_FILTERS':
       return { ...state, filters: { ...state.filters, ...action.payload } };
+    case 'SET_FEED_TAB':
+      return { ...state, feedTab: action.payload };
     case 'SET_LOCATION':
       return {
         ...state,

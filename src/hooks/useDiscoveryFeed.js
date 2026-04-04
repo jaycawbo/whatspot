@@ -47,6 +47,126 @@ function loadFeedCache() {
   } catch { return null; }
 }
 
+// ─── Tab feed helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Cuisine type → price_level integer map for filter queries.
+ * Maps FilterDialog price chips ('$' etc.) to the integer stored in the DB.
+ */
+const PRICE_CHIP_TO_INT = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
+
+/**
+ * Compute a bounding box for a radius query without PostGIS.
+ * Returns { latMin, latMax, lngMin, lngMax }.
+ */
+function boundingBox(lat, lng, radiusKm) {
+  const dLat = radiusKm / 111.0;
+  const dLng = radiusKm / (111.0 * Math.cos((lat * Math.PI) / 180));
+  return { latMin: lat - dLat, latMax: lat + dLat, lngMin: lng - dLng, lngMax: lng + dLng };
+}
+
+/**
+ * Fetch venues from the DB for a given tab.
+ * Returns { venues: VenueRow[], isEmpty: boolean }
+ *   isEmpty = true for Trending when < 10 results qualify.
+ */
+async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
+  const { lat, lon } = anchor;
+  const radiusKm = filters?.radius || 5;
+  const bb = boundingBox(lat, lon ?? lat, radiusKm);
+
+  let query = supabase
+    .from('venues')
+    .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, types, image_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
+    .gte('lat', bb.latMin)
+    .lte('lat', bb.latMax)
+    .gte('lng', bb.lngMin)
+    .lte('lng', bb.lngMax);
+
+  // Price filter
+  if (filters?.priceLevels?.length) {
+    const ints = filters.priceLevels.map((p) => PRICE_CHIP_TO_INT[p]).filter(Boolean);
+    if (ints.length) query = query.in('price_level', ints);
+  }
+
+  // Cuisine filter — match venues whose types array contains any selected cuisine type
+  // Supabase JSONB contains syntax: types @> '["italian_restaurant"]'
+  if (filters?.cuisines?.length) {
+    const cuisineFilter = filters.cuisines
+      .map((c) => `types.cs.${JSON.stringify([c])}`)
+      .join(',');
+    query = query.or(cuisineFilter);
+  }
+
+  // Tab-specific filters + ordering
+  if (tab === 'popular') {
+    query = query
+      .not('review_count', 'is', null)
+      .order('review_count', { ascending: false })
+      .limit(20);
+  } else if (tab === 'new') {
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    query = query
+      .not('snapshot_review_count_at_ingestion', 'is', null)
+      .lt('snapshot_review_count_at_ingestion', 75)
+      .gte('created_at', cutoff)
+      .order('created_at', { ascending: false })
+      .limit(30);
+  } else if (tab === 'trending') {
+    query = query
+      .not('trending_score', 'is', null)
+      .not('trending_previous_review_count', 'is', null)
+      .gte('review_count', 50)
+      .order('trending_score', { ascending: false })
+      .limit(30);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('[TabFeed] DB query error:', error);
+    return { venues: [], isEmpty: true };
+  }
+
+  // Exclude skipped/interacted IDs
+  const skipSet = new Set(skippedIds || []);
+  let filtered = (data || []).filter((v) => {
+    const id = (v.google_place_id || '').replace(/^places\//, '');
+    return !skipSet.has(id);
+  });
+
+  // For Trending: apply std-dev threshold client-side
+  if (tab === 'trending' && filtered.length > 0) {
+    const scores = filtered.map((v) => v.trending_score).filter((s) => s != null);
+    if (scores.length >= 3) {
+      const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+      const stdDev = Math.sqrt(scores.reduce((a, b) => a + (b - mean) ** 2, 0) / scores.length);
+      const threshold = mean + stdDev;
+      filtered = filtered.filter((v) => v.trending_score > threshold);
+    }
+    if (filtered.length < 10) {
+      return { venues: filtered, isEmpty: true };
+    }
+  }
+
+  // Normalise shape to match what DiscoveryCard expects
+  const normalised = filtered.map((v) => ({
+    google_place_id: v.google_place_id,
+    place_id: v.google_place_id,
+    name: v.name,
+    address: v.address,
+    lat: v.lat,
+    lon: v.lng,
+    rating: v.rating,
+    review_count: v.review_count,
+    price_level: v.price_level,
+    types: v.types || [],
+    image_urls: v.image_urls || [],
+    descriptors: v.descriptors || [],
+  }));
+
+  return { venues: normalised, isEmpty: false };
+}
+
 export function useDiscoveryFeed() {
   const { state } = useGlobalState();
   const cached = useRef(loadFeedCache()).current;
@@ -55,6 +175,7 @@ export function useDiscoveryFeed() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentQuery, setCurrentQuery] = useState(cached?.currentQuery || '');
+  const [tabEmpty, setTabEmpty] = useState(false);
   const radiusRef = useRef(state.filters?.radius || 5);
   const abortRef = useRef(null);
   const hasFetchedRef = useRef(!!cached);
@@ -131,6 +252,41 @@ export function useDiscoveryFeed() {
     }
     console.log('[Anchor] Rotation for guest, anchor:', anchorPointRef.current);
   }, [state.userLocation]);
+
+  // Tab feed — fires when feedTab or filters change (for DB-driven tabs: new/trending)
+  // For You and Popular use the existing recommend pipeline.
+  useEffect(() => {
+    const tab = state.feedTab;
+    if (!tab || tab === 'for_you' || tab === 'popular') return;
+    if (!anchorPointRef.current) return; // wait until anchor is initialised
+
+    setIsLoading(true);
+    setTabEmpty(false);
+
+    let skippedIds = [];
+    try {
+      const raw = sessionStorage.getItem('whatspot_skipped_venues');
+      if (raw) skippedIds = JSON.parse(raw);
+    } catch {}
+
+    fetchTabVenues(tab, {
+      anchor: anchorPointRef.current,
+      filters: state.filters,
+      skippedIds,
+    }).then(({ venues: tabVenues, isEmpty }) => {
+      setVenues(tabVenues);
+      setOverflowVenues([]);
+      setCurrentQuery('');
+      setTabEmpty(isEmpty);
+    }).catch((err) => {
+      console.error('[TabFeed] Error:', err);
+      setVenues([]);
+      setTabEmpty(true);
+    }).finally(() => {
+      setIsLoading(false);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.feedTab, state.filters]);
 
   const fetchFeed = useCallback(async ({ query = '', radius, mode } = {}) => {
     if (abortRef.current) abortRef.current.abort();
@@ -436,6 +592,7 @@ export function useDiscoveryFeed() {
     isLoading,
     error,
     currentQuery,
+    tabEmpty,
     searchFeed,
     expandSearch,
     refetchDiscovery: () => fetchFeed(),

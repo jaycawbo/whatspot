@@ -5,8 +5,8 @@
  * the Enterprise pricing level so we never pay that rate twice for the same venue.
  *
  * Fields refreshed (one API call per venue):
- *   rating, userRatingCount, currentOpeningHours, businessStatus,
- *   nationalPhoneNumber, websiteUri
+ *   rating, userRatingCount, currentOpeningHours, regularOpeningHours,
+ *   businessStatus, nationalPhoneNumber, websiteUri
  *
  * FieldMask pricing note:
  *   All six fields sit in Google's Enterprise tier.
@@ -37,6 +37,7 @@ const ENTERPRISE_FIELD_MASK = [
   'rating',
   'userRatingCount',
   'currentOpeningHours',
+  'regularOpeningHours',
   'businessStatus',
   'nationalPhoneNumber',
   'websiteUri',
@@ -84,12 +85,13 @@ async function fetchEnterpriseFields(googlePlaceId: string, apiKey: string) {
 
   const d = await resp.json();
   return {
-    rating:                d.rating                              ?? null,
-    review_count:          d.userRatingCount                     ?? null,
-    opening_hours:         parsePeriods(d.currentOpeningHours?.periods || []),
-    is_temporarily_closed: d.businessStatus === 'TEMPORARILY_CLOSED',
-    phone:                 d.nationalPhoneNumber                 ?? null,
-    website:               d.websiteUri                         ?? null,
+    rating:                  d.rating                              ?? null,
+    review_count:            d.userRatingCount                     ?? null,
+    opening_hours:           parsePeriods(d.currentOpeningHours?.periods || []),
+    regular_opening_hours:   parsePeriods(d.regularOpeningHours?.periods || []),
+    is_temporarily_closed:   d.businessStatus === 'TEMPORARILY_CLOSED',
+    phone:                   d.nationalPhoneNumber                 ?? null,
+    website:                 d.websiteUri                         ?? null,
   };
 }
 
@@ -147,8 +149,8 @@ Deno.serve(async (req) => {
           .from('venues')
           .update({
             ...fields,
-            rating_last_updated: now,
-            hours_last_updated:  now,
+            rating_last_updated:  now,
+            hours_last_updated:   now,
           })
           .eq('google_place_id', row.google_place_id);
 
