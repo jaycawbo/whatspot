@@ -1,32 +1,51 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 
 const PRICE_LEVELS = ['$', '$$', '$$$', '$$$$'];
 
-export default function FilterDialog({ filters, onFilterChange, maxRadius = 10, externalOpen, onExternalOpenChange, hideTrigger }) {
-  const [internalOpen, setInternalOpen] = useState(false);
-  const open = externalOpen !== undefined ? externalOpen : internalOpen;
-  const setOpen = (v) => {
-    if (onExternalOpenChange) onExternalOpenChange(v);
-    setInternalOpen(v);
-  };
+// Google Places type → display label (most common first, then alphabetical)
+const CUISINE_TYPES = [
+  { type: 'italian_restaurant',      label: 'Italian'          },
+  { type: 'japanese_restaurant',     label: 'Japanese'         },
+  { type: 'mexican_restaurant',      label: 'Mexican'          },
+  { type: 'chinese_restaurant',      label: 'Chinese'          },
+  { type: 'american_restaurant',     label: 'American'         },
+  { type: 'thai_restaurant',         label: 'Thai'             },
+  { type: 'indian_restaurant',       label: 'Indian'           },
+  { type: 'korean_restaurant',       label: 'Korean'           },
+  { type: 'mediterranean_restaurant',label: 'Mediterranean'    },
+  { type: 'french_restaurant',       label: 'French'           },
+  { type: 'vietnamese_restaurant',   label: 'Vietnamese'       },
+  { type: 'middle_eastern_restaurant',label: 'Middle Eastern'  },
+  { type: 'greek_restaurant',        label: 'Greek'            },
+  { type: 'spanish_restaurant',      label: 'Spanish'          },
+  { type: 'breakfast_restaurant',    label: 'Breakfast/Brunch' },
+  { type: 'other',                   label: 'Other'            },
+];
 
+const DEFAULT_FILTERS = {
+  openNow: true,
+  priceLevels: [],
+  cuisines: [],
+  radius: 5,
+};
+
+export default function FilterDialog({ filters, onFilterChange, open, onOpenChange }) {
   const [local, setLocal] = useState(filters);
 
   const handleOpen = (o) => {
     if (o) setLocal(filters);
-    setOpen(o);
+    onOpenChange?.(o);
   };
 
   const togglePrice = (p) => {
@@ -38,33 +57,45 @@ export default function FilterDialog({ filters, onFilterChange, maxRadius = 10, 
     }));
   };
 
+  const toggleCuisine = (type) => {
+    setLocal((prev) => ({
+      ...prev,
+      cuisines: (prev.cuisines || []).includes(type)
+        ? (prev.cuisines || []).filter((x) => x !== type)
+        : [...(prev.cuisines || []), type],
+    }));
+  };
+
   const apply = () => {
     onFilterChange(local);
-    setOpen(false);
+    onOpenChange?.(false);
+  };
+
+  const reset = () => {
+    const resetFilters = { ...DEFAULT_FILTERS };
+    setLocal(resetFilters);
+    onFilterChange(resetFilters);
+    onOpenChange?.(false);
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpen}>
-      {!hideTrigger && (
-        <DialogTrigger asChild>
-          <Button variant="outline" size="sm" className="gap-1.5">
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            Filters
-          </Button>
-        </DialogTrigger>
-      )}
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Filters</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-5 pt-2">
+    <Sheet open={open} onOpenChange={handleOpen}>
+      <SheetContent side="bottom" className="rounded-t-2xl max-h-[90vh] overflow-y-auto pb-8">
+        <SheetHeader className="mb-4">
+          <SheetTitle>Filters</SheetTitle>
+        </SheetHeader>
+
+        <div className="space-y-6">
           {/* Open Now */}
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-foreground">Open Now</span>
-            <Switch checked={local.openNow} onCheckedChange={(v) => setLocal((p) => ({ ...p, openNow: v }))} />
+            <Switch
+              checked={local.openNow}
+              onCheckedChange={(v) => setLocal((p) => ({ ...p, openNow: v }))}
+            />
           </div>
 
-          {/* Price */}
+          {/* Price Level */}
           <div>
             <span className="text-sm font-medium text-foreground">Price Level</span>
             <div className="flex gap-2 mt-2">
@@ -85,25 +116,57 @@ export default function FilterDialog({ filters, onFilterChange, maxRadius = 10, 
             </div>
           </div>
 
+          {/* Cuisine Type */}
+          <div>
+            <span className="text-sm font-medium text-foreground">Cuisine Type</span>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {CUISINE_TYPES.map(({ type, label }) => (
+                <button
+                  key={type}
+                  onClick={() => toggleCuisine(type)}
+                  className={cn(
+                    'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                    (local.cuisines || []).includes(type)
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'border-border text-muted-foreground hover:bg-accent'
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Radius */}
           <div>
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-foreground">Radius</span>
+              <span className="text-sm font-medium text-foreground">Search Radius</span>
               <span className="text-xs text-muted-foreground">{local.radius} km</span>
             </div>
             <Slider
               value={[local.radius]}
               onValueChange={([v]) => setLocal((p) => ({ ...p, radius: v }))}
-              min={1}
-              max={maxRadius}
+              min={0.5}
+              max={25}
               step={0.5}
               className="mt-2"
             />
           </div>
 
-          <Button onClick={apply} className="w-full">Apply Filters</Button>
+          {/* Actions */}
+          <div className="flex items-center gap-3 pt-2">
+            <Button onClick={apply} className="flex-1">
+              Apply Filters
+            </Button>
+            <button
+              onClick={reset}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Reset All
+            </button>
+          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

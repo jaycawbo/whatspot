@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SlidersHorizontal } from 'lucide-react';
 import { logEvent } from '@/lib/logEvent';
 import LoadingMessages from '@/components/home/LoadingMessages';
 import { useGlobalState } from '@/context/GlobalStateContext';
@@ -9,6 +10,8 @@ import MobileSearchDrawer from '@/components/home/MobileSearchDrawer';
 import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
 import GatedModal from '@/components/home/GatedModal';
 import PostSaveLabelSheet from '@/components/spots/PostSaveLabelSheet';
+import FeedModeTabs from '@/components/home/FeedModeTabs';
+import FilterDialog from '@/components/home/FilterDialog';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
 import { useGuestLimits } from '@/hooks/useGuestLimits';
@@ -33,11 +36,12 @@ export default function Home() {
   const searchBarRef = useRef(null);
   const { isAuthenticated } = useAuth();
 
-  const { venues: feedVenues, overflowVenues, isLoading: feedLoading, currentQuery, searchFeed, expandSearch, getReserveVenues, getPrefetchedVenues, prefetchNextBatch } = useDiscoveryFeed();
+  const { venues: feedVenues, overflowVenues, isLoading: feedLoading, currentQuery, tabEmpty, searchFeed, expandSearch, refetchDiscovery, getReserveVenues, getPrefetchedVenues, prefetchNextBatch } = useDiscoveryFeed();
   const { showGate, closeGate, incrementSearch } = useGuestLimits();
   const listMembershipMap = useVenueListMembership();
   const [reserveVenues, setReserveVenues] = useState([]);
   const [labelSheetVenue, setLabelSheetVenue] = useState(null);
+  const [filterOpen, setFilterOpen] = useState(false);
 
   // Listen for post-save label microinteraction events from swipe handlers
   useEffect(() => {
@@ -163,10 +167,39 @@ export default function Home() {
     [state.query, state.tileBaseQuery, dispatch]
   );
 
+  const handleTabChange = useCallback(
+    (tab) => {
+      setReserveVenues([]);
+      // For You and Popular use the recommend pipeline — trigger a fresh fetch
+      if (tab === 'for_you' || tab === 'popular') {
+        refetchDiscovery();
+      }
+      // New and Trending are handled by the effect inside useDiscoveryFeed
+    },
+    [refetchDiscovery]
+  );
+
+  // Count non-default active filters for badge
+  const activeFilterCount = useMemo(() => {
+    const f = state.filters;
+    let count = 0;
+    if (!f.openNow) count++;
+    if (f.priceLevels?.length) count += f.priceLevels.length;
+    if (f.cuisines?.length) count += f.cuisines.length;
+    if (f.radius && f.radius !== 5) count++;
+    return count;
+  }, [state.filters]);
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
       <GatedModal isOpen={showGate} onClose={closeGate} />
+      <FilterDialog
+        filters={state.filters}
+        open={filterOpen}
+        onOpenChange={setFilterOpen}
+        onFilterChange={(f) => dispatch({ type: 'SET_FILTERS', payload: f })}
+      />
       {labelSheetVenue && (
         <PostSaveLabelSheet
           venue={labelSheetVenue}
@@ -195,6 +228,25 @@ export default function Home() {
           </div>
         )}
 
+        {/* Feed mode tabs + filter button */}
+        {!currentQuery && (
+          <div className="flex items-center justify-center gap-3 px-4 pb-2">
+            <FeedModeTabs onTabChange={handleTabChange} />
+            <button
+              onClick={() => setFilterOpen(true)}
+              className="relative inline-flex items-center justify-center h-[34px] w-[34px] rounded-full border border-border bg-card hover:bg-accent transition-colors shrink-0"
+              aria-label="Filters"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+              {activeFilterCount > 0 && (
+                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-[#22c55e] text-[10px] font-bold text-white flex items-center justify-center">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          </div>
+        )}
+
         <div
           className={`flex-1 flex items-center justify-center px-4 ${isMobile ? 'pb-20' : ''}`}
           style={{ '--deck-height': isMobile ? '85vh' : 'clamp(500px, 78vh, 800px)' }}
@@ -203,6 +255,10 @@ export default function Home() {
             {feedLoading ? (
               <div className="flex items-center justify-center h-full">
                 <LoadingMessages />
+              </div>
+            ) : tabEmpty ? (
+              <div className="flex flex-col items-center justify-center h-full text-center gap-3 py-16">
+                <p className="text-muted-foreground text-sm">Not enough data yet — check back soon.</p>
               </div>
             ) : (
               <DiscoveryDeck
