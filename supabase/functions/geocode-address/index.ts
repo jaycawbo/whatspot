@@ -9,7 +9,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { address, city_name } = await req.json();
+    const { address } = await req.json();
 
     if (!address) {
       return new Response(JSON.stringify({ error: 'address is required' }), {
@@ -18,70 +18,52 @@ Deno.serve(async (req) => {
       });
     }
 
-    const apiKey = Deno.env.get('GOOGLE_PLACES_API_KEY');
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'Google Places API key not configured' }), {
-        status: 500,
+    console.log(`🔍 Geocoding: "${address}"`);
+
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&addressdetails=1`;
+
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'WhatSpot/1.0 (whatspot.app)' },
+    });
+
+    if (!response.ok) {
+      console.error(`❌ Nominatim geocoding error: ${response.status}`);
+      return new Response(JSON.stringify({ success: false, error: 'Geocoding service unavailable' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const cleanAddress = address
-      .replace(/\s+(Unit|Suite|Ste|Apt|#)\s+[A-Za-z0-9-]+/gi, '')
-      .replace(/,\s*(Unit|Suite|Ste|Apt|#)[^,]*/gi, '');
+    const results = await response.json();
 
-    const strategies = [
-      cleanAddress,
-      cleanAddress.split(',').slice(0, 2).join(','),
-      city_name ? `${cleanAddress.split(',')[0]}, ${city_name}` : null,
-    ].filter(Boolean);
-
-    for (const query of strategies) {
-      if (!query || query.trim() === '') continue;
-
-      console.log(`🔍 Geocoding: "${query}"`);
-
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${apiKey}`;
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        console.error(`❌ Google Geocoding API error: ${response.status}`);
-        continue;
-      }
-
-      const data = await response.json();
-
-      if (data.status === 'OK' && data.results && data.results.length > 0) {
-        const location = data.results[0].geometry.location;
-        const types = data.results[0].types || [];
-        
-        // Map Google geocoding types to a simple locationType
-        const BROAD_TYPES = ['locality', 'administrative_area_level_1', 'administrative_area_level_2', 'country', 'postal_code'];
-        const NEIGHBOURHOOD_TYPES = ['neighborhood', 'sublocality', 'sublocality_level_1', 'sublocality_level_2'];
-        const STREET_TYPES = ['route', 'street_address', 'premise', 'subpremise', 'point_of_interest', 'establishment'];
-        
-        let locationType = 'other';
-        if (types.some(t => BROAD_TYPES.includes(t))) {
-          locationType = 'city';
-        } else if (types.some(t => NEIGHBOURHOOD_TYPES.includes(t))) {
-          locationType = 'neighbourhood';
-        } else if (types.some(t => STREET_TYPES.includes(t))) {
-          locationType = 'street';
-        }
-        
-        console.log(`✅ Geocoded: [${location.lat}, ${location.lng}], type: ${locationType}, raw types: ${types.join(',')}`);
-        return new Response(JSON.stringify({
-          success: true,
-          lat: location.lat,
-          lon: location.lng,
-          locationType,
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
+    if (!results || results.length === 0) {
+      return new Response(JSON.stringify({ success: false, error: 'Unable to geocode address' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    return new Response(JSON.stringify({ success: false, error: 'Unable to geocode address' }), {
+    const r = results[0];
+    const lat = parseFloat(r.lat);
+    const lon = parseFloat(r.lon);
+    const type = r.type || r.class || '';
+    const addressClass = r.addresstype || '';
+
+    const BROAD_TYPES = ['city', 'town', 'village', 'municipality', 'administrative', 'county', 'state', 'country', 'postal_code'];
+    const NEIGHBOURHOOD_TYPES = ['neighbourhood', 'suburb', 'quarter', 'city_district'];
+    const STREET_TYPES = ['house', 'building', 'amenity', 'shop', 'tourism', 'leisure', 'road', 'street', 'path'];
+
+    let locationType = 'other';
+    const checkVal = (addressClass || type).toLowerCase();
+    if (BROAD_TYPES.some(t => checkVal.includes(t))) {
+      locationType = 'city';
+    } else if (NEIGHBOURHOOD_TYPES.some(t => checkVal.includes(t))) {
+      locationType = 'neighbourhood';
+    } else if (STREET_TYPES.some(t => checkVal.includes(t))) {
+      locationType = 'street';
+    }
+
+    console.log(`✅ Geocoded: [${lat}, ${lon}], type: ${locationType}`);
+
+    return new Response(JSON.stringify({ success: true, lat, lon, locationType }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
