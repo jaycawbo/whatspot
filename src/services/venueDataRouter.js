@@ -48,7 +48,7 @@ function rowToVenue(row) {
     review_count:          row.review_count,
     price_level:           row.price_level,
     photo_url:             row.photo_url || null,
-    types:                 row.category ? [row.category] : [],
+    types:                 row.types || [],
     neighbourhood:         row.neighbourhood || null,
     phone:                 row.phone || null,
     website:               row.website || null,
@@ -103,12 +103,26 @@ function isWeeklyStale(row) {
  * @param {string} [params.query]        - freetext search string
  * @param {string[]} [params.excludeIds] - google_place_ids to exclude
  * @param {number} [params.limit]        - max rows (default 22)
+ * @param {number} [params.lat]          - center latitude for bounding box
+ * @param {number} [params.lon]          - center longitude for bounding box
+ * @param {number} [params.radiusKm]     - search radius in km (default 5)
  */
-export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22 } = {}) {
+export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, lat, lon, radiusKm = 5 } = {}) {
   let qb = supabase.from('venues').select('*');
 
   if (query) {
-    qb = qb.or(`name.ilike.%${query}%,address.ilike.%${query}%,category.ilike.%${query}%`);
+    qb = qb.or(`name.ilike.%${query}%,address.ilike.%${query}%`);
+  }
+
+  // Apply bounding box when coords are available
+  if (lat != null && lon != null) {
+    const latBuf = (radiusKm * 1.5) / 111;
+    const lngBuf = (radiusKm * 1.5) / (111 * Math.cos(lat * Math.PI / 180));
+    qb = qb
+      .gte('lat', lat - latBuf)
+      .lte('lat', Math.min(lat + latBuf, 43.773))
+      .gte('lng', lon - lngBuf)
+      .lte('lng', lon + lngBuf);
   }
 
   if (excludeIds.length > 0) {
@@ -149,6 +163,10 @@ export async function routeVenueRequest(params) {
     return queryVenuesFromDb({
       query:      params.query,
       excludeIds: params.exclude_ids || [],
+      // Text search queries the full DB — no bounding box
+      lat:        params.query ? null : params.lat,
+      lon:        params.query ? null : params.lon,
+      radiusKm:   params.radius_km,
     });
   }
 

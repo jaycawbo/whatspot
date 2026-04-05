@@ -17,51 +17,34 @@ Deno.serve(async (req) => {
       });
     }
 
-    const apiKey = Deno.env.get('GOOGLE_PLACES_API_KEY');
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'Google Places API key not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&countrycodes=ca`;
 
-    const autocompleteUrl = 'https://places.googleapis.com/v1/places:autocomplete';
-
-    const autocompleteResponse = await fetch(autocompleteUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,suggestions.placePrediction.text,suggestions.placePrediction.structuredFormat',
-      },
-      body: JSON.stringify({
-        input: query,
-        languageCode: 'en',
-      }),
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'WhatSpot/1.0 (whatspot.app)' },
     });
 
-    if (!autocompleteResponse.ok) {
-      const errorText = await autocompleteResponse.text();
-      console.error(`❌ Google Places Autocomplete API error: ${autocompleteResponse.status}`, errorText);
-      return new Response(JSON.stringify({ error: 'Failed to fetch location suggestions' }), {
-        status: autocompleteResponse.status,
+    if (!response.ok) {
+      console.error(`❌ Nominatim error: ${response.status}`);
+      return new Response(JSON.stringify({ success: true, suggestions: [] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const autocompleteData = await autocompleteResponse.json();
+    const results = await response.json();
 
-    const suggestions = (autocompleteData.suggestions || []).slice(0, 5).map((s: any) => ({
-      display_name: s.placePrediction.text.text,
-      full_name:
-        s.placePrediction.structuredFormat.mainText.text +
-        (s.placePrediction.structuredFormat.secondaryText?.text
-          ? ', ' + s.placePrediction.structuredFormat.secondaryText.text
-          : ''),
-      place_id: s.placePrediction.placeId,
-      lat: null,
-      lon: null,
-    }));
+    const suggestions = results.map((r: any) => {
+      const a = r.address || {};
+      const mainText = a.neighbourhood || a.suburb || a.quarter || a.city_district || a.city || a.town || a.village || r.display_name.split(',')[0];
+      const parts = [a.city || a.town || a.village, a.state, a.country].filter(Boolean);
+      const secondaryText = parts.join(', ');
+      return {
+        display_name: r.display_name,
+        full_name: secondaryText ? `${mainText}, ${secondaryText}` : mainText,
+        place_id: r.place_id,
+        lat: parseFloat(r.lat),
+        lon: parseFloat(r.lon),
+      };
+    });
 
     return new Response(JSON.stringify({ success: true, suggestions }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

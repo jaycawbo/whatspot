@@ -134,17 +134,43 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
     return !skipSet.has(id);
   });
 
-  // For Trending: apply std-dev threshold client-side
-  if (tab === 'trending' && filtered.length > 0) {
-    const scores = filtered.map((v) => v.trending_score).filter((s) => s != null);
-    if (scores.length >= 3) {
-      const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
-      const stdDev = Math.sqrt(scores.reduce((a, b) => a + (b - mean) ** 2, 0) / scores.length);
-      const threshold = mean + stdDev;
-      filtered = filtered.filter((v) => v.trending_score > threshold);
-    }
-    if (filtered.length < 10) {
-      return { venues: filtered, isEmpty: true };
+  // For Trending: apply std-dev threshold client-side, or fall back to proxy ordering
+  if (tab === 'trending') {
+    const hasRealScores = filtered.some((v) => v.trending_score != null);
+
+    if (hasRealScores) {
+      const scores = filtered.map((v) => v.trending_score).filter((s) => s != null);
+      if (scores.length >= 3) {
+        const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+        const stdDev = Math.sqrt(scores.reduce((a, b) => a + (b - mean) ** 2, 0) / scores.length);
+        const threshold = mean + stdDev;
+        filtered = filtered.filter((v) => v.trending_score > threshold);
+      }
+      if (filtered.length < 10) {
+        return { venues: filtered, isEmpty: true };
+      }
+    } else {
+      // No real trending scores yet — proxy fallback: top-rated with review_count >= 50
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('venues')
+        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, types, image_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
+        .gte('lat', bb.latMin)
+        .lte('lat', Math.min(bb.latMax, 43.773))
+        .gte('lng', bb.lngMin)
+        .lte('lng', bb.lngMax)
+        .gte('review_count', 50)
+        .not('rating', 'is', null)
+        .order('rating', { ascending: false })
+        .order('review_count', { ascending: false })
+        .limit(30);
+
+      if (!fallbackError && fallbackData?.length) {
+        const skipSet2 = new Set(skippedIds || []);
+        filtered = fallbackData.filter((v) => {
+          const id = (v.google_place_id || '').replace(/^places\//, '');
+          return !skipSet2.has(id);
+        });
+      }
     }
   }
 
@@ -257,7 +283,10 @@ export function useDiscoveryFeed() {
   // For You and Popular use the existing recommend pipeline.
   useEffect(() => {
     const tab = state.feedTab;
-    if (!tab || tab === 'for_you' || tab === 'popular') return;
+    if (!tab || tab === 'for_you' || tab === 'popular') {
+      setTabEmpty(false);
+      return;
+    }
     if (!anchorPointRef.current) return; // wait until anchor is initialised
 
     setIsLoading(true);
