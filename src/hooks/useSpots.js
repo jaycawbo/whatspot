@@ -74,26 +74,6 @@ export function useSpots() {
       const googlePlaceId = venue.place_id?.replace(/^places\//, '') || venue.google_place_id;
       if (!googlePlaceId) throw new Error('No place_id available');
 
-      const { error: venueError } = await supabase
-        .from('venues')
-        .upsert(
-          {
-            google_place_id: googlePlaceId,
-            name: venue.name,
-            address: venue.address,
-            lat: venue.lat,
-            lng: venue.lon ?? venue.lng,
-            rating: venue.rating,
-            review_count: venue.review_count,
-            price_level: venue.price_level ? venue.price_level.length : null,
-            photo_url: venue.image_urls?.[0] || null,
-            category: venue.category || venue.cuisine_type || null,
-            last_fetched: new Date().toISOString(),
-          },
-          { onConflict: 'google_place_id' }
-        );
-      if (venueError) throw venueError;
-
       const firstLabel = labels[0] || 'Interested';
       const mapping = LABEL_TO_INTERACTION[firstLabel] || { interaction_type: 'interested', rating: null };
 
