@@ -60,7 +60,7 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
 
   const { data, error } = await sb
     .from('venues')
-    .select('google_place_id, name, lat, lng, rating, review_count, price_level, types, business_status, photo_urls, enriched, updated_at, address')
+    .select('google_place_id, name, lat, lng, rating, review_count, price_level, types, business_status, photo_urls, photos_complete, photos_fetched_count, enriched, updated_at, address')
     .gte('lat', lat - latBuf)
     .lte('lat', Math.min(lat + latBuf, 43.773))
     .gte('lng', lon - lngBuf)
@@ -384,6 +384,34 @@ async function getPlacePhotos(apiKey: string, placeId: string, maxPhotos = 4): P
   return urls.filter((u): u is string => u !== null);
 }
 
+// ─── Fetch one photo URL by index (one API call per serve) ───
+async function fetchOnePhoto(
+  apiKey: string,
+  placeId: string,
+  startIndex: number,
+): Promise<{ url: string | null; totalAvailable: number }> {
+  try {
+    const detailsResp = await fetch(`https://places.googleapis.com/v1/${placeId}?fields=photos`, {
+      method: 'GET',
+      headers: { 'X-Goog-Api-Key': apiKey },
+    });
+    if (!detailsResp.ok) return { url: null, totalAvailable: 0 };
+    const data = await detailsResp.json();
+    const photos = data.photos || [];
+    if (startIndex >= photos.length) return { url: null, totalAvailable: photos.length };
+    const photo = photos[startIndex];
+    const mediaResp = await fetch(
+      `https://places.googleapis.com/v1/${photo.name}/media?maxHeightPx=800`,
+      { method: 'GET', headers: { 'X-Goog-Api-Key': apiKey }, redirect: 'manual' },
+    );
+    if (mediaResp.status === 301 || mediaResp.status === 302) {
+      return { url: mediaResp.headers.get('Location'), totalAvailable: photos.length };
+    }
+    if (mediaResp.ok) return { url: mediaResp.url, totalAvailable: photos.length };
+  } catch {}
+  return { url: null, totalAvailable: 0 };
+}
+
 // ─── Price level map ───
 const priceLevelMap: Record<string, string> = {
   PRICE_LEVEL_FREE: '$',
@@ -682,6 +710,8 @@ Deno.serve(async (req) => {
               unknownPrice: false,
               _rawTypes: v.types ?? [],
               _photoUrls: v.photo_urls ?? [],
+              _photosComplete: v.photos_complete ?? false,
+              _photosFetchedCount: v.photos_fetched_count ?? 0,
             };
           })
           .filter((v: any) => (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount);
@@ -1288,28 +1318,58 @@ Deno.serve(async (req) => {
     }
     console.log(`📦 Reserve venues: ${reserveVenues.length}`);
 
-    // ─── Photo enrichment for reserve venues (lightweight, 3 photos each) ───
+    // ─── Photo enrichment for reserve venues (one photo per serve) ───
     if (reserveVenues.length > 0) {
-      console.log(`🖼️ Reserve photo enrichment: ${reserveVenues.length} venues (3 photos each)...`);
+      console.log(`🖼️ Reserve photo enrichment: ${reserveVenues.length} venues (1 photo each)...`);
       await Promise.all(
         reserveVenues.map(async (venue: any) => {
           if (!venue.place_id) { venue.image_urls = []; return; }
-          venue.image_urls = venue._photoUrls?.length
-            ? venue._photoUrls.slice(0, 3)
-            : await safe('reserve-photos', () => getPlacePhotos(GOOGLE_KEY, venue.place_id, 3), []);
+          if (venue._photosComplete) {
+            venue.image_urls = venue._photoUrls || [];
+            return;
+          }
+          const currentCount = venue._photosFetchedCount ?? 0;
+          const result = await safe(
+            'reserve-photos',
+            () => fetchOnePhoto(GOOGLE_KEY, venue.place_id, currentCount),
+            { url: null, totalAvailable: 0 },
+          );
+          const updatedUrls = result.url
+            ? [...(venue._photoUrls || []), result.url]
+            : (venue._photoUrls || []);
+          const newCount = result.url ? currentCount + 1 : currentCount;
+          const isComplete = newCount >= 10 || result.url === null || newCount >= result.totalAvailable;
+          venue.image_urls = updatedUrls;
+          venue._pendingPhotoUpdate = { photo_urls: updatedUrls, photos_fetched_count: newCount, photos_complete: isComplete };
         }),
       );
     }
 
-    // ─── STEP 5: Photo enrichment ───
+    // ─── STEP 5: Photo enrichment (one photo per serve, cache-first) ───
     console.log(`🖼️ STEP 5: Photos for ${finalVenues.length} venues...`);
     const enriched = await Promise.all(
       finalVenues.map(async (venue: any) => {
         if (!venue.place_id) return { ...venue, image_urls: [] };
-        const urls = venue._photoUrls?.length
-          ? venue._photoUrls.slice(0, 4)
-          : await safe('photos', () => getPlacePhotos(GOOGLE_KEY, venue.place_id, 4), []);
-        return { ...venue, image_urls: urls };
+        // photos_complete = true: all photos fetched — zero API calls, serve from cache
+        if (venue._photosComplete) {
+          return { ...venue, image_urls: venue._photoUrls || [] };
+        }
+        const currentCount = venue._photosFetchedCount ?? 0;
+        const result = await safe(
+          'photos',
+          () => fetchOnePhoto(GOOGLE_KEY, venue.place_id, currentCount),
+          { url: null, totalAvailable: 0 },
+        );
+        const updatedUrls = result.url
+          ? [...(venue._photoUrls || []), result.url]
+          : (venue._photoUrls || []);
+        const newCount = result.url ? currentCount + 1 : currentCount;
+        const isComplete = newCount >= 10 || result.url === null || newCount >= result.totalAvailable;
+        return {
+          ...venue,
+          image_urls: updatedUrls,
+          _pendingPhotoUpdate: { photo_urls: updatedUrls, photos_fetched_count: newCount, photos_complete: isComplete },
+        };
       }),
     );
 
@@ -1326,10 +1386,12 @@ Deno.serve(async (req) => {
     // trending_current_review_count is intentionally excluded — owned by the daily trending job.
     try {
       const priceLevelIntMap: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
-      const venueRows = [...resultsForFrontend, ...(reserveVenues || [])].map((v: any) => {
+      const allEnriched = [...enriched, ...(reserveVenues || [])];
+      const venueRows = allEnriched.map((v: any) => {
         const rawId = (v.place_id || v.google_place_id || '');
         const placeId = rawId.replace(/^places\//, '');
         if (!placeId) return null;
+        const pending = v._pendingPhotoUpdate;
         return {
           google_place_id: placeId,
           name: v.name || null,
@@ -1339,10 +1401,12 @@ Deno.serve(async (req) => {
           rating: v.rating ?? null,
           review_count: v.review_count ?? null,
           price_level: priceLevelIntMap[v.price_level] ?? null,
-          image_urls: Array.isArray(v.image_urls) && v.image_urls.length ? v.image_urls : null,
+          photo_urls: pending?.photo_urls ?? (Array.isArray(v.image_urls) && v.image_urls.length ? v.image_urls : null),
+          photos_fetched_count: pending?.photos_fetched_count ?? (v._photosFetchedCount ?? 0),
+          photos_complete: pending?.photos_complete ?? (v._photosComplete ?? false),
           descriptors: Array.isArray(v.descriptors) && v.descriptors.length ? v.descriptors : null,
-          types: Array.isArray(v._rawTypes) && v._rawTypes.length ? v._rawTypes : null,
-          snapshot_review_count_at_ingestion: v.review_count ?? null,
+          venue_types: Array.isArray(v._rawTypes) && v._rawTypes.length ? v._rawTypes : null,
+          review_count_at_ingestion: v.review_count ?? null,
         };
       }).filter(Boolean);
 

@@ -29,6 +29,8 @@ export default function DiscoveryCard({
   const [currentPhoto, setCurrentPhoto] = useState(0);
   const [nextPhoto, setNextPhoto] = useState(null);
   const [isFading, setIsFading] = useState(false);
+  const cardRef = useRef(null);
+  const [isInViewport, setIsInViewport] = useState(false);
   const intervalRef = useRef(null);
   const isPausedRef = useRef(false);
   const remainingTimeRef = useRef(CROSSFADE_INTERVAL);
@@ -65,11 +67,11 @@ export default function DiscoveryCard({
   }, [photos.length, currentPhoto]);
 
   useEffect(() => {
-    if (isGhost || photos.length <= 1) return;
+    if (isGhost || photos.length <= 1 || !isInViewport) return;
     remainingTimeRef.current = CROSSFADE_INTERVAL;
     startTimer();
     return () => clearInterval(intervalRef.current);
-  }, [photos.length, isGhost, startTimer]);
+  }, [photos.length, isGhost, startTimer, isInViewport]);
 
   // Complete the crossfade transition — no opacity animation on new current photo
   useEffect(() => {
@@ -155,18 +157,23 @@ export default function DiscoveryCard({
     onDescriptorTap?.(tag);
   }, [placeId, onDescriptorTap]);
 
-  // Preload next photos
+  // Load photos only when card enters the visible viewport — fire once, then disconnect
   useEffect(() => {
     if (isGhost) return;
-    photos.slice(0, 3).forEach((src) => {
-      const link = document.createElement('link');
-      link.rel = 'preload';
-      link.as = 'image';
-      link.href = src;
-      document.head.appendChild(link);
-      return () => document.head.removeChild(link);
-    });
-  }, [photos, isGhost]);
+    const el = cardRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsInViewport(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.1 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isGhost]);
 
   if (isGhost) {
     const ghostScale = ghostLevel === 1 ? 'scale-[0.95]' : 'scale-[0.90]';
@@ -195,7 +202,7 @@ export default function DiscoveryCard({
   }
 
   return (
-    <div className="relative w-full h-full rounded-2xl overflow-hidden bg-card border border-border shadow-xl flex flex-col">
+    <div ref={cardRef} className="relative w-full h-full rounded-2xl overflow-hidden bg-card border border-border shadow-xl flex flex-col">
       {/* Photo zone */}
       <div
         className="relative flex-1 min-h-0 bg-muted overflow-hidden"
@@ -207,68 +214,74 @@ export default function DiscoveryCard({
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
       >
-        {/* Current photo — no transition, always full opacity when not fading out */}
-        <img
-          src={photos[currentPhoto]}
-          alt={venue?.name || 'Venue photo'}
-          className="absolute inset-0 h-full w-full object-cover"
-          style={{
-            opacity: isFading ? 0 : 1,
-            transition: isFading ? 'opacity 600ms ease' : 'none',
-          }}
-        />
-        {/* Next photo (crossfade in) */}
-        {nextPhoto !== null && (
-          <img
-            src={photos[nextPhoto]}
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover"
-            style={{
-              opacity: isFading ? 1 : 0,
-              transition: isFading ? 'opacity 600ms ease' : 'none',
-            }}
-          />
-        )}
-
-        {/* Spots list membership badge */}
-        {listLabel && (
-          <div className="absolute top-3 right-3 z-10 pointer-events-none">
-            <span className="rounded-full px-2.5 py-1 text-xs font-semibold bg-black/55 text-white backdrop-blur-sm">
-              {listLabel}
-            </span>
-          </div>
-        )}
-
-        {/* Dot indicators */}
-        {photos.length > 1 && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-            {photos.map((_, i) => (
-              <div
-                key={i}
-                className={cn(
-                  'h-1.5 rounded-full transition-all',
-                  i === (nextPhoto ?? currentPhoto)
-                    ? 'w-4 bg-background'
-                    : 'w-1.5 bg-background/50'
-                )}
+        {isInViewport ? (
+          <>
+            {/* Current photo — no transition, always full opacity when not fading out */}
+            <img
+              src={photos[currentPhoto]}
+              alt={venue?.name || 'Venue photo'}
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{
+                opacity: isFading ? 0 : 1,
+                transition: isFading ? 'opacity 600ms ease' : 'none',
+              }}
+            />
+            {/* Next photo (crossfade in) */}
+            {nextPhoto !== null && (
+              <img
+                src={photos[nextPhoto]}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover"
+                style={{
+                  opacity: isFading ? 1 : 0,
+                  transition: isFading ? 'opacity 600ms ease' : 'none',
+                }}
               />
-            ))}
-          </div>
-        )}
+            )}
 
-        {/* Invisible tap regions for photo navigation */}
-        <div className="absolute inset-0 flex z-[5]">
-          <button
-            className="flex-1 cursor-default"
-            onClick={() => goToPhoto('prev')}
-            aria-label="Previous photo"
-          />
-          <button
-            className="flex-1 cursor-default"
-            onClick={() => goToPhoto('next')}
-            aria-label="Next photo"
-          />
-        </div>
+            {/* Spots list membership badge */}
+            {listLabel && (
+              <div className="absolute top-3 right-3 z-10 pointer-events-none">
+                <span className="rounded-full px-2.5 py-1 text-xs font-semibold bg-black/55 text-white backdrop-blur-sm">
+                  {listLabel}
+                </span>
+              </div>
+            )}
+
+            {/* Dot indicators */}
+            {photos.length > 1 && (
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+                {photos.map((_, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      'h-1.5 rounded-full transition-all',
+                      i === (nextPhoto ?? currentPhoto)
+                        ? 'w-4 bg-background'
+                        : 'w-1.5 bg-background/50'
+                    )}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Invisible tap regions for photo navigation */}
+            <div className="absolute inset-0 flex z-[5]">
+              <button
+                className="flex-1 cursor-default"
+                onClick={() => goToPhoto('prev')}
+                aria-label="Previous photo"
+              />
+              <button
+                className="flex-1 cursor-default"
+                onClick={() => goToPhoto('next')}
+                aria-label="Next photo"
+              />
+            </div>
+          </>
+        ) : (
+          <div className="absolute inset-0 bg-muted" />
+        )}
       </div>
 
       {/* Venue info area — tappable to open details */}
