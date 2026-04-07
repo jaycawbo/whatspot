@@ -53,6 +53,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const navigate = useNavigate();
   const containerRef = useRef(null);
   const moreRequestedRef = useRef(false);
+  const isAnimatingRef = useRef(false);
 
   const {
     handleInterested,
@@ -81,6 +82,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
   const x = useMotionValue(0);
   const y = useMotionValue(0);
+  const opacity = useMotionValue(1);
   const rightOverlayOpacity = useTransform(x, [0, SWIPE_THRESHOLD], [0, 0.8]);
   const leftOverlayOpacity = useTransform(x, [-SWIPE_THRESHOLD, 0], [0.8, 0]);
   const downOverlayOpacity = useTransform(y, [0, SWIPE_DOWN_THRESHOLD], [0, 0.8]);
@@ -125,7 +127,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     moreRequestedRef.current = false;
     x.set(0);
     y.set(0);
-  }, [initialVenues, x, y, currentVenue]);
+    opacity.set(1);
+  }, [initialVenues, x, y, opacity, currentVenue]);
 
   // Proactive loading — fire when 5 cards remain OR 50% consumed
   useEffect(() => {
@@ -164,6 +167,12 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
   // Advance to next card — clamped to venues.length
   const advanceCard = useCallback(() => {
+    x.stop();
+    y.stop();
+    opacity.stop();
+    x.set(0);
+    y.set(0);
+    opacity.set(1);
     setExitDirection(null);
     setIsDragging(false);
     setCurrentIndex((i) => {
@@ -171,9 +180,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       try { sessionStorage.setItem('whatspot_deck_index', String(next)); } catch {}
       return next;
     });
-    x.set(0);
-    y.set(0);
-  }, [x, y, venues.length]);
+    isAnimatingRef.current = false;
+  }, [x, y, opacity, venues.length]);
 
   // Open rating sheet
   const openRatingSheet = useCallback((venue) => {
@@ -184,8 +192,15 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
   // Handle interaction + animate out
   const performAction = useCallback(async (direction, venue) => {
+    if (isAnimatingRef.current) return;
+    isAnimatingRef.current = true;
+    x.stop();
+    y.stop();
+    opacity.stop();
+
     if (direction === 'up') {
       openRatingSheet(venue);
+      isAnimatingRef.current = false;
       return;
     }
 
@@ -206,10 +221,13 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     setExitDirection(direction);
     const exitX = direction === 'right' ? 500 : direction === 'left' ? -500 : 0;
     const exitY = direction === 'down' ? 500 : 0;
-    await animate(x, exitX, { duration: 0.3 });
-    if (direction === 'down') await animate(y, exitY, { duration: 0.3 });
+    await Promise.all([
+      animate(x, exitX, { duration: 0.2 }),
+      animate(y, exitY, { duration: 0.2 }),
+      animate(opacity, 0, { duration: 0.2 }),
+    ]);
     advanceCard();
-  }, [handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, advanceCard]);
+  }, [handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, opacity, advanceCard]);
 
   // Handle rating from sheet
   const handleRate = useCallback(async (rating, notes) => {
@@ -247,7 +265,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   }, []);
 
   const handleDragEnd = useCallback((event, info) => {
-    if (!currentVenue) { setIsDragging(false); return; }
+    if (!currentVenue || isAnimatingRef.current) { setIsDragging(false); return; }
     const { offset } = info;
 
     if (offset.x > SWIPE_THRESHOLD) {
@@ -404,9 +422,11 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         {/* Active card */}
         {currentVenue ? (
           <motion.div
+            key={currentVenue.place_id || currentVenue.google_place_id || currentIndex}
             className="absolute inset-0 z-10 touch-none"
-            style={{ x, y }}
+            style={{ x, y, opacity }}
             drag={!ratingSheetOpen}
+            dragMomentum={false}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             animate={
@@ -416,9 +436,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
                   ? { opacity: 0, y: -100, scale: 0.95 }
                   : isCardDimmed
                     ? { opacity: 0.5, scale: 1 }
-                    : { opacity: 1, scale: 1 }
+                    : { scale: 1 }
             }
-            transition={isDragging ? { duration: 0 } : { duration: 0.4 }}
+            transition={isDragging ? { duration: 0 } : { duration: 0.2 }}
           >
             {/* Swipe overlays */}
             <motion.div
