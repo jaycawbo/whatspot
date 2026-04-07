@@ -77,7 +77,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
 
   let query = supabase
     .from('venues')
-    .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, types, image_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
+    .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, image_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
     .gte('lat', bb.latMin)
     .lte('lat', bb.latMax)
     .gte('lng', bb.lngMin)
@@ -107,15 +107,15 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
   } else if (tab === 'new') {
     const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
     query = query
-      .not('snapshot_review_count_at_ingestion', 'is', null)
-      .lt('snapshot_review_count_at_ingestion', 75)
+      .not('review_count_at_ingestion', 'is', null)
+      .lt('review_count_at_ingestion', 75)
       .gte('created_at', cutoff)
       .order('created_at', { ascending: false })
       .limit(30);
   } else if (tab === 'trending') {
     query = query
       .not('trending_score', 'is', null)
-      .not('trending_previous_review_count', 'is', null)
+      .not('review_count_30d_ago', 'is', null)
       .gte('review_count', 50)
       .order('trending_score', { ascending: false })
       .limit(30);
@@ -153,7 +153,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       // No real trending scores yet — proxy fallback: top-rated with review_count >= 50
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('venues')
-        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, types, image_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
+        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, image_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
         .gte('lat', bb.latMin)
         .lte('lat', Math.min(bb.latMax, 43.773))
         .gte('lng', bb.lngMin)
@@ -185,7 +185,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
     rating: v.rating,
     review_count: v.review_count,
     price_level: v.price_level,
-    types: v.types || [],
+    types: v.venue_types || [],
     image_urls: v.image_urls || [],
     descriptors: v.descriptors || [],
   }));
