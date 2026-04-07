@@ -202,10 +202,11 @@ export default function DiscoveryCard({
   }
 
   return (
-    <div ref={cardRef} className="relative w-full h-full rounded-2xl overflow-hidden bg-card border border-border shadow-xl flex flex-col">
+    <div ref={cardRef} className="relative w-full rounded-2xl overflow-hidden bg-card border border-border shadow-xl flex flex-col">
       {/* Photo zone */}
       <div
-        className="relative flex-1 min-h-0 bg-muted overflow-hidden"
+        className="relative bg-muted overflow-hidden"
+        style={{ height: 'clamp(220px, 40dvh, 320px)' }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
