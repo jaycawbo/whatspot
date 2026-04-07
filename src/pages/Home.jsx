@@ -8,7 +8,7 @@ import SearchBar from '@/components/home/SearchBar';
 import CategoryTiles from '@/components/home/CategoryTiles';
 import MobileSearchDrawer from '@/components/home/MobileSearchDrawer';
 import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
-import GatedModal from '@/components/home/GatedModal';
+import AuthModal from '@/components/auth/AuthModal';
 import PostSaveLabelSheet from '@/components/spots/PostSaveLabelSheet';
 import FeedModeTabs from '@/components/home/FeedModeTabs';
 import FilterDialog from '@/components/home/FilterDialog';
@@ -193,7 +193,11 @@ export default function Home() {
   return (
     <div className="bg-background flex flex-col" style={{ height: '100dvh', overflow: 'hidden' }}>
       <Header />
-      <GatedModal isOpen={showGate} onClose={closeGate} />
+      <AuthModal
+        open={showGate}
+        onOpenChange={(open) => { if (!open) closeGate(); }}
+        description="Sign in for unlimited swipes and searches."
+      />
       <FilterDialog
         filters={state.filters}
         open={filterOpen}
