@@ -3,6 +3,14 @@ import ReactDOM from 'react-dom/client'
 import App from '@/App.jsx'
 import '@/index.css'
 
+// crypto.randomUUID() is unavailable on HTTP (non-secure context) — polyfill for local dev on mobile
+if (!crypto.randomUUID) {
+  crypto.randomUUID = () =>
+    ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+      (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)
+    );
+}
+
 // Clear stale PWA/service worker caches so the current discovery-first app is served.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
