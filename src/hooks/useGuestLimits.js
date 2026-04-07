@@ -28,6 +28,8 @@ export function useGuestLimits() {
   const [gateReason, setGateReason] = useState(null); // 'swipes' | 'searches'
   // Baseline = swipes already counted from prior sessions in this 24h window
   const baselineRef = useRef(null);
+  // Track count at time of dismissal — gate only re-shows if count increases
+  const dismissedAtCountRef = useRef(null);
 
   // On mount, determine baseline from localStorage so we carry over prior session counts
   useEffect(() => {
@@ -48,8 +50,12 @@ export function useGuestLimits() {
       const total = baselineRef.current + sessionSwipes;
       setSwipes(total);
       if (total >= SWIPE_LIMIT) {
-        setShowGate(true);
-        setGateReason('swipes');
+        // Only re-show if count has increased since last dismissal (or never dismissed)
+        if (dismissedAtCountRef.current === null || total > dismissedAtCountRef.current) {
+          dismissedAtCountRef.current = null;
+          setShowGate(true);
+          setGateReason('swipes');
+        }
       }
     };
 
@@ -61,6 +67,7 @@ export function useGuestLimits() {
   const incrementSearch = useCallback(() => {
     if (isAuthenticated) return false;
     if (isSearchLimitHit()) {
+      dismissedAtCountRef.current = null;
       setShowGate(true);
       setGateReason('searches');
       return true; // blocked
@@ -68,6 +75,7 @@ export function useGuestLimits() {
     _incrementSearch();
     // Check again after increment
     if (isSearchLimitHit()) {
+      dismissedAtCountRef.current = null;
       setShowGate(true);
       setGateReason('searches');
       return true;
@@ -76,6 +84,10 @@ export function useGuestLimits() {
   }, [isAuthenticated]);
 
   const closeGate = useCallback(() => {
+    const sessionSwipes = getSessionSwipeCount();
+    dismissedAtCountRef.current = baselineRef.current !== null
+      ? baselineRef.current + sessionSwipes
+      : sessionSwipes;
     setShowGate(false);
   }, []);
 

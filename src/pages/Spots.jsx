@@ -342,8 +342,8 @@ export default function Spots() {
               <Heart className="h-7 w-7 text-muted-foreground" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-foreground">Sign in to see your Spots</h2>
-              <p className="text-sm text-muted-foreground mt-1">Save your favourite venues and access them anytime.</p>
+              <h2 className="text-lg font-semibold text-foreground">Sign in to save and view your Spots</h2>
+              <p className="text-sm text-muted-foreground mt-1">Keep track of everywhere you've been and want to go.</p>
             </div>
             <Button onClick={() => setAuthModalOpen(true)}>Sign in with Google</Button>
           </div>
