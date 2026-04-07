@@ -164,6 +164,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
   // Advance to next card — clamped to venues.length
   const advanceCard = useCallback(() => {
+    x.set(0);
+    y.set(0);
     setExitDirection(null);
     setIsDragging(false);
     setCurrentIndex((i) => {
@@ -171,8 +173,6 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       try { sessionStorage.setItem('whatspot_deck_index', String(next)); } catch {}
       return next;
     });
-    x.set(0);
-    y.set(0);
   }, [x, y, venues.length]);
 
   // Open rating sheet
@@ -206,8 +206,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     setExitDirection(direction);
     const exitX = direction === 'right' ? 500 : direction === 'left' ? -500 : 0;
     const exitY = direction === 'down' ? 500 : 0;
-    await animate(x, exitX, { duration: 0.3 });
-    if (direction === 'down') await animate(y, exitY, { duration: 0.3 });
+    await animate(x, exitX, { duration: 0.2 });
+    if (direction === 'down') await animate(y, exitY, { duration: 0.2 });
     advanceCard();
   }, [handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, advanceCard]);
 
@@ -404,6 +404,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         {/* Active card */}
         {currentVenue ? (
           <motion.div
+            key={currentVenue.place_id || currentVenue.google_place_id || currentIndex}
             className="absolute inset-0 z-10 touch-none"
             style={{ x, y }}
             drag={!ratingSheetOpen}
@@ -418,7 +419,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
                     ? { opacity: 0.5, scale: 1 }
                     : { opacity: 1, scale: 1 }
             }
-            transition={isDragging ? { duration: 0 } : { duration: 0.4 }}
+            transition={isDragging ? { duration: 0 } : { duration: 0.2 }}
           >
             {/* Swipe overlays */}
             <motion.div
