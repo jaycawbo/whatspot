@@ -23,7 +23,11 @@ if ('serviceWorker' in navigator) {
 // Persistent anonymous ID — survives across sessions until user signs in
 const ANON_ID_KEY = 'whatspot_anon_id';
 if (!localStorage.getItem(ANON_ID_KEY)) {
-  const newId = crypto.randomUUID();
+  const newId = crypto.randomUUID
+    ? crypto.randomUUID()
+    : Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
   localStorage.setItem(ANON_ID_KEY, newId);
 }
 
