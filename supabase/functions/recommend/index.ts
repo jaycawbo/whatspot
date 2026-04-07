@@ -60,7 +60,7 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
 
   const { data, error } = await sb
     .from('venues')
-    .select('google_place_id, name, lat, lng, rating, review_count, price_level, types, business_status, photo_urls, photos_complete, photos_fetched_count, enriched, updated_at, address')
+    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address')
     .gte('lat', lat - latBuf)
     .lte('lat', Math.min(lat + latBuf, 43.773))
     .gte('lng', lon - lngBuf)
@@ -482,8 +482,6 @@ Deno.serve(async (req) => {
     }
 
     const GOOGLE_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY');
-    if (!GOOGLE_KEY) throw new Error('GOOGLE_PLACES_API_KEY not configured');
-    if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
 
     const isDiscoveryMode = mode === 'discovery' || (!query && mode !== 'browse_category');
     const searchTerm = isDiscoveryMode ? 'restaurant OR bar OR cafe' : (mode === 'browse_category' && category ? category : query);
@@ -690,7 +688,7 @@ Deno.serve(async (req) => {
         servedFromSupabase = true;
         filteredVenues = sbVenues
           .filter((v: any) => !isChain(v.name || ''))
-          .filter((v: any) => hasFoodDrinkType(v.types))
+          .filter((v: any) => hasFoodDrinkType(v.venue_types))
           .map((v: any) => {
             const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
             const isRelaxedAdmission = (v.rating ?? 0) < SCORING.RATING_FLOOR || (v.review_count ?? 0) < SCORING.REVIEW_FLOOR;
@@ -704,11 +702,11 @@ Deno.serve(async (req) => {
               review_count: v.review_count,
               price_level: mapIntPriceLevel(v.price_level),
               place_id: `places/${v.google_place_id}`,
-              category: (v.types ?? []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
-              cuisine_type: (v.types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+              category: (v.venue_types ?? []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+              cuisine_type: (v.venue_types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
               isRelaxedAdmission,
               unknownPrice: false,
-              _rawTypes: v.types ?? [],
+              _rawTypes: v.venue_types ?? [],
               _photoUrls: v.photo_urls ?? [],
               _photosComplete: v.photos_complete ?? false,
               _photosFetchedCount: v.photos_fetched_count ?? 0,
@@ -722,6 +720,8 @@ Deno.serve(async (req) => {
     }
 
     if (!servedFromSupabase) {
+    if (!GOOGLE_KEY) throw new Error('GOOGLE_PLACES_API_KEY not configured');
+    if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
     // ─── STEP 2: Google Places broad search ───
     const reversePriceLevelMap: Record<string, string[]> = {
       '$': ['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE'],
