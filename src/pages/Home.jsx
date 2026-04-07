@@ -191,7 +191,7 @@ export default function Home() {
   }, [state.filters]);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="bg-background flex flex-col" style={{ height: '100dvh', overflow: 'hidden' }}>
       <Header />
       <GatedModal isOpen={showGate} onClose={closeGate} />
       <FilterDialog
@@ -249,7 +249,7 @@ export default function Home() {
 
         <div
           className={`flex-1 flex items-center justify-center px-4 ${isMobile ? 'pb-20' : ''}`}
-          style={{ '--deck-height': isMobile ? '85vh' : 'clamp(500px, 78vh, 800px)' }}
+          style={{ '--deck-height': isMobile ? '85dvh' : 'clamp(500px, 78dvh, 800px)' }}
         >
           <div className="w-full mx-auto">
             {feedLoading ? (
