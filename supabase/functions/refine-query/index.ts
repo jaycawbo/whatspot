@@ -93,13 +93,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    const cityName = locationName || 'the city';
     const result = await callLLM(
       'gemini-2.0-flash',
       `You extract short food and venue keywords from search queries for text search.
 Return keywords that would appear in venue names or descriptions.
 Do NOT include location names, city names, or neighbourhood names.
 Do NOT use underscores — use plain words only.`,
-      `The user is searching for "${query}" in ${locationName || 'their city'}.
+      `The user is searching for "${query}" in ${cityName}.
 Return a comma-separated list of 1-4 short keywords that would appear in the names or descriptions of matching venues.
 Example: "quick bites near me" → "burger,sandwich,fast food,grill"
 Example: "romantic date night" → "bistro,wine bar,italian,french"
