@@ -1012,14 +1012,11 @@ Deno.serve(async (req) => {
       .map((venue: any) => {
         let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
         if (venue.unknownPrice) score *= 0.7; // Down-rank venues with unknown price when price filter is active
-        return { ...venue, score };
+        const display_weight = score + (Math.random() * 0.3);
+        return { ...venue, score, display_weight };
       })
       .filter((v: any) => v.score > admission.minScore)
-      .sort((a: any, b: any) => {
-        const diff = b.score - a.score;
-        if (Math.abs(diff) < 0.01) return a.distance_km - b.distance_km;
-        return diff;
-      });
+      .sort((a: any, b: any) => b.display_weight - a.display_weight);
 
     console.log(`📊 STEP 4: ${scoredVenues.length} scored above ${admission.minScore}`);
 
