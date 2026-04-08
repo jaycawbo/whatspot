@@ -468,7 +468,7 @@ export default function Spots() {
                     )}
                   >
                     <Tag className="h-3 w-3" />
-                    {label.label_name}
+                    {label.label}
                   </button>
                 ))}
               </div>
