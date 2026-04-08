@@ -253,11 +253,15 @@ export function useDiscoveryFeed() {
       radiusRingIndexRef.current = 0;
       criteriaPassRef.current = profile?.discovery_last_criteria_pass ?? 1;
 
-      await supabase.from('user_profiles').update({
+      const { error: anchorWriteError } = await supabase.from('user_profiles').update({
         discovery_anchor_index: nextIndex,
         discovery_last_radius_km: RADIUS_RINGS[0],
         discovery_last_criteria_pass: 1,
       }).eq('id', user.id);
+
+      if (anchorWriteError) {
+        console.error('[Anchor] Failed to persist anchor index to user_profiles:', anchorWriteError);
+      }
 
       console.log('[Anchor] Rotation for authenticated user, anchor index:', anchorIndex);
       return;
