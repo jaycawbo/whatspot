@@ -107,23 +107,38 @@ function isWeeklyStale(row) {
  * @param {number} [params.lon]          - center longitude for bounding box
  * @param {number} [params.radiusKm]     - search radius in km (default 5)
  */
-export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, lat, lon, radiusKm = 5 } = {}) {
+export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, lat, lon, radiusKm = 5, locationName = '' } = {}) {
   let qb = supabase.from('venues').select('*');
 
   if (query) {
-    // Split into meaningful keywords — strip stop words and short tokens so
-    // natural-language queries like "quick bites and fast food nearby" match
-    // venues with "fast", "food", "quick", etc. in their name or address.
-    const STOP_WORDS = new Set([
-      'a', 'an', 'the', 'and', 'or', 'in', 'at', 'to', 'of', 'for',
-      'with', 'by', 'near', 'nearby', 'around', 'some', 'my', 'me',
-    ]);
-    const keywords = query
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+    // Attempt Gemini query refinement for better semantic keyword extraction.
+    // Falls back to simple keyword splitting if the edge function fails.
+    let searchTerms = null;
 
-    const searchTerms = keywords.length > 0 ? keywords : [query];
+    try {
+      const { data } = await supabase.functions.invoke('refine-query', {
+        body: { query, locationName },
+      });
+      if (Array.isArray(data?.keywords) && data.keywords.length > 0) {
+        searchTerms = data.keywords;
+      }
+    } catch {
+      // Fall through to keyword splitting
+    }
+
+    if (!searchTerms) {
+      // Fallback: split into meaningful keywords, strip stop words and short tokens
+      const STOP_WORDS = new Set([
+        'a', 'an', 'the', 'and', 'or', 'in', 'at', 'to', 'of', 'for',
+        'with', 'by', 'near', 'nearby', 'around', 'some', 'my', 'me',
+      ]);
+      const keywords = query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+      searchTerms = keywords.length > 0 ? keywords : [query];
+    }
+
     const conditions = searchTerms
       .flatMap((kw) => [`name.ilike.%${kw}%`, `address.ilike.%${kw}%`])
       .join(',');
@@ -177,12 +192,13 @@ export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, la
 export async function routeVenueRequest(params) {
   if (isDbOnly()) {
     return queryVenuesFromDb({
-      query:      params.query,
-      excludeIds: params.exclude_ids || [],
+      query:        params.query,
+      excludeIds:   params.exclude_ids || [],
       // Text search queries the full DB — no bounding box
-      lat:        params.query ? null : params.lat,
-      lon:        params.query ? null : params.lon,
-      radiusKm:   params.radius_km,
+      lat:          params.query ? null : params.lat,
+      lon:          params.query ? null : params.lon,
+      radiusKm:     params.radius_km,
+      locationName: params.location_name || '',
     });
   }
 
@@ -191,8 +207,9 @@ export async function routeVenueRequest(params) {
   // Discovery requests (no query) go straight to edge function for LLM ranking.
   if (params.query) {
     const dbResult = await queryVenuesFromDb({
-      query:      params.query,
-      excludeIds: params.exclude_ids || [],
+      query:        params.query,
+      excludeIds:   params.exclude_ids || [],
+      locationName: params.location_name || '',
     });
     if (dbResult.results.length > 0) return dbResult;
   }
