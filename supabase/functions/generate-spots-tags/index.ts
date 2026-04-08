@@ -45,7 +45,7 @@ serve(async (req) => {
     // Fetch all user's spots with venue data
     const { data: interactions, error: intError } = await supabase
       .from("user_venue_interactions")
-      .select("venue_id, interaction_type, rating, venues!fk_uvi_venue(address, category, name)")
+      .select("venue_id, interaction_type, rating, venues(address, category, name)")
       .eq("user_id", user.id);
 
     if (intError) throw intError;

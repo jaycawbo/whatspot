@@ -34,13 +34,32 @@ export function useSpots() {
     queryKey: SPOTS_KEY,
     queryFn: async () => {
       if (!user) return [];
-      const { data, error } = await supabase
+
+      // Step 1: fetch interactions
+      const { data: interactions, error: intError } = await supabase
         .from('user_venue_interactions')
-        .select('id, interaction_type, rating, notes, created_at, venue_id, venues!fk_uvi_venue(*)')
+        .select('id, interaction_type, rating, notes, created_at, venue_id')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
-      if (error) throw error;
-      return (data || []).map((row) => ({
+      if (intError) throw new Error(`Failed to fetch interactions: ${intError.message}`);
+      if (!interactions?.length) return [];
+
+      // Step 2: fetch venue data for those interactions.
+      // Merge key is google_place_id (venue_id stores this value).
+      // TODO: migrate venue_id to reference venues.id (UUID) if/when multi-source support is added.
+      const venueIds = interactions.map((r) => r.venue_id).filter(Boolean);
+      const { data: venueRows, error: venueError } = await supabase
+        .from('venues')
+        .select('*')
+        .in('google_place_id', venueIds);
+      if (venueError) throw new Error(`Failed to fetch venue data: ${venueError.message}`);
+
+      const venueMap = Object.fromEntries(
+        (venueRows || []).map((v) => [v.google_place_id, v])
+      );
+
+      return interactions.map((row) => ({
+        ...(venueMap[row.venue_id] || {}),
         favoriteId: row.id,
         labels: [interactionToLabel(row.interaction_type, row.rating)],
         interactionType: row.interaction_type,
@@ -49,7 +68,6 @@ export function useSpots() {
         createdAt: row.created_at,
         venueId: row.venue_id,
         google_place_id: row.venue_id,
-        ...row.venues,
       }));
     },
     enabled: !!user,
