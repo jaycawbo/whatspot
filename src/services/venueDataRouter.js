@@ -111,7 +111,23 @@ export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, la
   let qb = supabase.from('venues').select('*');
 
   if (query) {
-    qb = qb.or(`name.ilike.%${query}%,address.ilike.%${query}%`);
+    // Split into meaningful keywords — strip stop words and short tokens so
+    // natural-language queries like "quick bites and fast food nearby" match
+    // venues with "fast", "food", "quick", etc. in their name or address.
+    const STOP_WORDS = new Set([
+      'a', 'an', 'the', 'and', 'or', 'in', 'at', 'to', 'of', 'for',
+      'with', 'by', 'near', 'nearby', 'around', 'some', 'my', 'me',
+    ]);
+    const keywords = query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+
+    const searchTerms = keywords.length > 0 ? keywords : [query];
+    const conditions = searchTerms
+      .flatMap((kw) => [`name.ilike.%${kw}%`, `address.ilike.%${kw}%`])
+      .join(',');
+    qb = qb.or(conditions);
   }
 
   // Apply bounding box when coords are available
