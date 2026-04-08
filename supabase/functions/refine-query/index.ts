@@ -77,7 +77,16 @@ Deno.serve(async (req) => {
   try {
     if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
 
-    const { query, locationName } = await req.json();
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(
+        JSON.stringify({ keywords: [] }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+    const { query, locationName } = body;
     if (!query?.trim()) {
       return new Response(
         JSON.stringify({ keywords: [] }),
