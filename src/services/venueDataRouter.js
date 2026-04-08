@@ -48,7 +48,7 @@ function rowToVenue(row) {
     review_count:          row.review_count,
     price_level:           row.price_level,
     photo_url:             row.photo_url || null,
-    types:                 row.types || [],
+    types:                 row.venue_types || row.types || [],
     neighbourhood:         row.neighbourhood || null,
     phone:                 row.phone || null,
     website:               row.website || null,
@@ -168,6 +168,17 @@ export async function routeVenueRequest(params) {
       lon:        params.query ? null : params.lon,
       radiusKm:   params.radius_km,
     });
+  }
+
+  // live_fallback: for text search queries, try DB first.
+  // Only fall through to the edge function if DB returns nothing.
+  // Discovery requests (no query) go straight to edge function for LLM ranking.
+  if (params.query) {
+    const dbResult = await queryVenuesFromDb({
+      query:      params.query,
+      excludeIds: params.exclude_ids || [],
+    });
+    if (dbResult.results.length > 0) return dbResult;
   }
 
   return null;
