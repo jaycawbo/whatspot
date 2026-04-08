@@ -10,7 +10,7 @@ import {
   SEARCH_LIMIT,
 } from '@/lib/guestLimits';
 
-const SEEN_KEY = 'whatspot_seen_venues';
+const SEEN_KEY = 'whatspot_skipped_venues';
 
 function getSessionSwipeCount() {
   try {
@@ -47,6 +47,7 @@ export function useGuestLimits() {
     const tick = () => {
       if (baselineRef.current === null) return;
       const sessionSwipes = getSessionSwipeCount();
+      if (sessionSwipes === 0) return;
       const total = baselineRef.current + sessionSwipes;
       setSwipes(total);
       if (total >= SWIPE_LIMIT) {

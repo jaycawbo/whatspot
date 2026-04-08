@@ -193,6 +193,13 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
   return { venues: normalised, isEmpty: false };
 }
 
+function persistGuestSeenIds(servedIdsSet) {
+  try {
+    const ids = Array.from(servedIdsSet).slice(-200);
+    localStorage.setItem('whatspot_guest_seen_ids', JSON.stringify(ids));
+  } catch {}
+}
+
 export function useDiscoveryFeed() {
   const { state } = useGlobalState();
   const cached = useRef(loadFeedCache()).current;
@@ -215,6 +222,12 @@ export function useDiscoveryFeed() {
   const fullScoredPoolRef = useRef([]);
   // Session-level tracking of ALL venue IDs ever sent to the client
   const allServedIdsRef = useRef(new Set());
+  // Reserve venue IDs buffered but not yet served — promoted to allServedIdsRef on consumption
+  const reserveIdsRef = useRef(new Set());
+  // Set when a prefetch call is dropped by the isPrefetchingRef guard
+  const pendingPrefetchRef = useRef(false);
+  // True when current session is a guest (no authenticated user)
+  const isGuestRef = useRef(false);
 
   const initAnchorPoint = useCallback(async () => {
     if (anchorPointRef.current) return;
@@ -240,6 +253,8 @@ export function useDiscoveryFeed() {
     // Authenticated user: sequential anchor index from DB
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
+      // Clear guest cross-session seen IDs when user authenticates
+      try { localStorage.removeItem('whatspot_guest_seen_ids'); } catch {}
       const { data: profile } = await supabase
         .from('user_profiles')
         .select('discovery_anchor_index, discovery_last_radius_km, discovery_last_criteria_pass')
@@ -268,6 +283,7 @@ export function useDiscoveryFeed() {
     }
 
     // Guest: random anchor from sessionStorage
+    isGuestRef.current = true;
     try {
       const stored = sessionStorage.getItem('whatspot_anchor_index');
       if (stored !== null) {
@@ -280,6 +296,15 @@ export function useDiscoveryFeed() {
     } catch {
       anchorPointRef.current = TORONTO_ANCHORS[0];
     }
+    // Seed allServedIdsRef with previously seen venue IDs for cross-session freshness
+    try {
+      const raw = localStorage.getItem('whatspot_guest_seen_ids');
+      if (raw) {
+        const ids = JSON.parse(raw);
+        ids.forEach(id => allServedIdsRef.current.add(id));
+        console.log('[Anchor] Seeded', ids.length, 'guest seen IDs from prior sessions');
+      }
+    } catch {}
     console.log('[Anchor] Rotation for guest, anchor:', anchorPointRef.current);
   }, [state.userLocation]);
 
@@ -340,10 +365,7 @@ export function useDiscoveryFeed() {
       if (raw) session_context = JSON.parse(raw);
     } catch {}
 
-    // For discovery mode, exclude ALL served IDs (not just skipped)
-    const excludeIds = effectiveMode === 'discovery'
-      ? Array.from(allServedIdsRef.current)
-      : [];
+    const excludeIds = Array.from(allServedIdsRef.current);
 
     try {
       const res = await recommend({
@@ -380,11 +402,17 @@ export function useDiscoveryFeed() {
         return !skippedIds.includes(id);
       });
 
-      // Track all served IDs for exclusion in future prefetches
-      [...filtered, ...reserveVenuesRef.current].forEach(v => {
+      // Track displayed venue IDs for exclusion in future fetches
+      filtered.forEach(v => {
         const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
         if (id) allServedIdsRef.current.add(id);
       });
+      // Track reserve IDs separately — promoted to allServedIdsRef only when consumed
+      reserveVenuesRef.current.forEach(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        if (id) reserveIdsRef.current.add(id);
+      });
+      if (isGuestRef.current) persistGuestSeenIds(allServedIdsRef.current);
 
       // Accumulate staged venues into the full scored pool
       if (staged.length > 0) {
@@ -460,8 +488,12 @@ export function useDiscoveryFeed() {
   }, [fetchFeed, currentQuery]);
 
   const prefetchNextBatch = useCallback(async (retryCount = 0) => {
-    if (isPrefetchingRef.current && retryCount === 0) return;
+    if (isPrefetchingRef.current && retryCount === 0) {
+      pendingPrefetchRef.current = true;
+      return;
+    }
     isPrefetchingRef.current = true;
+    pendingPrefetchRef.current = false;
 
     // Advance to next radius ring
     radiusRingIndexRef.current = radiusRingIndexRef.current + 1;
@@ -495,6 +527,10 @@ export function useDiscoveryFeed() {
         });
         console.log('[Prefetch] Released', stagedEligible.length, 'staged venues on criteria relaxation');
         isPrefetchingRef.current = false;
+        if (pendingPrefetchRef.current) {
+          pendingPrefetchRef.current = false;
+          setTimeout(() => prefetchNextBatch(0), 50);
+        }
         return { fetched: stagedEligible.length, reserve: 0 };
       }
 
@@ -514,6 +550,7 @@ export function useDiscoveryFeed() {
     const prevRadius = radiusRingIndexRef.current > 0 ? RADIUS_RINGS[radiusRingIndexRef.current - 1] : 0;
     const tileRadiusKm = prevRadius > 0 ? (currentRadius + prevRadius) / 2 : undefined;
 
+    let willAutoChain = false;
     try {
       const res = await recommend({
         mode: 'discovery',
@@ -544,23 +581,29 @@ export function useDiscoveryFeed() {
         console.log('[Prefetch] Staged pool now has', fullScoredPoolRef.current.length, 'venues');
       }
 
-      // Filter against allServedIds to catch any the API missed
+      // Filter against allServedIds and reserveIdsRef to catch any the API missed
       const servedSet = allServedIdsRef.current;
+      const reserveSet = reserveIdsRef.current;
       const filtered = results.filter(v => {
         const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-        return !servedSet.has(id);
+        return !servedSet.has(id) && !reserveSet.has(id);
       });
 
       const filteredReserve = reserve.filter(v => {
         const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-        return !servedSet.has(id);
+        return !servedSet.has(id) && !reserveSet.has(id);
       });
 
-      // Track newly fetched IDs
-      [...filtered, ...filteredReserve].forEach(v => {
+      // Track displayed venue IDs for exclusion — reserve IDs tracked separately
+      filtered.forEach(v => {
         const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
         if (id) allServedIdsRef.current.add(id);
       });
+      filteredReserve.forEach(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        if (id) reserveIdsRef.current.add(id);
+      });
+      if (isGuestRef.current) persistGuestSeenIds(allServedIdsRef.current);
 
       if (filtered.length > 0) {
         prefetchedVenuesRef.current = [...prefetchedVenuesRef.current, ...filtered];
@@ -575,8 +618,8 @@ export function useDiscoveryFeed() {
 
       // Auto-chain another prefetch if buffer is still shallow
       if (filtered.length > 0 && prefetchedVenuesRef.current.length < 15 && retryCount === 0) {
+        willAutoChain = true;
         isPrefetchingRef.current = false;
-        // Fire-and-forget next batch
         setTimeout(() => prefetchNextBatch(0), 100);
       }
 
@@ -586,6 +629,10 @@ export function useDiscoveryFeed() {
       return { fetched: 0, reserve: 0 };
     } finally {
       isPrefetchingRef.current = false;
+      if (pendingPrefetchRef.current && !willAutoChain) {
+        pendingPrefetchRef.current = false;
+        setTimeout(() => prefetchNextBatch(0), 50);
+      }
     }
   }, [state.userLocation, state.locationName, state.filters]);
 
@@ -601,6 +648,13 @@ export function useDiscoveryFeed() {
       return !skipSet.has(id) && !(activeIds instanceof Set && activeIds.has(id));
     });
     reserveVenuesRef.current = [];
+    // Promote served reserve IDs to allServedIdsRef and clear pending reserve tracking
+    reserve.forEach(v => {
+      const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+      if (id) allServedIdsRef.current.add(id);
+    });
+    reserveIdsRef.current.clear();
+    if (isGuestRef.current) persistGuestSeenIds(allServedIdsRef.current);
     return reserve;
   }, []);
 
