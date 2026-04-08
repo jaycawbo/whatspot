@@ -36,7 +36,7 @@ export function useSpots() {
       if (!user) return [];
       const { data, error } = await supabase
         .from('user_venue_interactions')
-        .select('id, interaction_type, rating, notes, created_at, venue_id, venues!fk_uvi_venue(*)')
+        .select('id, interaction_type, rating, notes, created_at, venue_id, venues(*)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
