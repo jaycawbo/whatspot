@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
 
     const cityName = locationName || 'the city';
     const result = await callLLM(
-      'gemini-2.0-flash',
+      'gemini-2.5-flash',
       `You extract short food and venue keywords from search queries for text search.
 Return keywords that would appear in venue names or descriptions.
 Do NOT include location names, city names, or neighbourhood names.
