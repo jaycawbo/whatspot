@@ -17,39 +17,20 @@ const corsHeaders = {
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? '';
 
-async function callLLM(
-  model: string,
-  systemPrompt: string,
-  userPrompt: string,
-  tools: any[],
-  toolChoice: any,
-  options: { max_tokens?: number; temperature?: number },
-): Promise<any> {
-  const body: any = {
-    system_instruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-  };
-
-  const functionDeclarations = tools.map((t: any) => ({
-    name: t.function.name,
-    description: t.function.description,
-    parameters: t.function.parameters,
-  }));
-  body.tools = [{ function_declarations: functionDeclarations }];
-  body.tool_config = {
-    function_calling_config: {
-      mode: 'ANY',
-      allowed_function_names: [toolChoice.function.name],
+async function getKeywordsFromGemini(query: string, cityName: string): Promise<string> {
+  const body = {
+    system_instruction: {
+      parts: [{ text: 'You extract short venue and food keywords from search queries. Return only a comma-separated list of 1-4 keywords that would appear in venue names or descriptions. No location names. No underscores. No explanation. Just the keywords.' }],
     },
-  };
-
-  body.generationConfig = {
-    temperature: options.temperature ?? 0,
-    maxOutputTokens: options.max_tokens ?? 100,
+    contents: [{
+      role: 'user',
+      parts: [{ text: `Search: "${query}" in ${cityName}. Keywords:` }],
+    }],
+    generationConfig: { temperature: 0, maxOutputTokens: 50 },
   };
 
   const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -63,9 +44,7 @@ async function callLLM(
   }
 
   const data = await resp.json();
-  const part = data.candidates?.[0]?.content?.parts?.[0];
-  if (part?.functionCall) return part.functionCall.args;
-  return part?.text || '';
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
 Deno.serve(async (req) => {
@@ -94,41 +73,8 @@ Deno.serve(async (req) => {
     }
 
     const cityName = locationName || 'the city';
-    const result = await callLLM(
-      'gemini-2.5-flash',
-      `You extract short food and venue keywords from search queries for text search.
-Return keywords that would appear in venue names or descriptions.
-Do NOT include location names, city names, or neighbourhood names.
-Do NOT use underscores — use plain words only.`,
-      `The user is searching for "${query}" in ${cityName}.
-Return a comma-separated list of 1-4 short keywords that would appear in the names or descriptions of matching venues.
-Example: "quick bites near me" → "burger,sandwich,fast food,grill"
-Example: "romantic date night" → "bistro,wine bar,italian,french"
-Example: "coffee and wifi" → "cafe,coffee"`,
-      [
-        {
-          type: 'function',
-          function: {
-            name: 'refine_query',
-            description: 'Extract venue/food keywords for text search',
-            parameters: {
-              type: 'object',
-              properties: {
-                keywords: {
-                  type: 'string',
-                  description: 'Comma-separated plain-text keywords, no underscores, no location names',
-                },
-              },
-              required: ['keywords'],
-            },
-          },
-        },
-      ],
-      { type: 'function', function: { name: 'refine_query' } },
-      { max_tokens: 100, temperature: 0 },
-    );
-
-    const keywords = (result?.keywords || '')
+    const rawText = await getKeywordsFromGemini(query, cityName);
+    const keywords = rawText
       .split(',')
       .map((k: string) => k.trim().toLowerCase())
       .filter((k: string) => k.length > 0);
