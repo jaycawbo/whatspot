@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Star, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+function formatPrice(level) {
+  if (!level) return null;
+  if (typeof level === 'string' && level.startsWith('$')) return level;
+  const n = parseInt(level, 10);
+  if (!n || n < 1 || n > 4) return null;
+  return '$'.repeat(n);
+}
 
 const CROSSFADE_INTERVAL = 8000;
 
@@ -290,8 +299,30 @@ export default function DiscoveryCard({
         className="px-4 py-3 cursor-pointer active:bg-accent/50 transition-colors"
         onClick={handleBodyTap}
       >
-        <h2 className="text-lg font-bold text-foreground truncate">{venue?.name}</h2>
-        <p className="text-sm text-muted-foreground truncate mt-0.5">{neighbourhood}</p>
+        <h2 className="text-lg font-bold text-foreground truncate">{(venue?.name || '').split('|')[0].trim()}</h2>
+
+        {/* Metadata row: rating, price, distance */}
+        {(venue?.rating || formatPrice(venue?.price_level) || venue?.distance_km != null) && (
+          <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
+            {venue?.rating && (
+              <span className="flex items-center gap-0.5 font-medium text-foreground">
+                <Star className="h-3.5 w-3.5 text-gray-500" />
+                {venue.rating}
+              </span>
+            )}
+            {formatPrice(venue?.price_level) && (
+              <span>{formatPrice(venue.price_level)}</span>
+            )}
+            {venue?.distance_km != null && (
+              <span className="flex items-center gap-0.5">
+                <MapPin className="h-3.5 w-3.5 shrink-0" />
+                {venue.distance_km >= 100
+                  ? Math.round(venue.distance_km)
+                  : parseFloat(venue.distance_km.toFixed(1))} km
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Descriptor pills */}
         <div className="flex flex-wrap gap-1.5 mt-2">
