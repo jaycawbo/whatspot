@@ -65,7 +65,8 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
     .lte('lat', Math.min(lat + latBuf, 43.773))
     .gte('lng', lon - lngBuf)
     .lte('lng', lon + lngBuf)
-    .or('business_status.eq.OPERATIONAL,business_status.is.null');
+    .or('business_status.eq.OPERATIONAL,business_status.is.null')
+    .limit(5000);
 
   if (error || !data) return [];
 
