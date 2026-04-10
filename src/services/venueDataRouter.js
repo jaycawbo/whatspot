@@ -23,6 +23,19 @@
 
 import { supabase } from '@/integrations/supabase/client';
 
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 export const DATA_SOURCE = import.meta.env.VITE_VENUE_DATA_SOURCE || 'live_fallback';
@@ -57,6 +70,7 @@ function rowToVenue(row) {
     is_temporarily_closed: row.is_temporarily_closed || false,
     data_source:           'db',
     descriptors:           [],
+    distance_km:           row._distance_km ?? null,
   };
 }
 
@@ -167,6 +181,15 @@ export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, la
 
   const rows = data || [];
 
+  // Attach crow-flies distance to each row if user coords are available.
+  if (lat != null && lon != null) {
+    rows.forEach((row) => {
+      if (row.lat != null && row.lng != null) {
+        row._distance_km = haversineKm(lat, lon, row.lat, row.lng);
+      }
+    });
+  }
+
   // Queue background weekly refresh for any stale venues (live_fallback only).
   // Photos are never queued on-demand.
   if (!isDbOnly()) {
@@ -210,6 +233,8 @@ export async function routeVenueRequest(params) {
       query:        params.query,
       excludeIds:   params.exclude_ids || [],
       locationName: params.location_name || '',
+      lat:          params.lat,
+      lon:          params.lon,
     });
     if (dbResult.results.length > 0) return dbResult;
   }

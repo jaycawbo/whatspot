@@ -1,9 +1,17 @@
 import React, { useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Star, MapPin, Clock } from 'lucide-react';
+import { Star, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import HeartButton from '@/components/spots/HeartButton';
 import { logEvent } from '@/lib/logEvent';
+
+function formatPrice(level) {
+  if (!level) return null;
+  if (typeof level === 'string' && level.startsWith('$')) return level;
+  const n = parseInt(level, 10);
+  if (!n || n < 1 || n > 4) return null;
+  return '$'.repeat(n);
+}
 
 export default function VenueCard({ venue, index, currentQuery }) {
   const cardRef = useRef(null);
@@ -51,21 +59,17 @@ export default function VenueCard({ venue, index, currentQuery }) {
       </div>
       <div className="flex flex-col min-w-0 flex-1 justify-between py-0.5">
         <div>
-          <h3 className="font-semibold text-sm text-foreground truncate">{venue.name}</h3>
-          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 truncate">
-            <MapPin className="h-3 w-3 shrink-0" />
-            {venue.address}
-          </p>
+          <h3 className="font-semibold text-sm text-foreground truncate">{(venue.name || '').split('|')[0].trim()}</h3>
         </div>
         <div className="flex items-center gap-2 flex-wrap mt-1.5">
           {venue.rating && (
             <span className="flex items-center gap-0.5 text-xs font-medium text-foreground">
-              <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+              <Star className="h-3 w-3 text-gray-500" />
               {venue.rating}
             </span>
           )}
-          {venue.price_level && (
-            <span className="text-xs text-muted-foreground">{venue.price_level}</span>
+          {formatPrice(venue.price_level) && (
+            <span className="text-xs text-muted-foreground">{formatPrice(venue.price_level)}</span>
           )}
           {venue.cuisine_type && (
             <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
@@ -73,7 +77,8 @@ export default function VenueCard({ venue, index, currentQuery }) {
             </span>
           )}
           {venue.distance_km != null && (
-            <span className="text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+              <MapPin className="h-3 w-3 shrink-0" />
               {venue.distance_km >= 100
                 ? Math.round(venue.distance_km)
                 : parseFloat(venue.distance_km.toFixed(1))} km

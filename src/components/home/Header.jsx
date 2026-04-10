@@ -16,7 +16,7 @@ import WhatspotLogo from '@/components/brand/WhatspotLogo';
 import LocationSearch from '@/components/home/LocationSearch';
 import AuthModal from '@/components/auth/AuthModal';
 
-export default function Header() {
+export default function Header({ onLogoClick } = {}) {
   const { state, dispatch } = useGlobalState();
   const { user, isAuthenticated, signOut } = useAuth();
   const [editingLocation, setEditingLocation] = useState(false);
@@ -38,6 +38,7 @@ export default function Header() {
     e.preventDefault();
     dispatch({ type: 'CLEAR_SEARCH' });
     navigate('/');
+    onLogoClick?.();
   };
 
   const handleSignOut = async () => {

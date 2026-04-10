@@ -7,7 +7,11 @@ import Header from '@/components/home/Header';
 import SearchBar from '@/components/home/SearchBar';
 import CategoryTiles from '@/components/home/CategoryTiles';
 import MobileSearchDrawer from '@/components/home/MobileSearchDrawer';
+import { ChevronLeft } from 'lucide-react';
 import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
+import ResultsList from '@/components/home/ResultsList';
+import MapView from '@/components/home/MapView';
+import ViewToggle from '@/components/home/ViewToggle';
 import AuthModal from '@/components/auth/AuthModal';
 import PostSaveLabelSheet from '@/components/spots/PostSaveLabelSheet';
 import FeedModeTabs from '@/components/home/FeedModeTabs';
@@ -42,6 +46,12 @@ export default function Home() {
   const [reserveVenues, setReserveVenues] = useState([]);
   const [labelSheetVenue, setLabelSheetVenue] = useState(null);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [searchView, setSearchView] = useState('list');
+
+  // Reset to list view when search is cleared
+  useEffect(() => {
+    if (!currentQuery) setSearchView('list');
+  }, [currentQuery]);
 
   // Listen for post-save label microinteraction events from swipe handlers
   useEffect(() => {
@@ -192,7 +202,11 @@ export default function Home() {
 
   return (
     <div className="bg-background flex flex-col" style={{ height: '100dvh', overflow: 'hidden' }}>
-      <Header />
+      <Header onLogoClick={() => {
+        setReserveVenues([]);
+        hasInitializedReserve.current = false;
+        refetchDiscovery();
+      }} />
       <AuthModal
         open={showGate}
         onOpenChange={(open) => { if (!open) closeGate(); }}
@@ -263,6 +277,34 @@ export default function Home() {
             ) : tabEmpty ? (
               <div className="flex flex-col items-center justify-center h-full text-center gap-3 py-16">
                 <p className="text-muted-foreground text-sm">Not enough data yet — check back soon.</p>
+              </div>
+            ) : currentQuery ? (
+              <div className="w-full space-y-3">
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => {
+                      dispatch({ type: 'SET_QUERY', payload: '' });
+                      setReserveVenues([]);
+                      refetchDiscovery();
+                    }}
+                    className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Back
+                  </button>
+                  <ViewToggle view={searchView} setView={setSearchView} />
+                </div>
+                {searchView === 'map' ? (
+                  <div style={{ height: isMobile ? '70dvh' : 'clamp(400px, 65dvh, 700px)' }}>
+                    <MapView results={feedVenues.filter(v => v.lat != null && (v.lon ?? v.lng) != null)} isLoading={feedLoading} />
+                  </div>
+                ) : (
+                  <ResultsList
+                    results={feedVenues.filter(v => v.lat != null && (v.lon ?? v.lng) != null)}
+                    isLoading={feedLoading}
+                    currentQuery={currentQuery}
+                  />
+                )}
               </div>
             ) : (
               <DiscoveryDeck
