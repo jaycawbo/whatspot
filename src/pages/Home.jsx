@@ -97,8 +97,8 @@ export default function Home() {
       if (deferred.length > 0) {
         setReserveVenues(prev => [...prev, ...deferred]);
       }
-      // If both phases yielded nothing, expand search as fallback
-      if (immediate.length === 0 && deferred.length === 0) {
+      // If both phases yielded nothing and no prefetch was already in flight, expand search as fallback
+      if (immediate.length === 0 && deferred.length === 0 && result !== 'busy') {
         expandSearch();
       }
     } else if (immediate.length === 0) {

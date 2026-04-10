@@ -490,7 +490,7 @@ export function useDiscoveryFeed() {
   const prefetchNextBatch = useCallback(async (retryCount = 0) => {
     if (isPrefetchingRef.current && retryCount === 0) {
       pendingPrefetchRef.current = true;
-      return;
+      return 'busy';
     }
     isPrefetchingRef.current = true;
     pendingPrefetchRef.current = false;
