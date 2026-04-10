@@ -214,6 +214,13 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     }
 
     if (success === false) {
+      const exitX = direction === 'right' ? 500 : -500;
+      setExitDirection(direction);
+      await Promise.all([
+        animate(x, exitX, { duration: 0.2 }),
+        animate(opacity, 0, { duration: 0.2 }),
+      ]);
+      advanceCard();
       setAuthModalOpen(true);
       return;
     }
@@ -338,14 +345,12 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const handleAuthClose = useCallback((open) => {
     setAuthModalOpen(open);
     if (!open && isAuthenticated && pendingAction) {
-      executePending().then(() => {
-        setExitDirection(pendingAction.label === 'Interested' ? 'right' : pendingAction.label === 'Not Interested' ? 'left' : 'rated');
-        setTimeout(advanceCard, 300);
-      });
+      // Card already advanced before auth modal opened — just save the interaction
+      executePending();
     } else if (!open) {
       clearPending();
     }
-  }, [isAuthenticated, pendingAction, executePending, advanceCard, clearPending]);
+  }, [isAuthenticated, pendingAction, executePending, clearPending]);
 
   // Whether to show post-search instructional copy
   const showSearchCopy = !!currentQuery;
