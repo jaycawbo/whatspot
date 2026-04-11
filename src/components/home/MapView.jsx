@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
 import { Star, MapPin } from 'lucide-react';
@@ -17,10 +17,27 @@ function formatPrice(level) {
   return '$'.repeat(n);
 }
 
+function MapAutoFit({ results }) {
+  const map = useMap();
+  useEffect(() => {
+    if (results.length === 0) return;
+    const points = results.map(v => [v.lat, v.lon ?? v.lng]);
+    try {
+      if (points.length === 1) {
+        map.setView(points[0], 15);
+      } else {
+        map.fitBounds(points, { padding: [50, 50], maxZoom: 15 });
+      }
+    } catch {}
+  }, [results, map]);
+  return null;
+}
+
 function MapContent({ results, spotsIds, favIds }) {
   const navigate = useNavigate();
   return (
     <>
+      <MapAutoFit results={results} />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
