@@ -2,7 +2,7 @@ import React, { useRef, useImperativeHandle, forwardRef } from 'react';
 import { Search, X, ArrowUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const SearchBar = forwardRef(function SearchBar({ query, onQueryChange, onSearch, isQuerying, onStopQuery, centered }, ref) {
+const SearchBar = forwardRef(function SearchBar({ query, onQueryChange, onSearch, isQuerying, onStopQuery, centered, onFocus }, ref) {
   const inputRef = useRef(null);
 
   useImperativeHandle(ref, () => ({
@@ -30,6 +30,7 @@ const SearchBar = forwardRef(function SearchBar({ query, onQueryChange, onSearch
           onChange={(e) => onQueryChange(e.target.value)}
           className="w-full h-11 pl-10 pr-10 rounded-full border border-input bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ring-offset-background transition-shadow"
           placeholder="Ask and you shall receive..."
+          onFocus={onFocus}
         />
         {isQuerying ? (
           <button
