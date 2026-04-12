@@ -243,13 +243,17 @@ export default function Home() {
         searchHistory={state.searchHistory}
         suggestedChips={state.suggestedChips}
         onAppendChip={handleAppendChip}
+        onFilterClick={() => setFilterOpen(true)}
+        activeFilterCount={activeFilterCount}
       />
 
       {/* ── Mobile post-search: fullscreen map + snap bottom sheet ── */}
       {isMobilePostSearch && (
         <>
-          {/* Map fills the screen behind nav + search row */}
-          <div className="fixed inset-0 z-10">
+          {/* Map fills the screen behind nav + search row.
+              `isolate` contains Leaflet's internal z-indexes (400-1000)
+              so they cannot bleed above the search dialog (z-[60]). */}
+          <div className="fixed inset-0 z-10 isolate">
             <MapView results={mappableVenues} isLoading={feedLoading} />
           </div>
           <ResultsBottomSheet
@@ -274,7 +278,8 @@ export default function Home() {
               currentQuery={currentQuery}
             />
           </div>
-          <div className="w-[60%]">
+          {/* `isolate` contains Leaflet's z-indexes within this stacking context */}
+          <div className="w-[60%] isolate">
             <MapView results={mappableVenues} isLoading={feedLoading} />
           </div>
         </div>
@@ -284,7 +289,7 @@ export default function Home() {
       {!currentQuery && (
         <div
           className="flex flex-col flex-1 overflow-hidden"
-          style={{ paddingTop: '104px' }}
+          style={{ paddingTop: '120px' }}
         >
           {/* Feed mode tabs + filter is handled inside SearchRow now for filters;
               tabs remain here since they only show in feed mode */}

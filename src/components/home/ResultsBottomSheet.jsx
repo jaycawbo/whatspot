@@ -9,16 +9,26 @@ import ResultsList from './ResultsList';
  * behind the sheet.
  *
  * Snap positions:
- *  - Retracted (default): drag handle only visible (~8% of viewport)
- *  - Expanded: covers most of screen, leaving nav + search row + small map
- *    sliver above (~18% from top)
+ *  - Retracted (default): drag handle + small peek (~12% of viewport)
+ *  - Expanded: covers most of screen, leaving nav + search row + map sliver
  */
 
-const SNAP_RETRACTED = 0.08;
+const SNAP_RETRACTED = 0.12;
 const SNAP_EXPANDED = 0.82;
 
 export default function ResultsBottomSheet({ results, isLoading, currentQuery, open }) {
   const [snap, setSnap] = useState(SNAP_RETRACTED);
+  // Defer `mounted` by one frame so Vaul can animate from closed → open
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      const t = requestAnimationFrame(() => setMounted(true));
+      return () => cancelAnimationFrame(t);
+    } else {
+      setMounted(false);
+    }
+  }, [open]);
 
   // Return to retracted position on each new query
   useEffect(() => {
@@ -27,7 +37,7 @@ export default function ResultsBottomSheet({ results, isLoading, currentQuery, o
 
   return (
     <DrawerPrimitive.Root
-      open={open}
+      open={mounted}
       modal={false}
       snapPoints={[SNAP_RETRACTED, SNAP_EXPANDED]}
       activeSnapPoint={snap}
