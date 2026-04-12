@@ -18,17 +18,6 @@ const SNAP_EXPANDED = 0.82;
 
 export default function ResultsBottomSheet({ results, isLoading, currentQuery, open }) {
   const [snap, setSnap] = useState(SNAP_RETRACTED);
-  // Defer `mounted` by one frame so Vaul can animate from closed → open
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      const t = requestAnimationFrame(() => setMounted(true));
-      return () => cancelAnimationFrame(t);
-    } else {
-      setMounted(false);
-    }
-  }, [open]);
 
   // Return to retracted position on each new query
   useEffect(() => {
@@ -37,12 +26,12 @@ export default function ResultsBottomSheet({ results, isLoading, currentQuery, o
 
   return (
     <DrawerPrimitive.Root
-      open={mounted}
+      open={open}
+      onOpenChange={(isOpen) => { if (!isOpen) setSnap(SNAP_RETRACTED); }}
       modal={false}
       snapPoints={[SNAP_RETRACTED, SNAP_EXPANDED]}
       activeSnapPoint={snap}
       setActiveSnapPoint={setSnap}
-      dismissible={false}
     >
       <DrawerPrimitive.Portal>
         <DrawerPrimitive.Content

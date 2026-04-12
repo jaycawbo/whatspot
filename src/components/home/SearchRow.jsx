@@ -26,6 +26,7 @@ export default function SearchRow({
         {/* Back button — always mounted, hidden until query is active */}
         <button
           onClick={onBackClick}
+          style={{ touchAction: 'manipulation' }}
           className={cn(
             'h-9 w-9 shrink-0 flex items-center justify-center rounded-full hover:bg-accent transition-colors',
             !hasQuery && 'invisible pointer-events-none'

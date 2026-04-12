@@ -60,6 +60,27 @@ export default function Home() {
 
   const hasInitializedReserve = useRef(false);
 
+  // Persist currentQuery for page-refresh restoration
+  useEffect(() => {
+    if (currentQuery) {
+      try { sessionStorage.setItem('ws_last_search', currentQuery); } catch {}
+    }
+  }, [currentQuery]);
+
+  // On mount: re-run last search after init effects have settled
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const saved = sessionStorage.getItem('ws_last_search');
+        if (saved) {
+          searchFeed(saved);
+          dispatch({ type: 'SET_QUERY', payload: saved });
+        }
+      } catch {}
+    }, 0);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Post-save label microinteraction
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -170,12 +191,14 @@ export default function Home() {
   const handleClearSearch = useCallback(() => {
     dispatch({ type: 'SET_QUERY', payload: '' });
     setReserveVenues([]);
+    try { sessionStorage.removeItem('ws_last_search'); } catch {}
     refetchDiscovery();
   }, [dispatch, refetchDiscovery]);
 
   const handleLogoReset = useCallback(() => {
     setReserveVenues([]);
     hasInitializedReserve.current = false;
+    try { sessionStorage.removeItem('ws_last_search'); } catch {}
     refetchDiscovery();
   }, [refetchDiscovery]);
 
@@ -269,9 +292,9 @@ export default function Home() {
       {isDesktopPostSearch && (
         <div
           className="flex overflow-hidden"
-          style={{ marginTop: '104px', height: 'calc(100dvh - 104px)' }}
+          style={{ marginTop: '110px', height: 'calc(100dvh - 110px)' }}
         >
-          <div className="w-[40%] overflow-y-auto border-r border-border px-4 py-4">
+          <div className="w-[40%] overflow-y-auto border-r border-border px-4 py-4 pb-4">
             <ResultsList
               results={mappableVenues}
               isLoading={feedLoading}
@@ -279,7 +302,7 @@ export default function Home() {
             />
           </div>
           {/* `isolate` contains Leaflet's z-indexes within this stacking context */}
-          <div className="w-[60%] isolate">
+          <div className="w-[60%] isolate h-full">
             <MapView results={mappableVenues} isLoading={feedLoading} />
           </div>
         </div>
