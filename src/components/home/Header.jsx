@@ -72,7 +72,12 @@ export default function Header({ onLogoClick } = {}) {
 
       {/* Center: Logo — always visible, tapping returns to fresh home */}
       <div className="flex items-center justify-center">
-        <a href="/" onClick={handleLogoClick} className="flex items-center">
+        <a
+          href="/"
+          onClick={handleLogoClick}
+          className="flex items-center justify-center p-1 -m-1 rounded"
+          aria-label="WhatSpot home"
+        >
           <WhatspotLogo size="nav" />
         </a>
       </div>
