@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Search, ArrowUp } from 'lucide-react';
+import { X, Search, ArrowUp, SlidersHorizontal } from 'lucide-react';
 import CategoryTiles from './CategoryTiles';
 import RefinementChips from './RefinementChips';
 import SuggestedChips from './SuggestedChips';
@@ -9,8 +9,12 @@ import SuggestedChips from './SuggestedChips';
  * Animated search overlay that appears when the user taps the search pill.
  * Slides down from just below the nav bar (top-14 / 56 px).
  *
- * Contents:
+ * Contents (input row):
  *  - Focused text input
+ *  - Filter button (opens FilterDialog without leaving the search flow)
+ *  - Cancel / X button
+ *
+ * Contents (scrollable):
  *  - Category chips
  *  - Dynamic refinement chips (reactive to typed text, 500 ms debounce)
  *  - Suggested chips (if any)
@@ -26,6 +30,8 @@ export default function SearchDialog({
   searchHistory = [],
   suggestedChips = [],
   onAppendChip,
+  onFilterClick,
+  activeFilterCount = 0,
 }) {
   const inputRef = useRef(null);
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -48,6 +54,7 @@ export default function SearchDialog({
     (e) => {
       e.preventDefault();
       if (query.trim()) {
+        document.activeElement?.blur();
         onSearch(query.trim());
         onClose();
       }
@@ -57,6 +64,7 @@ export default function SearchDialog({
 
   const handleCategoryTap = useCallback(
     (cat) => {
+      document.activeElement?.blur();
       onSelectCategory(cat);
       onClose();
     },
@@ -65,12 +73,19 @@ export default function SearchDialog({
 
   const handleHistoryTap = useCallback(
     (q) => {
+      document.activeElement?.blur();
       onQueryChange(q);
       onSearch(q);
       onClose();
     },
     [onQueryChange, onSearch, onClose]
   );
+
+  const handleFilterTap = useCallback(() => {
+    document.activeElement?.blur();
+    onClose();
+    onFilterClick?.();
+  }, [onClose, onFilterClick]);
 
   return (
     <AnimatePresence>
@@ -116,6 +131,22 @@ export default function SearchDialog({
                   </button>
                 )}
               </form>
+
+              {/* Filter button — closes dialog then opens FilterDialog */}
+              <button
+                onClick={handleFilterTap}
+                className="relative h-9 w-9 flex items-center justify-center rounded-full border border-border bg-card hover:bg-accent transition-colors shrink-0"
+                aria-label="Filters"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                {activeFilterCount > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-[#22c55e] text-[10px] font-bold text-white flex items-center justify-center">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Cancel */}
               <button
                 onClick={onClose}
                 className="h-9 w-9 flex items-center justify-center rounded-full hover:bg-accent transition-colors shrink-0 text-muted-foreground"

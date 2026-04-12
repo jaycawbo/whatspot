@@ -1,11 +1,14 @@
 import React from 'react';
 import { ChevronLeft, Search, SlidersHorizontal } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 /**
  * Permanent search bar row fixed just below the nav (top-14).
  * Visible on both mobile and desktop from initial load.
  *
- * - Back button: hidden until a query has been submitted; clears search on tap
+ * - Back button: always in DOM; invisible + non-interactive until a query
+ *   is submitted. Keeping it mounted prevents mobile browsers from caching
+ *   a stale hit-rect when it appears conditionally.
  * - Search pill: opens SearchDialog on tap
  * - Filter button: opens FilterDialog
  */
@@ -20,18 +23,18 @@ export default function SearchRow({
   return (
     <div className="fixed top-14 left-0 right-0 z-40 bg-background border-b border-border">
       <div className="flex items-center gap-2 px-3 py-2 max-w-5xl mx-auto">
-        {/* Back button slot — always occupies space so the pill stays centred */}
-        <div className="w-9 shrink-0 flex items-center justify-center">
-          {hasQuery && (
-            <button
-              onClick={onBackClick}
-              className="h-9 w-9 flex items-center justify-center rounded-full hover:bg-accent transition-colors"
-              aria-label="Clear search"
-            >
-              <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-            </button>
+        {/* Back button — always mounted, hidden until query is active */}
+        <button
+          onClick={onBackClick}
+          className={cn(
+            'h-9 w-9 shrink-0 flex items-center justify-center rounded-full hover:bg-accent transition-colors',
+            !hasQuery && 'invisible pointer-events-none'
           )}
-        </div>
+          aria-label="Clear search"
+          tabIndex={hasQuery ? 0 : -1}
+        >
+          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+        </button>
 
         {/* Search pill — opens SearchDialog */}
         <button
@@ -44,20 +47,18 @@ export default function SearchRow({
         </button>
 
         {/* Filter button */}
-        <div className="w-9 shrink-0 flex items-center justify-center">
-          <button
-            onClick={onFilterClick}
-            className="relative h-9 w-9 flex items-center justify-center rounded-full border border-border bg-card hover:bg-accent transition-colors"
-            aria-label="Filters"
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
-            {activeFilterCount > 0 && (
-              <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-[#22c55e] text-[10px] font-bold text-white flex items-center justify-center">
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
-        </div>
+        <button
+          onClick={onFilterClick}
+          className="relative h-9 w-9 shrink-0 flex items-center justify-center rounded-full border border-border bg-card hover:bg-accent transition-colors"
+          aria-label="Filters"
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+          {activeFilterCount > 0 && (
+            <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-[#22c55e] text-[10px] font-bold text-white flex items-center justify-center">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
       </div>
     </div>
   );
