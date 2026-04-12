@@ -59,6 +59,7 @@ export default function Home() {
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
 
   const hasInitializedReserve = useRef(false);
+  const hasRestoredSearchRef = useRef(false);
 
   // Persist currentQuery for page-refresh restoration
   useEffect(() => {
@@ -67,19 +68,19 @@ export default function Home() {
     }
   }, [currentQuery]);
 
-  // On mount: re-run last search after init effects have settled
+  // Restore last search once feedLoading settles — fires after useDiscoveryFeed's
+  // async tab effect completes, ensuring our restore is the final state setter.
   useEffect(() => {
-    const t = setTimeout(() => {
-      try {
-        const saved = sessionStorage.getItem('ws_last_search');
-        if (saved) {
-          searchFeed(saved);
-          dispatch({ type: 'SET_QUERY', payload: saved });
-        }
-      } catch {}
-    }, 0);
-    return () => clearTimeout(t);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (feedLoading || hasRestoredSearchRef.current || currentQuery) return;
+    hasRestoredSearchRef.current = true;
+    try {
+      const saved = sessionStorage.getItem('ws_last_search');
+      if (saved) {
+        searchFeed(saved);
+        dispatch({ type: 'SET_QUERY', payload: saved });
+      }
+    } catch {}
+  }, [feedLoading, currentQuery, searchFeed, dispatch]);
 
   // Post-save label microinteraction
   useEffect(() => {

@@ -14,7 +14,7 @@ import ResultsList from './ResultsList';
  */
 
 const SNAP_RETRACTED = 0.12;
-const SNAP_EXPANDED = 0.82;
+const SNAP_EXPANDED = 0.75;
 
 export default function ResultsBottomSheet({ results, isLoading, currentQuery, open }) {
   const [snap, setSnap] = useState(SNAP_RETRACTED);
@@ -41,8 +41,10 @@ export default function ResultsBottomSheet({ results, isLoading, currentQuery, o
           {/* Drag handle */}
           <div className="mx-auto mt-3 mb-1 h-1.5 w-12 rounded-full bg-muted shrink-0 cursor-grab active:cursor-grabbing" />
 
-          {/* Results list — clipped when retracted, scrollable when expanded */}
-          <div className="flex-1 overflow-y-auto px-4 pt-2 pb-8">
+          {/* Results list — clipped when retracted, scrollable when expanded.
+              data-vaul-no-drag tells Vaul not to treat scroll gestures as drags,
+              which prevents the sheet from over-expanding when the user scrolls. */}
+          <div data-vaul-no-drag className="flex-1 overflow-y-auto px-4 pt-2 pb-8" style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }}>
             <ResultsList
               results={results}
               isLoading={isLoading}
