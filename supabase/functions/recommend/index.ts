@@ -784,11 +784,11 @@ Deno.serve(async (req) => {
     let googleResults: any[];
     if (isOnStreetSearch && detectedStreetName) {
       // Use locationBias (not locationRestriction) with 3km radius centered on geocoded street coords
-      googleResults = await googlePlacesBroadSearch(
+      googleResults = await safe('google-on-street-search', () => googlePlacesBroadSearch(
         GOOGLE_KEY,
         `${googleSearchQuery} on ${detectedStreetName}, ${location_name}`,
         lat, lon, 3, open_now, googlePriceLevels, false // locationBias, 3km radius
-      );
+      ), []);
       console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationBias 3km)`);
     } else {
       if (isDiscoveryMode) {
@@ -845,11 +845,11 @@ Deno.serve(async (req) => {
         }
         console.log(`📊 Discovery tiled: ${tiles.length} tiles × ${DISCOVERY_QUERIES.length} queries = ${tileCalls.length} calls, ${totalRaw} raw → ${googleResults.length} unique venues`);
       } else {
-        googleResults = await googlePlacesBroadSearch(
+        googleResults = await safe('google-text-search', () => googlePlacesBroadSearch(
           GOOGLE_KEY,
           `${googleSearchQuery} in ${googleLocationContext}`,
           lat, lon, admission.maxRadius, open_now, googlePriceLevels
-        );
+        ), []);
         console.log(`📊 Google returned ${googleResults.length} venues`);
       }
     }
