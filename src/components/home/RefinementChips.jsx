@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 
 // ─── Static chip sets keyed by canonical base query ───
@@ -58,11 +57,23 @@ const CHIP_SETS = {
 
 // ─── Fuzzy keyword → canonical key mapping ───
 const FUZZY_MAP = [
-  { keywords: ['restaurant', 'food', 'dining', 'eat'], key: 'best restaurants nearby' },
-  { keywords: ['bar', 'bars', 'pub', 'drinks', 'nightlife'], key: 'popular bars and drinks nearby' },
-  { keywords: ['coffee', 'café', 'cafe', 'latte', 'espresso'], key: 'great coffee shops nearby' },
-  { keywords: ['bakery', 'bakeries', 'dessert', 'pastry', 'cake'], key: 'bakeries and pastry shops nearby' },
-  { keywords: ['quick', 'bite', 'fast', 'snack', 'grab'], key: 'quick bites and fast food nearby' },
+  { keywords: ['restaurant', 'food', 'dining', 'eat', 'dinner', 'lunch', 'brunch', 'cuisine', 'italian', 'thai', 'mexican', 'sushi', 'japanese', 'indian', 'chinese', 'pizza', 'burger', 'steak', 'seafood', 'vegan', 'vegetarian'], key: 'best restaurants nearby' },
+  { keywords: ['bar', 'bars', 'pub', 'drinks', 'nightlife', 'cocktail', 'wine', 'beer', 'brewery', 'lounge', 'nightclub', 'club'], key: 'popular bars and drinks nearby' },
+  { keywords: ['coffee', 'café', 'cafe', 'latte', 'espresso', 'cappuccino', 'matcha', 'tea'], key: 'great coffee shops nearby' },
+  { keywords: ['bakery', 'bakeries', 'dessert', 'pastry', 'cake', 'croissant', 'bagel', 'donut', 'sweet'], key: 'bakeries and pastry shops nearby' },
+  { keywords: ['quick', 'bite', 'fast', 'snack', 'grab', 'takeout', 'sandwich', 'wrap', 'bowl'], key: 'quick bites and fast food nearby' },
+];
+
+// ─── Generic fallback chips — shown for any query that doesn't match a category ───
+const GENERIC_CHIPS = [
+  { label: 'outdoor seating', type: 'feature' },
+  { label: 'highly rated', type: 'vibe' },
+  { label: 'open now', type: 'feature' },
+  { label: 'date night vibes', type: 'vibe' },
+  { label: 'budget-friendly', type: 'price' },
+  { label: 'quiet atmosphere', type: 'vibe' },
+  { label: 'family-friendly', type: 'audience' },
+  { label: 'hidden gem', type: 'vibe' },
 ];
 
 function resolveStaticChips(query) {
@@ -79,65 +90,24 @@ function resolveStaticChips(query) {
     }
   }
 
-  return null; // triggers LLM generation
+  return GENERIC_CHIPS; // always return something — skip LLM
 }
 
 export default function RefinementChips({ baseQuery, onAppendChip }) {
   const [chips, setChips] = useState([]);
   const [removedChips, setRemovedChips] = useState(new Set());
   const [chipsAddedCount, setChipsAddedCount] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
   const [fadingChip, setFadingChip] = useState(null);
   const prevBaseQuery = useRef(baseQuery);
-  const abortRef = useRef(null);
 
-  // Reset session state and resolve chips when baseQuery changes
+  // Resolve chips whenever baseQuery changes
   useEffect(() => {
     if (baseQuery === prevBaseQuery.current && chips.length > 0) return;
     prevBaseQuery.current = baseQuery;
     setRemovedChips(new Set());
     setChipsAddedCount(0);
     setFadingChip(null);
-
-    if (!baseQuery) {
-      setChips([]);
-      return;
-    }
-
-    const staticChips = resolveStaticChips(baseQuery);
-    if (staticChips) {
-      setChips(staticChips);
-      setIsLoading(false);
-      return;
-    }
-
-    // Custom query → LLM generation
-    if (abortRef.current) abortRef.current.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setIsLoading(true);
-    setChips([]);
-
-    const timeout = setTimeout(() => controller.abort(), 3000);
-
-    supabase.functions
-      .invoke('generate-refinement-chips', { body: { query: baseQuery } })
-      .then(({ data, error }) => {
-        clearTimeout(timeout);
-        if (controller.signal.aborted) return;
-        if (!error && data?.chips?.length) {
-          setChips(data.chips.map((label) => ({ label, type: 'generated' })));
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false);
-      });
-
-    return () => {
-      clearTimeout(timeout);
-      controller.abort();
-    };
+    setChips(baseQuery ? resolveStaticChips(baseQuery) : []);
   }, [baseQuery]);
 
   const handleChipClick = useCallback(
@@ -158,32 +128,24 @@ export default function RefinementChips({ baseQuery, onAppendChip }) {
 
   const visibleChips = chips.filter((c) => !removedChips.has(c.label));
 
-  if (!isLoading && visibleChips.length === 0) return null;
+  if (visibleChips.length === 0) return null;
 
   return (
     <div className="space-y-1.5">
       <p className="text-xs font-semibold text-muted-foreground">Refine your search</p>
       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-        {isLoading
-          ? Array.from({ length: 3 }).map((_, i) => (
-              <div
-                key={i}
-                className="shrink-0 h-8 rounded-full bg-muted animate-pulse"
-                style={{ width: `${72 + i * 16}px` }}
-              />
-            ))
-          : visibleChips.map((chip, i) => (
-              <button
-                key={chip.label}
-                onClick={() => handleChipClick(chip, i)}
-                className={cn(
-                  'shrink-0 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-all duration-200 whitespace-nowrap',
-                  fadingChip === chip.label && 'opacity-0 -translate-x-2 pointer-events-none'
-                )}
-              >
-                {chip.label}
-              </button>
-            ))}
+        {visibleChips.map((chip, i) => (
+          <button
+            key={chip.label}
+            onClick={() => handleChipClick(chip, i)}
+            className={cn(
+              'shrink-0 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-all duration-200 whitespace-nowrap',
+              fadingChip === chip.label && 'opacity-0 -translate-x-2 pointer-events-none'
+            )}
+          >
+            {chip.label}
+          </button>
+        ))}
       </div>
     </div>
   );

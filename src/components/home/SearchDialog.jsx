@@ -64,11 +64,9 @@ export default function SearchDialog({
 
   const handleCategoryTap = useCallback(
     (cat) => {
-      document.activeElement?.blur();
-      onSelectCategory(cat);
-      onClose();
+      onQueryChange(cat.prompt);
     },
-    [onSelectCategory, onClose]
+    [onQueryChange]
   );
 
   const handleHistoryTap = useCallback(
