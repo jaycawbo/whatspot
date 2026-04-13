@@ -23,21 +23,23 @@ export default function SearchRow({
   return (
     <div className="fixed top-14 left-0 right-0 z-40 bg-background border-b border-border">
       <div className="flex items-center gap-2 px-3 py-2 max-w-5xl mx-auto" style={{ touchAction: 'manipulation' }}>
-        {/* Back button — always mounted, hidden until query is active */}
+        {/* Back button — always mounted, hidden until query is active.
+            Uses opacity-0 (not invisible) so the hit rect refreshes correctly
+            when the button becomes interactive on mobile browsers. */}
         <button
-          onClick={onBackClick}
+          onClick={(e) => { e.stopPropagation(); onBackClick(); }}
           style={{
             touchAction: 'manipulation',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: '36px',
-            height: '36px',
+            width: '44px',
+            height: '44px',
             flexShrink: 0,
           }}
           className={cn(
             'rounded-full hover:bg-accent transition-colors',
-            !hasQuery && 'invisible pointer-events-none'
+            !hasQuery ? 'opacity-0 pointer-events-none' : 'opacity-100'
           )}
           aria-label="Clear search"
           tabIndex={hasQuery ? 0 : -1}

@@ -1,80 +1,63 @@
 import React, { useState, useEffect } from 'react';
-import { Drawer as DrawerPrimitive } from 'vaul';
 import ResultsList from './ResultsList';
 
 /**
  * Mobile-only post-search bottom sheet.
  *
- * Uses Vaul directly (no dark overlay) so the map remains fully interactive
- * behind the sheet.
+ * Simple CSS-height approach (no Vaul snap logic) so the sheet always
+ * renders correctly regardless of open/close transition state.
  *
- * Snap positions:
- *  - Retracted (default): drag handle + small peek (~12% of viewport)
- *  - Expanded: fills viewport below nav (56px) + search row (56px) + 10px sliver
+ * States:
+ *  - Collapsed: 80px peek — drag handle + top edge of first result
+ *  - Expanded:  fills viewport below nav (56px) + search row (56px)
  */
 
-const SNAP_RETRACTED = 0.12;
+const PEEK_HEIGHT = 80;
 const NAV_H = 56;
 const SEARCH_ROW_H = 56;
 
-function calcSnapExpanded() {
-  const vh = window.innerHeight;
-  return (vh - NAV_H - SEARCH_ROW_H - 10) / vh;
-}
-
 export default function ResultsBottomSheet({ results, isLoading, currentQuery, open }) {
-  const [snap, setSnap] = useState(SNAP_RETRACTED);
-  const [snapExpanded, setSnapExpanded] = useState(calcSnapExpanded);
+  const [expanded, setExpanded] = useState(false);
 
-  // Keep expanded snap accurate on orientation change
+  // Collapse whenever a new search is made
   useEffect(() => {
-    const onResize = () => setSnapExpanded(calcSnapExpanded());
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
-  // Return to retracted position on each new query
-  useEffect(() => {
-    setSnap(SNAP_RETRACTED);
+    setExpanded(false);
   }, [currentQuery]);
 
-  return (
-    <DrawerPrimitive.Root
-      open={open}
-      onOpenChange={(isOpen) => { if (!isOpen) setSnap(SNAP_RETRACTED); }}
-      modal={false}
-      snapPoints={[SNAP_RETRACTED, snapExpanded]}
-      activeSnapPoint={snap}
-      setActiveSnapPoint={setSnap}
-    >
-      <DrawerPrimitive.Portal>
-        <DrawerPrimitive.Content
-          className="fixed inset-x-0 bottom-0 flex flex-col rounded-t-2xl border-t border-x border-border bg-background focus:outline-none"
-          style={{ zIndex: 30 }}
-        >
-          {/* Drag handle */}
-          <div className="mx-auto mt-3 mb-1 h-1.5 w-12 rounded-full bg-muted shrink-0 cursor-grab active:cursor-grabbing" />
+  if (!open) return null;
 
-          {/* Results list — scrollable when expanded.
-              maxHeight caps the div to the expanded snap height minus the drag
-              handle (~44px) so overflow-y-auto has a concrete boundary to scroll
-              against. data-vaul-no-drag prevents Vaul treating scroll as a drag. */}
-          <div
-            data-vaul-no-drag
-            className="overflow-y-auto px-4 pt-2"
-            style={{
-              maxHeight: `calc(${snapExpanded * 100}dvh - 44px)`,
-              paddingBottom: 'max(2rem, env(safe-area-inset-bottom))',
-            }}
-          >
-            <ResultsList
-              results={results}
-              isLoading={isLoading}
-              currentQuery={currentQuery}
-            />
-          </div>
-        </DrawerPrimitive.Content>
-      </DrawerPrimitive.Portal>
-    </DrawerPrimitive.Root>
+  const expandedHeight = `calc(100dvh - ${NAV_H + SEARCH_ROW_H}px)`;
+
+  return (
+    <div
+      className="fixed inset-x-0 bottom-0 flex flex-col rounded-t-2xl border-t border-x border-border bg-background"
+      style={{
+        zIndex: 30,
+        height: expanded ? expandedHeight : `${PEEK_HEIGHT}px`,
+        transition: 'height 0.35s cubic-bezier(0.32, 0.72, 0, 1)',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Drag handle — tap to toggle expanded/collapsed */}
+      <div
+        className="flex-shrink-0 flex justify-center items-center py-3 cursor-pointer active:opacity-70"
+        style={{ touchAction: 'manipulation', minHeight: '44px' }}
+        onClick={() => setExpanded(e => !e)}
+      >
+        <div className="h-1.5 w-12 rounded-full bg-muted" />
+      </div>
+
+      {/* Scrollable results list */}
+      <div
+        className="flex-1 overflow-y-auto px-4 pt-1"
+        style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }}
+      >
+        <ResultsList
+          results={results}
+          isLoading={isLoading}
+          currentQuery={currentQuery}
+        />
+      </div>
+    </div>
   );
 }

@@ -108,7 +108,7 @@ export default function MapView({ results, isLoading }) {
   }
 
   return (
-    <MapContainer center={center} zoom={13} className="h-full w-full rounded-xl" scrollWheelZoom>
+    <MapContainer center={center} zoom={13} className="h-full w-full rounded-xl" scrollWheelZoom zoomControl={false}>
       <MapContent results={results} spotsIds={spotsIds} favIds={favIds} />
     </MapContainer>
   );
