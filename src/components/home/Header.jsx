@@ -70,12 +70,12 @@ export default function Header({ onLogoClick } = {}) {
         )}
       </div>
 
-      {/* Center: Logo — always visible, tapping returns to fresh home */}
-      <div className="flex items-center justify-center">
+      {/* Center: Logo — absolutely centered so hit area aligns with visible logo bounds */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <a
           href="/"
           onClick={handleLogoClick}
-          className="flex items-center justify-center p-1 -m-1 rounded"
+          className="pointer-events-auto leading-[0]"
           aria-label="WhatSpot home"
         >
           <WhatspotLogo size="nav" />
