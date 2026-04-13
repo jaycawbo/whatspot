@@ -47,6 +47,7 @@ export default function Home() {
   const [labelSheetVenue, setLabelSheetVenue] = useState(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [searchView, setSearchView] = useState('list');
+  const [categoryPillsRevealed, setCategoryPillsRevealed] = useState(false);
 
   // Reset to list view when search is cleared
   useEffect(() => {
@@ -236,8 +237,11 @@ export default function Home() {
               isQuerying={feedLoading}
               onStopQuery={() => {}}
               centered={false}
+              onFocus={() => setCategoryPillsRevealed(true)}
             />
-            <CategoryTiles onSelectCategory={handleSelectCategory} />
+            <div className={`transition-all duration-200 ease-in-out overflow-hidden ${categoryPillsRevealed ? 'opacity-100 max-h-16' : 'opacity-0 max-h-0 pointer-events-none'}`}>
+              <CategoryTiles onSelectCategory={handleSelectCategory} />
+            </div>
             {currentQuery && !feedLoading && (
               <p className="text-xs text-muted-foreground text-center max-w-md mx-auto pt-1 pointer-events-none">
                 Showing you the best results based on your search. With Whatspot's proprietary algorithm, you only ever see what's most relevant and truly the cream of the crop.
@@ -296,11 +300,11 @@ export default function Home() {
                 </div>
                 {searchView === 'map' ? (
                   <div style={{ height: isMobile ? '70dvh' : 'clamp(400px, 65dvh, 700px)' }}>
-                    <MapView results={feedVenues.filter(v => v.lat != null && (v.lon ?? v.lng) != null)} isLoading={feedLoading} />
+                    <MapView results={feedVenues.filter(v => Number.isFinite(v.lat) && Number.isFinite(v.lon ?? v.lng))} isLoading={feedLoading} />
                   </div>
                 ) : (
                   <ResultsList
-                    results={feedVenues.filter(v => v.lat != null && (v.lon ?? v.lng) != null)}
+                    results={feedVenues.filter(v => Number.isFinite(v.lat) && Number.isFinite(v.lon ?? v.lng))}
                     isLoading={feedLoading}
                     currentQuery={currentQuery}
                   />
