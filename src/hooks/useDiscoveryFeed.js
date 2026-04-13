@@ -481,6 +481,21 @@ export function useDiscoveryFeed() {
     fetchFeed({ query });
   }, [fetchFeed, state.filters]);
 
+  // Restore from cache if available; fall back to a fresh fetch.
+  // Used by Home when returning from a venue page so back nav shows instant results.
+  const restoreSearch = useCallback((query) => {
+    const cache = loadFeedCache();
+    if (cache && cache.currentQuery === query && Array.isArray(cache.venues) && cache.venues.length > 0) {
+      setVenues(cache.venues);
+      setCurrentQuery(cache.currentQuery);
+      setOverflowVenues(cache.overflowVenues || []);
+      reserveVenuesRef.current = cache.reserveVenues || [];
+      hasFetchedRef.current = true;
+    } else {
+      fetchFeed({ query });
+    }
+  }, [fetchFeed]);
+
   // Expand search area — double the radius
   const expandSearch = useCallback(() => {
     const newRadius = Math.min(radiusRef.current * 2, 25);
@@ -681,6 +696,7 @@ export function useDiscoveryFeed() {
     currentQuery,
     tabEmpty,
     searchFeed,
+    restoreSearch,
     expandSearch,
     refetchDiscovery: () => fetchFeed(),
     getReserveVenues,
