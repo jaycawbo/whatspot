@@ -10,14 +10,28 @@ import ResultsList from './ResultsList';
  *
  * Snap positions:
  *  - Retracted (default): drag handle + small peek (~12% of viewport)
- *  - Expanded: covers most of screen, leaving nav + search row + map sliver
+ *  - Expanded: fills viewport below nav (56px) + search row (56px) + 10px sliver
  */
 
 const SNAP_RETRACTED = 0.12;
-const SNAP_EXPANDED = 0.75;
+const NAV_H = 56;
+const SEARCH_ROW_H = 56;
+
+function calcSnapExpanded() {
+  const vh = window.innerHeight;
+  return (vh - NAV_H - SEARCH_ROW_H - 10) / vh;
+}
 
 export default function ResultsBottomSheet({ results, isLoading, currentQuery, open }) {
   const [snap, setSnap] = useState(SNAP_RETRACTED);
+  const [snapExpanded, setSnapExpanded] = useState(calcSnapExpanded);
+
+  // Keep expanded snap accurate on orientation change
+  useEffect(() => {
+    const onResize = () => setSnapExpanded(calcSnapExpanded());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // Return to retracted position on each new query
   useEffect(() => {
@@ -29,13 +43,13 @@ export default function ResultsBottomSheet({ results, isLoading, currentQuery, o
       open={open}
       onOpenChange={(isOpen) => { if (!isOpen) setSnap(SNAP_RETRACTED); }}
       modal={false}
-      snapPoints={[SNAP_RETRACTED, SNAP_EXPANDED]}
+      snapPoints={[SNAP_RETRACTED, snapExpanded]}
       activeSnapPoint={snap}
       setActiveSnapPoint={setSnap}
     >
       <DrawerPrimitive.Portal>
         <DrawerPrimitive.Content
-          className="fixed inset-x-0 bottom-0 flex flex-col rounded-t-2xl border-t border-x border-border bg-background focus:outline-none"
+          className="fixed inset-x-0 bottom-0 flex flex-col overflow-hidden rounded-t-2xl border-t border-x border-border bg-background focus:outline-none"
           style={{ zIndex: 30 }}
         >
           {/* Drag handle */}

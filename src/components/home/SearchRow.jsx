@@ -26,15 +26,23 @@ export default function SearchRow({
         {/* Back button — always mounted, hidden until query is active */}
         <button
           onClick={onBackClick}
-          style={{ touchAction: 'manipulation' }}
+          style={{
+            touchAction: 'manipulation',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '36px',
+            height: '36px',
+            flexShrink: 0,
+          }}
           className={cn(
-            'h-9 w-9 shrink-0 flex items-center justify-center rounded-full hover:bg-accent transition-colors',
+            'rounded-full hover:bg-accent transition-colors',
             !hasQuery && 'invisible pointer-events-none'
           )}
           aria-label="Clear search"
           tabIndex={hasQuery ? 0 : -1}
         >
-          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+          <ChevronLeft style={{ display: 'block', width: '16px', height: '16px' }} className="text-muted-foreground" />
         </button>
 
         {/* Search pill — opens SearchDialog */}
