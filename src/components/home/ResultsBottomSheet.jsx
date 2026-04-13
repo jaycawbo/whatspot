@@ -49,16 +49,24 @@ export default function ResultsBottomSheet({ results, isLoading, currentQuery, o
     >
       <DrawerPrimitive.Portal>
         <DrawerPrimitive.Content
-          className="fixed inset-x-0 bottom-0 flex flex-col overflow-hidden rounded-t-2xl border-t border-x border-border bg-background focus:outline-none"
+          className="fixed inset-x-0 bottom-0 flex flex-col rounded-t-2xl border-t border-x border-border bg-background focus:outline-none"
           style={{ zIndex: 30 }}
         >
           {/* Drag handle */}
           <div className="mx-auto mt-3 mb-1 h-1.5 w-12 rounded-full bg-muted shrink-0 cursor-grab active:cursor-grabbing" />
 
-          {/* Results list — clipped when retracted, scrollable when expanded.
-              data-vaul-no-drag tells Vaul not to treat scroll gestures as drags,
-              which prevents the sheet from over-expanding when the user scrolls. */}
-          <div data-vaul-no-drag className="flex-1 overflow-y-auto px-4 pt-2 pb-8" style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }}>
+          {/* Results list — scrollable when expanded.
+              maxHeight caps the div to the expanded snap height minus the drag
+              handle (~44px) so overflow-y-auto has a concrete boundary to scroll
+              against. data-vaul-no-drag prevents Vaul treating scroll as a drag. */}
+          <div
+            data-vaul-no-drag
+            className="overflow-y-auto px-4 pt-2"
+            style={{
+              maxHeight: `calc(${snapExpanded * 100}dvh - 44px)`,
+              paddingBottom: 'max(2rem, env(safe-area-inset-bottom))',
+            }}
+          >
             <ResultsList
               results={results}
               isLoading={isLoading}
