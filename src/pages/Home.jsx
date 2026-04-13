@@ -1,17 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SlidersHorizontal } from 'lucide-react';
 import { logEvent } from '@/lib/logEvent';
 import LoadingMessages from '@/components/home/LoadingMessages';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import Header from '@/components/home/Header';
-import SearchBar from '@/components/home/SearchBar';
-import CategoryTiles from '@/components/home/CategoryTiles';
-import MobileSearchDrawer from '@/components/home/MobileSearchDrawer';
-import { ChevronLeft } from 'lucide-react';
+import SearchRow from '@/components/home/SearchRow';
+import SearchDialog from '@/components/home/SearchDialog';
+import ResultsBottomSheet from '@/components/home/ResultsBottomSheet';
 import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
 import ResultsList from '@/components/home/ResultsList';
 import MapView from '@/components/home/MapView';
-import ViewToggle from '@/components/home/ViewToggle';
 import AuthModal from '@/components/auth/AuthModal';
 import PostSaveLabelSheet from '@/components/spots/PostSaveLabelSheet';
 import FeedModeTabs from '@/components/home/FeedModeTabs';
@@ -37,32 +34,63 @@ function deduplicateVenues(venues) {
 export default function Home() {
   const { state, dispatch } = useGlobalState();
   const isMobile = useIsMobile();
-  const searchBarRef = useRef(null);
   const { isAuthenticated } = useAuth();
 
-  const { venues: feedVenues, overflowVenues, isLoading: feedLoading, currentQuery, tabEmpty, searchFeed, expandSearch, refetchDiscovery, getReserveVenues, getPrefetchedVenues, prefetchNextBatch } = useDiscoveryFeed();
+  const {
+    venues: feedVenues,
+    overflowVenues,
+    isLoading: feedLoading,
+    currentQuery,
+    tabEmpty,
+    searchFeed,
+    expandSearch,
+    refetchDiscovery,
+    getReserveVenues,
+    getPrefetchedVenues,
+    prefetchNextBatch,
+  } = useDiscoveryFeed();
+
   const { showGate, closeGate, incrementSearch } = useGuestLimits();
   const listMembershipMap = useVenueListMembership();
+
   const [reserveVenues, setReserveVenues] = useState([]);
   const [labelSheetVenue, setLabelSheetVenue] = useState(null);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [searchView, setSearchView] = useState('list');
-  const [categoryPillsRevealed, setCategoryPillsRevealed] = useState(false);
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
 
-  // Reset to list view when search is cleared
+  const hasInitializedReserve = useRef(false);
+  const hasRestoredSearchRef = useRef(false);
+
+  // Persist currentQuery for page-refresh restoration
   useEffect(() => {
-    if (!currentQuery) setSearchView('list');
+    if (currentQuery) {
+      try { sessionStorage.setItem('ws_last_search', currentQuery); } catch {}
+    }
   }, [currentQuery]);
 
-  // Listen for post-save label microinteraction events from swipe handlers
+  // Restore last search once feedLoading settles — fires after useDiscoveryFeed's
+  // async tab effect completes, ensuring our restore is the final state setter.
+  useEffect(() => {
+    if (feedLoading || hasRestoredSearchRef.current || currentQuery) return;
+    hasRestoredSearchRef.current = true;
+    try {
+      const saved = sessionStorage.getItem('ws_last_search');
+      if (saved) {
+        searchFeed(saved);
+        dispatch({ type: 'SET_QUERY', payload: saved });
+      }
+    } catch {}
+  }, [feedLoading, currentQuery, searchFeed, dispatch]);
+
+  // Post-save label microinteraction
   useEffect(() => {
     if (!isAuthenticated) return;
     const handler = (e) => setLabelSheetVenue(e.detail?.venue || null);
     window.addEventListener('whatspot:show-label-sheet', handler);
     return () => window.removeEventListener('whatspot:show-label-sheet', handler);
   }, [isAuthenticated]);
-  const hasInitializedReserve = useRef(false);
 
+  // Seed reserve buffer on first feed load
   useEffect(() => {
     if (feedVenues.length > 0 && !hasInitializedReserve.current) {
       hasInitializedReserve.current = true;
@@ -70,15 +98,11 @@ export default function Home() {
       const reserve = getReserveVenues(activeIds);
       const prefetched = getPrefetchedVenues(activeIds);
       const combined = [...reserve, ...prefetched];
-      if (combined.length > 0) {
-        setReserveVenues(combined);
-      }
-      // Eagerly start next prefetch so buffer stays deep
+      if (combined.length > 0) setReserveVenues(combined);
       prefetchNextBatch();
     }
   }, [feedVenues, getReserveVenues, getPrefetchedVenues, prefetchNextBatch]);
 
-  // Build activeIds from current deck for dedup
   const activeIds = useMemo(() => {
     const ids = new Set();
     [...feedVenues, ...reserveVenues].forEach(v => {
@@ -89,15 +113,11 @@ export default function Home() {
   }, [feedVenues, reserveVenues]);
 
   const handleRequestMoreVenues = useCallback(async () => {
-    // Phase 1: drain any already-buffered venues immediately
     const reserve = getReserveVenues(activeIds);
     const prefetched = getPrefetchedVenues(activeIds);
     const immediate = [...reserve, ...prefetched];
-    if (immediate.length > 0) {
-      setReserveVenues(prev => [...prev, ...immediate]);
-    }
+    if (immediate.length > 0) setReserveVenues(prev => [...prev, ...immediate]);
 
-    // Phase 2: fetch next batch and drain again once it resolves
     if (!currentQuery) {
       const result = await prefetchNextBatch();
       const updatedActiveIds = new Set(activeIds);
@@ -105,13 +125,8 @@ export default function Home() {
       const reserve2 = getReserveVenues(updatedActiveIds);
       const prefetched2 = getPrefetchedVenues(updatedActiveIds);
       const deferred = [...reserve2, ...prefetched2];
-      if (deferred.length > 0) {
-        setReserveVenues(prev => [...prev, ...deferred]);
-      }
-      // If both phases yielded nothing and no prefetch was already in flight, expand search as fallback
-      if (immediate.length === 0 && deferred.length === 0 && result !== 'busy') {
-        expandSearch();
-      }
+      if (deferred.length > 0) setReserveVenues(prev => [...prev, ...deferred]);
+      if (immediate.length === 0 && deferred.length === 0 && result !== 'busy') expandSearch();
     } else if (immediate.length === 0) {
       expandSearch();
     }
@@ -122,11 +137,7 @@ export default function Home() {
       if (!queryText?.trim()) return;
       dispatch({
         type: 'ADD_SEARCH_HISTORY',
-        payload: {
-          query: queryText,
-          location_name: state.locationName,
-          timestamp: Date.now(),
-        },
+        payload: { query: queryText, location_name: state.locationName, timestamp: Date.now() },
       });
     },
     [dispatch, state.locationName]
@@ -136,38 +147,30 @@ export default function Home() {
     (queryText) => {
       const nextQuery = queryText.trim();
       if (!nextQuery) return;
-      if (incrementSearch()) return; // guest limit hit — gate shown
-
+      if (incrementSearch()) return;
       dispatch({ type: 'SET_QUERY', payload: nextQuery });
       dispatch({ type: 'SET_CATEGORY', payload: null });
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: null });
       addSearchHistory(nextQuery);
       searchFeed(nextQuery);
       setReserveVenues([]);
-      logEvent('search', {
-        search_query: nextQuery,
-        neighborhood_context: state.locationName,
-      });
+      logEvent('search', { search_query: nextQuery, neighborhood_context: state.locationName });
     },
-    [dispatch, addSearchHistory, searchFeed, incrementSearch]
+    [dispatch, addSearchHistory, searchFeed, incrementSearch, state.locationName]
   );
 
   const handleSelectCategory = useCallback(
     (category) => {
-      if (incrementSearch()) return; // guest limit hit — gate shown
-
+      if (incrementSearch()) return;
       dispatch({ type: 'SET_QUERY', payload: category.prompt });
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: category.prompt });
       dispatch({ type: 'SET_CATEGORY', payload: category.label });
       addSearchHistory(category.prompt);
       searchFeed(category.prompt);
       setReserveVenues([]);
-      logEvent('search', {
-        search_query: category.prompt,
-        neighborhood_context: state.locationName,
-      });
+      logEvent('search', { search_query: category.prompt, neighborhood_context: state.locationName });
     },
-    [dispatch, addSearchHistory, searchFeed, incrementSearch]
+    [dispatch, addSearchHistory, searchFeed, incrementSearch, state.locationName]
   );
 
   const handleAppendChip = useCallback(
@@ -181,14 +184,24 @@ export default function Home() {
   const handleTabChange = useCallback(
     (tab) => {
       setReserveVenues([]);
-      // For You and Popular use the recommend pipeline — trigger a fresh fetch
-      if (tab === 'for_you' || tab === 'popular') {
-        refetchDiscovery();
-      }
-      // New and Trending are handled by the effect inside useDiscoveryFeed
+      if (tab === 'for_you' || tab === 'popular') refetchDiscovery();
     },
     [refetchDiscovery]
   );
+
+  const handleClearSearch = useCallback(() => {
+    dispatch({ type: 'SET_QUERY', payload: '' });
+    setReserveVenues([]);
+    try { sessionStorage.removeItem('ws_last_search'); } catch {}
+    refetchDiscovery();
+  }, [dispatch, refetchDiscovery]);
+
+  const handleLogoReset = useCallback(() => {
+    setReserveVenues([]);
+    hasInitializedReserve.current = false;
+    try { sessionStorage.removeItem('ws_last_search'); } catch {}
+    refetchDiscovery();
+  }, [refetchDiscovery]);
 
   // Count non-default active filters for badge
   const activeFilterCount = useMemo(() => {
@@ -201,13 +214,30 @@ export default function Home() {
     return count;
   }, [state.filters]);
 
+  // Venues valid for map rendering
+  const mappableVenues = useMemo(
+    () => feedVenues.filter(v => v.lat != null && (v.lon ?? v.lng) != null),
+    [feedVenues]
+  );
+
+  const isMobilePostSearch = isMobile && !!currentQuery;
+  const isDesktopPostSearch = !isMobile && !!currentQuery;
+
   return (
     <div className="bg-background flex flex-col" style={{ height: '100dvh', overflow: 'hidden' }}>
-      <Header onLogoClick={() => {
-        setReserveVenues([]);
-        hasInitializedReserve.current = false;
-        refetchDiscovery();
-      }} />
+      <Header onLogoClick={handleLogoReset} />
+
+      {/* Permanent search row — fixed below nav */}
+      <SearchRow
+        hasQuery={!!currentQuery}
+        query={state.query}
+        onBackClick={handleClearSearch}
+        onFilterClick={() => setFilterOpen(true)}
+        onSearchOpen={() => setSearchDialogOpen(true)}
+        activeFilterCount={activeFilterCount}
+      />
+
+      {/* Modals and sheets */}
       <AuthModal
         open={showGate}
         onOpenChange={(open) => { if (!open) closeGate(); }}
@@ -226,125 +256,105 @@ export default function Home() {
         />
       )}
 
-      <div className="flex flex-col flex-1 pt-14">
-        {!isMobile && (
-          <div className="px-4 md:px-8 lg:px-12 py-4 space-y-3 max-w-2xl mx-auto w-full">
-            <SearchBar
-              ref={searchBarRef}
-              query={state.query}
-              onQueryChange={(query) => dispatch({ type: 'SET_QUERY', payload: query })}
-              onSearch={handleSearch}
-              isQuerying={feedLoading}
-              onStopQuery={() => {}}
-              centered={false}
-              onFocus={() => setCategoryPillsRevealed(true)}
-            />
-            <div className={`transition-all duration-200 ease-in-out overflow-hidden ${categoryPillsRevealed ? 'opacity-100 max-h-16' : 'opacity-0 max-h-0 pointer-events-none'}`}>
-              <CategoryTiles onSelectCategory={handleSelectCategory} />
-            </div>
-            {currentQuery && !feedLoading && (
-              <p className="text-xs text-muted-foreground text-center max-w-md mx-auto pt-1 pointer-events-none">
-                Showing you the best results based on your search. With Whatspot's proprietary algorithm, you only ever see what's most relevant and truly the cream of the crop.
-              </p>
-            )}
-          </div>
-        )}
+      {/* Search dialog overlay */}
+      <SearchDialog
+        open={searchDialogOpen}
+        onClose={() => setSearchDialogOpen(false)}
+        query={state.query}
+        onQueryChange={(q) => dispatch({ type: 'SET_QUERY', payload: q })}
+        onSearch={handleSearch}
+        onSelectCategory={handleSelectCategory}
+        searchHistory={state.searchHistory}
+        suggestedChips={state.suggestedChips}
+        onAppendChip={handleAppendChip}
+        onFilterClick={() => setFilterOpen(true)}
+        activeFilterCount={activeFilterCount}
+      />
 
-        {/* Feed mode tabs + filter button */}
-        {!currentQuery && (
-          <div className="flex items-center justify-center gap-3 px-4 pb-2">
-            <FeedModeTabs onTabChange={handleTabChange} />
-            <button
-              onClick={() => setFilterOpen(true)}
-              className="relative inline-flex items-center justify-center h-[34px] w-[34px] rounded-full border border-border bg-card hover:bg-accent transition-colors shrink-0"
-              aria-label="Filters"
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
-              {activeFilterCount > 0 && (
-                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-[#22c55e] text-[10px] font-bold text-white flex items-center justify-center">
-                  {activeFilterCount}
-                </span>
-              )}
-            </button>
+      {/* ── Mobile post-search: fullscreen map + snap bottom sheet ── */}
+      {isMobilePostSearch && (
+        <>
+          {/* Map fills the screen behind nav + search row.
+              `isolate` contains Leaflet's internal z-indexes (400-1000)
+              so they cannot bleed above the search dialog (z-[60]). */}
+          <div className="fixed inset-0 z-10 isolate">
+            <MapView results={mappableVenues} isLoading={feedLoading} />
           </div>
-        )}
+          <ResultsBottomSheet
+            results={mappableVenues}
+            isLoading={feedLoading}
+            currentQuery={currentQuery}
+            open
+          />
+        </>
+      )}
 
+      {/* ── Desktop post-search: side-by-side list + map ── */}
+      {isDesktopPostSearch && (
         <div
-          className={`flex-1 flex items-center justify-center px-4 ${isMobile ? 'pb-20' : ''}`}
-          style={{ '--deck-height': isMobile ? '85dvh' : 'clamp(500px, 78dvh, 800px)' }}
+          className="flex overflow-hidden"
+          style={{ marginTop: '110px', height: 'calc(100dvh - 110px)' }}
         >
-          <div className="w-full mx-auto">
-            {feedLoading ? (
-              <div className="flex items-center justify-center h-full">
-                <LoadingMessages />
-              </div>
-            ) : tabEmpty ? (
-              <div className="flex flex-col items-center justify-center h-full text-center gap-3 py-16">
-                <p className="text-muted-foreground text-sm">Not enough data yet — check back soon.</p>
-              </div>
-            ) : currentQuery ? (
-              <div className="w-full space-y-3">
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => {
-                      dispatch({ type: 'SET_QUERY', payload: '' });
-                      setReserveVenues([]);
-                      refetchDiscovery();
-                    }}
-                    className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    Back
-                  </button>
-                  <ViewToggle view={searchView} setView={setSearchView} />
-                </div>
-                {searchView === 'map' ? (
-                  <div style={{ height: isMobile ? '70dvh' : 'clamp(400px, 65dvh, 700px)' }}>
-                    <MapView results={feedVenues.filter(v => Number.isFinite(v.lat) && Number.isFinite(v.lon ?? v.lng))} isLoading={feedLoading} />
-                  </div>
-                ) : (
-                  <ResultsList
-                    results={feedVenues.filter(v => Number.isFinite(v.lat) && Number.isFinite(v.lon ?? v.lng))}
-                    isLoading={feedLoading}
-                    currentQuery={currentQuery}
-                  />
-                )}
-              </div>
-            ) : (
-              <DiscoveryDeck
-                venues={deduplicateVenues([...feedVenues, ...reserveVenues])}
-                overflowVenues={overflowVenues}
-                currentQuery={currentQuery}
-                isDiscoveryMode={!currentQuery}
-                listMembershipMap={listMembershipMap}
-                onDescriptorTap={(tag) => {
-                  dispatch({ type: 'SET_QUERY', payload: tag });
-                  searchFeed(tag);
-                  setReserveVenues([]);
-                }}
-                onExpandSearch={expandSearch}
-                onNewSearch={() => searchBarRef.current?.focus?.()}
-                onRequestMoreVenues={handleRequestMoreVenues}
-              />
-            )}
+          <div className="w-[40%] overflow-y-auto border-r border-border px-4 py-4 pb-4">
+            <ResultsList
+              results={mappableVenues}
+              isLoading={feedLoading}
+              currentQuery={currentQuery}
+            />
+          </div>
+          {/* `isolate` contains Leaflet's z-indexes within this stacking context */}
+          <div className="w-[60%] isolate h-full">
+            <MapView results={mappableVenues} isLoading={feedLoading} />
           </div>
         </div>
+      )}
 
-        {isMobile && (
-          <MobileSearchDrawer
-            query={state.query}
-            onQueryChange={(query) => dispatch({ type: 'SET_QUERY', payload: query })}
-            onSearch={handleSearch}
-            isQuerying={feedLoading}
-            onStopQuery={() => {}}
-            onSelectCategory={handleSelectCategory}
-            searchHistory={state.searchHistory}
-            suggestedChips={state.suggestedChips}
-            onAppendChip={handleAppendChip}
-            tileBaseQuery={state.tileBaseQuery}
-          />
-        )}
-      </div>
+      {/* ── Feed / discovery mode (both breakpoints) ── */}
+      {!currentQuery && (
+        <div
+          className="flex flex-col flex-1 overflow-hidden"
+          style={{ paddingTop: '120px' }}
+        >
+          {/* Feed mode tabs + filter is handled inside SearchRow now for filters;
+              tabs remain here since they only show in feed mode */}
+          <div className="flex items-center justify-center gap-3 px-4 pb-2">
+            <FeedModeTabs onTabChange={handleTabChange} />
+          </div>
+
+          <div
+            className={`flex-1 flex items-center justify-center px-4 ${isMobile ? 'pb-20' : ''}`}
+            style={{ '--deck-height': isMobile ? '85dvh' : 'clamp(500px, 78dvh, 800px)' }}
+          >
+            <div className="w-full mx-auto">
+              {feedLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <LoadingMessages />
+                </div>
+              ) : tabEmpty ? (
+                <div className="flex flex-col items-center justify-center h-full text-center gap-3 py-16">
+                  <p className="text-muted-foreground text-sm">Not enough data yet — check back soon.</p>
+                </div>
+              ) : (
+                <DiscoveryDeck
+                  venues={deduplicateVenues([...feedVenues, ...reserveVenues])}
+                  overflowVenues={overflowVenues}
+                  currentQuery={currentQuery}
+                  isDiscoveryMode
+                  listMembershipMap={listMembershipMap}
+                  onDescriptorTap={(tag) => {
+                    dispatch({ type: 'SET_QUERY', payload: tag });
+                    searchFeed(tag);
+                    setReserveVenues([]);
+                  }}
+                  onExpandSearch={expandSearch}
+                  onNewSearch={() => setSearchDialogOpen(true)}
+                  onRequestMoreVenues={handleRequestMoreVenues}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
