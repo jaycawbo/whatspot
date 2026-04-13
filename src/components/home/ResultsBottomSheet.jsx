@@ -19,7 +19,7 @@ const NAV_H = 56;
 const SEARCH_ROW_H = 56;
 const OVERHEAD = NAV_H + SEARCH_ROW_H;
 
-const SNAPS = [0.10, 0.35, 0.80]; // collapsed, partial, expanded
+const SNAPS = [0.10, 0.35, 0.90]; // collapsed, partial, expanded
 const DEFAULT_SNAP = 1;            // index → 35% partial
 const VELOCITY_THRESHOLD = 0.4;    // px/ms threshold for a flick
 
