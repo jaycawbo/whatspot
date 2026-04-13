@@ -495,7 +495,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
           <>
             <button
               className="absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-destructive/10 transition-colors"
-              style={{ left: '-3rem' }}
+              style={{ left: '-4rem' }}
               onClick={() => performAction('left', currentVenue)}
               onMouseEnter={() => setHoveredButton('left')}
               onMouseLeave={() => setHoveredButton(null)}
@@ -506,7 +506,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
             <button
               className="absolute top-1/2 -translate-y-1/2 z-30 flex items-center justify-center h-12 w-12 rounded-full bg-card border border-border shadow-md hover:bg-green-500/10 transition-colors"
-              style={{ right: '-3rem' }}
+              style={{ right: '-4rem' }}
               onClick={() => performAction('right', currentVenue)}
               onMouseEnter={() => setHoveredButton('right')}
               onMouseLeave={() => setHoveredButton(null)}
