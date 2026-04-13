@@ -43,6 +43,7 @@ export default function Home() {
     currentQuery,
     tabEmpty,
     searchFeed,
+    restoreSearch,
     expandSearch,
     refetchDiscovery,
     getReserveVenues,
@@ -76,11 +77,11 @@ export default function Home() {
     try {
       const saved = sessionStorage.getItem('ws_last_search');
       if (saved) {
-        searchFeed(saved);
+        restoreSearch(saved);
         dispatch({ type: 'SET_QUERY', payload: saved });
       }
     } catch {}
-  }, [feedLoading, currentQuery, searchFeed, dispatch]);
+  }, [feedLoading, currentQuery, restoreSearch, dispatch]);
 
   // Post-save label microinteraction
   useEffect(() => {
@@ -209,7 +210,12 @@ export default function Home() {
   useEffect(() => {
     if (!currentQuery) return;
     window.history.pushState({ wsSearchActive: true }, '');
-    const onPopstate = () => { handleClearSearch(); };
+    const onPopstate = (event) => {
+      // If we're landing on the sentinel entry (returning from a venue page),
+      // stay in search state — don't clear. The sentinel already consumed the pop.
+      if (event.state?.wsSearchActive) return;
+      handleClearSearch();
+    };
     window.addEventListener('popstate', onPopstate);
     return () => window.removeEventListener('popstate', onPopstate);
   }, [currentQuery, handleClearSearch]);
