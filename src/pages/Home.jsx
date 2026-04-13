@@ -203,6 +203,17 @@ export default function Home() {
     refetchDiscovery();
   }, [refetchDiscovery]);
 
+  // Intercept device back button / gesture while search is active.
+  // Pushes a sentinel history entry so the first popstate stays on this page
+  // and clears search instead of navigating away.
+  useEffect(() => {
+    if (!currentQuery) return;
+    window.history.pushState({ wsSearchActive: true }, '');
+    const onPopstate = () => { handleClearSearch(); };
+    window.addEventListener('popstate', onPopstate);
+    return () => window.removeEventListener('popstate', onPopstate);
+  }, [currentQuery, handleClearSearch]);
+
   // Count non-default active filters for badge
   const activeFilterCount = useMemo(() => {
     const f = state.filters;

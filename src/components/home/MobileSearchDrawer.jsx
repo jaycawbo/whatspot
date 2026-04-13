@@ -67,9 +67,9 @@ export default function MobileSearchDrawer({
         </button>
       </DrawerTrigger>
 
-      {/* Expanded drawer */}
-      <DrawerContent className="max-h-[85vh]">
-        <div className="p-4 space-y-4 overflow-y-auto">
+      {/* Expanded drawer — capped so the top edge never goes above the nav bar (56px) */}
+      <DrawerContent className="max-h-[calc(100dvh-76px)] flex flex-col">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
           {/* Search input */}
           <form onSubmit={handleSubmit} className="w-full">
             <div className="relative flex items-center">
