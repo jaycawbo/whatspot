@@ -89,7 +89,11 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const upOverlayOpacity = useTransform(y, [-SWIPE_UP_THRESHOLD, 0], [0.8, 0]);
 
   // Reset deck when initial venues change (new search) or append (reserve venues)
-  const initialVenueIdsRef = useRef('');
+  // Seed from sessionStorage so back-navigation with cached venues doesn't trigger a reset
+  const savedVenueIds = useRef(() => {
+    try { return sessionStorage.getItem('whatspot_deck_venue_ids') || ''; } catch { return ''; }
+  });
+  const initialVenueIdsRef = useRef(savedVenueIds.current());
 
   useEffect(() => {
     if (initialVenues.length === 0) return;

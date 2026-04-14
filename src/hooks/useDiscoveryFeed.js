@@ -30,6 +30,10 @@ const FEED_CACHE_KEY = 'whatspot_feed_cache';
 function saveFeedCache(data) {
   try {
     sessionStorage.setItem(FEED_CACHE_KEY, JSON.stringify({ ...data, ts: Date.now() }));
+    const venueIdStr = (data.venues || [])
+      .map(v => (v.place_id || v.google_place_id || '').replace(/^places\//, ''))
+      .join(',');
+    sessionStorage.setItem('whatspot_deck_venue_ids', venueIdStr);
   } catch {}
 }
 
@@ -77,7 +81,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
 
   let query = supabase
     .from('venues')
-    .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, image_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
+    .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
     .gte('lat', bb.latMin)
     .lte('lat', bb.latMax)
     .gte('lng', bb.lngMin)
@@ -153,7 +157,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       // No real trending scores yet — proxy fallback: top-rated with review_count >= 50
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('venues')
-        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, image_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
+        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
         .gte('lat', bb.latMin)
         .lte('lat', Math.min(bb.latMax, 43.773))
         .gte('lng', bb.lngMin)
@@ -312,11 +316,12 @@ export function useDiscoveryFeed() {
   // For You and Popular use the existing recommend pipeline.
   useEffect(() => {
     const tab = state.feedTab;
-    if (!tab || tab === 'for_you' || tab === 'popular') {
+    if (!tab || tab === 'for_you') {
       setTabEmpty(false);
       return;
     }
-    if (!anchorPointRef.current) return; // wait until anchor is initialised
+    const anchor = anchorPointRef.current ?? state.userLocation;
+    if (!anchor) return; // wait until anchor is initialised
 
     setIsLoading(true);
     setTabEmpty(false);
@@ -328,10 +333,11 @@ export function useDiscoveryFeed() {
     } catch {}
 
     fetchTabVenues(tab, {
-      anchor: anchorPointRef.current,
+      anchor,
       filters: state.filters,
       skippedIds,
     }).then(({ venues: tabVenues, isEmpty }) => {
+      console.log(`[TabFeed] ${tab} returned ${tabVenues.length} venues. First 3:`, tabVenues.slice(0, 3).map(v => v.name));
       setVenues(tabVenues);
       setOverflowVenues([]);
       setCurrentQuery('');
@@ -462,7 +468,21 @@ export function useDiscoveryFeed() {
 
   // Initial load — discovery mode + immediate prefetch
   useEffect(() => {
-    if (hasFetchedRef.current) return;
+    if (hasFetchedRef.current) {
+      // Seed allServedIdsRef from cached venues so exclude_ids is non-empty on first post-remount prefetch
+      if (cached?.venues?.length) {
+        cached.venues.forEach(v => {
+          const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+          if (id) allServedIdsRef.current.add(id);
+        });
+      }
+      // Write whatspot_deck_venue_ids so DiscoveryDeck can restore position on back-nav
+      const venueIdStr = (cached?.venues || [])
+        .map(v => (v.place_id || v.google_place_id || '').replace(/^places\//, ''))
+        .join(',');
+      try { sessionStorage.setItem('whatspot_deck_venue_ids', venueIdStr); } catch {}
+      return;
+    }
     hasFetchedRef.current = true;
     // Clear skipped venues from previous sessions so the feed starts fresh
     try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
@@ -477,7 +497,10 @@ export function useDiscoveryFeed() {
   // Search-driven refresh
   const searchFeed = useCallback((query) => {
     radiusRef.current = state.filters?.radius || 5;
-    try { sessionStorage.setItem('whatspot_deck_index', '0'); } catch {}
+    try {
+      sessionStorage.setItem('whatspot_deck_index', '0');
+      sessionStorage.removeItem('whatspot_deck_venue_ids');
+    } catch {}
     fetchFeed({ query });
   }, [fetchFeed, state.filters]);
 
