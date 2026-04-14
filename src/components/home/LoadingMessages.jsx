@@ -14,7 +14,7 @@ const longWaitMessages = [
   "This one's taking a moment — thanks for your patience...",
 ];
 
-export default function LoadingMessages() {
+export default function LoadingMessages({ light = false }) {
   const [index, setIndex] = useState(0);
   const [isLongWait, setIsLongWait] = useState(false);
   const [longIndex, setLongIndex] = useState(0);
@@ -55,7 +55,7 @@ export default function LoadingMessages() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.3 }}
-          className="text-sm text-muted-foreground italic"
+          className={`text-sm italic ${light ? 'text-white' : 'text-muted-foreground'}`}
         >
           {activeMessages[activeIndex]}
         </motion.p>
