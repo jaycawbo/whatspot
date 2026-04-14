@@ -16,7 +16,7 @@ import WhatspotLogo from '@/components/brand/WhatspotLogo';
 import LocationSearch from '@/components/home/LocationSearch';
 import AuthModal from '@/components/auth/AuthModal';
 
-export default function Header({ onLogoClick } = {}) {
+export default function Header({ onLogoClick, onCloseSearch } = {}) {
   const { state, dispatch } = useGlobalState();
   const { user, isAuthenticated, signOut } = useAuth();
   const [editingLocation, setEditingLocation] = useState(false);
@@ -123,7 +123,7 @@ export default function Header({ onLogoClick } = {}) {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <Button variant="ghost" size="sm" onClick={() => setAuthModalOpen(true)}>
+          <Button variant="ghost" size="sm" onClick={() => { onCloseSearch?.(); setAuthModalOpen(true); }}>
             Sign in
           </Button>
         )}
