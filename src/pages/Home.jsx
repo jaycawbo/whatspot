@@ -242,7 +242,7 @@ export default function Home() {
 
   return (
     <div className="bg-background flex flex-col" style={{ height: '100dvh', overflow: 'hidden' }}>
-      <Header onLogoClick={handleLogoReset} />
+      <Header onLogoClick={handleLogoReset} onCloseSearch={() => setSearchDialogOpen(false)} />
 
       {/* Permanent search row — fixed below nav */}
       <SearchRow
