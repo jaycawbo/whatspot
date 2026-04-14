@@ -467,6 +467,7 @@ export function useDiscoveryFeed() {
         radius_km: effectiveRadius,
         open_now: state.filters?.openNow || undefined,
         price_levels: state.filters?.priceLevels?.length ? state.filters.priceLevels : undefined,
+        cuisine_types: state.filters?.cuisines?.length ? state.filters.cuisines : undefined,
         exclude_ids: excludeIds.length ? excludeIds : undefined,
       };
       let res;
@@ -490,29 +491,7 @@ export function useDiscoveryFeed() {
         if (raw) skippedIds = JSON.parse(raw);
       } catch {}
 
-      // Client-side cuisine filter — cuisine_type on each venue is the Google Places
-      // type with '_restaurant' stripped (e.g. "italian", "japanese").
-      // Filter types from the UI are the full type strings (e.g. "italian_restaurant").
-      const activeCuisines = state.filters?.cuisines || [];
-      const cuisineFiltered = activeCuisines.length === 0 ? results : (() => {
-        const KNOWN_CUISINE_BASES = [
-          'italian', 'japanese', 'mexican', 'chinese', 'american', 'thai',
-          'indian', 'korean', 'mediterranean', 'french', 'vietnamese',
-          'middle_eastern', 'greek', 'spanish', 'breakfast',
-        ];
-        const selectedBases = activeCuisines
-          .filter(c => c !== 'other')
-          .map(c => c.replace('_restaurant', ''));
-        const includesOther = activeCuisines.includes('other');
-        return results.filter(v => {
-          const ct = (v.cuisine_type || '').toLowerCase();
-          const hasKnownMatch = selectedBases.some(b => ct.includes(b));
-          const isOther = !KNOWN_CUISINE_BASES.some(b => ct.includes(b));
-          return hasKnownMatch || (includesOther && isOther);
-        });
-      })();
-
-      const filtered = cuisineFiltered.filter(v => {
+      const filtered = results.filter(v => {
         const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
         return !skippedIds.includes(id);
       });
