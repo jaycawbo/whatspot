@@ -100,9 +100,8 @@ export default function Home() {
       const prefetched = getPrefetchedVenues(activeIds);
       const combined = [...reserve, ...prefetched];
       if (combined.length > 0) setReserveVenues(combined);
-      prefetchNextBatch();
     }
-  }, [feedVenues, getReserveVenues, getPrefetchedVenues, prefetchNextBatch]);
+  }, [feedVenues, getReserveVenues, getPrefetchedVenues]);
 
   const activeIds = useMemo(() => {
     const ids = new Set();

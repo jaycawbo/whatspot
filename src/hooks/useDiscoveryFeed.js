@@ -565,7 +565,6 @@ export function useDiscoveryFeed() {
     const prevRadius = radiusRingIndexRef.current > 0 ? RADIUS_RINGS[radiusRingIndexRef.current - 1] : 0;
     const tileRadiusKm = prevRadius > 0 ? (currentRadius + prevRadius) / 2 : undefined;
 
-    let willAutoChain = false;
     try {
       const res = await recommend({
         mode: 'discovery',
@@ -631,20 +630,13 @@ export function useDiscoveryFeed() {
         return prefetchNextBatch(retryCount + 1);
       }
 
-      // Auto-chain another prefetch if buffer is still shallow
-      if (filtered.length > 0 && prefetchedVenuesRef.current.length < 15 && retryCount === 0) {
-        willAutoChain = true;
-        isPrefetchingRef.current = false;
-        setTimeout(() => prefetchNextBatch(0), 100);
-      }
-
       return { fetched: filtered.length, reserve: reserve.length };
     } catch (err) {
       console.error('Prefetch failed silently:', err);
       return { fetched: 0, reserve: 0 };
     } finally {
       isPrefetchingRef.current = false;
-      if (pendingPrefetchRef.current && !willAutoChain) {
+      if (pendingPrefetchRef.current) {
         pendingPrefetchRef.current = false;
         setTimeout(() => prefetchNextBatch(0), 50);
       }
