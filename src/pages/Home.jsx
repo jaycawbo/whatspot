@@ -184,7 +184,7 @@ export default function Home() {
   const handleTabChange = useCallback(
     (tab) => {
       setReserveVenues([]);
-      if (tab === 'for_you' || tab === 'popular') refetchDiscovery();
+      if (tab === 'for_you') refetchDiscovery();
     },
     [refetchDiscovery]
   );
