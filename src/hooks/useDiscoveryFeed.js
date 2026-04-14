@@ -440,7 +440,7 @@ export function useDiscoveryFeed() {
     const excludeIds = Array.from(allServedIdsRef.current);
 
     try {
-      const res = await recommend({
+      const recommendParams = {
         mode: effectiveMode,
         query: query || undefined,
         lat: anchorPointRef.current?.lat ?? state.userLocation?.lat,
@@ -450,7 +450,15 @@ export function useDiscoveryFeed() {
         open_now: state.filters?.openNow || undefined,
         price_levels: state.filters?.priceLevels?.length ? state.filters.priceLevels : undefined,
         exclude_ids: excludeIds.length ? excludeIds : undefined,
-      });
+      };
+      let res;
+      try {
+        res = await recommend(recommendParams);
+      } catch (retryErr) {
+        console.warn('recommend() failed, retrying in 2s:', retryErr?.message);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        res = await recommend(recommendParams);
+      }
 
       const results = res?.results || [];
       const overflow = res?.nearby_overflow || [];
@@ -524,7 +532,11 @@ export function useDiscoveryFeed() {
         } catch {}
       }
     } catch (err) {
-      console.error('Discovery feed fetch failed:', err);
+      let errDetail = err?.message || 'unknown';
+      if (err?.context) {
+        try { const body = await err.context.json(); errDetail = JSON.stringify(body); } catch {}
+      }
+      console.error('Discovery feed fetch failed:', err?.status || 'no status', errDetail);
       setError(err?.message || 'Failed to load venues');
       setVenues([]);
     } finally {
