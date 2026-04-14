@@ -16,7 +16,7 @@ import WhatspotLogo from '@/components/brand/WhatspotLogo';
 import LocationSearch from '@/components/home/LocationSearch';
 import AuthModal from '@/components/auth/AuthModal';
 
-export default function Header({ onLogoClick } = {}) {
+export default function Header({ onLogoClick, onCloseSearch } = {}) {
   const { state, dispatch } = useGlobalState();
   const { user, isAuthenticated, signOut } = useAuth();
   const [editingLocation, setEditingLocation] = useState(false);
@@ -51,7 +51,7 @@ export default function Header({ onLogoClick } = {}) {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-background border-b border-border flex items-center px-4 md:px-8">
       {/* Left: Location */}
-      <div className="flex items-center min-w-0 flex-1">
+      <div className="flex items-center min-w-0 flex-1 overflow-hidden">
         {editingLocation ? (
           <LocationSearch
             currentName={state.locationName}
@@ -61,7 +61,7 @@ export default function Header({ onLogoClick } = {}) {
         ) : (
           <button
             onClick={() => setEditingLocation(true)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors max-w-[200px] truncate"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors max-w-[160px] truncate"
           >
             <MapPin className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{state.locationName}</span>
@@ -123,7 +123,7 @@ export default function Header({ onLogoClick } = {}) {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <Button variant="ghost" size="sm" onClick={() => setAuthModalOpen(true)}>
+          <Button variant="ghost" size="sm" onClick={() => { onCloseSearch?.(); setAuthModalOpen(true); }}>
             Sign in
           </Button>
         )}
