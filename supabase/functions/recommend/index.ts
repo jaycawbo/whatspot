@@ -474,6 +474,7 @@ Deno.serve(async (req) => {
       relaxation_level = 0,
       open_now,
       price_levels,
+      cuisine_types,
       session_context = [],
       exclude_ids = [],
       criteria_pass,
@@ -999,6 +1000,23 @@ Deno.serve(async (req) => {
                 // Unknown price — keep but flag for down-ranking
                 unknownPrice = true;
             }
+        }
+
+        // Cuisine type filter — matched against raw Google Places types
+        if (cuisine_types && Array.isArray(cuisine_types) && cuisine_types.length > 0) {
+          const KNOWN_CUISINE_TYPES = [
+            'italian_restaurant', 'japanese_restaurant', 'mexican_restaurant', 'chinese_restaurant',
+            'american_restaurant', 'thai_restaurant', 'indian_restaurant', 'korean_restaurant',
+            'mediterranean_restaurant', 'french_restaurant', 'vietnamese_restaurant',
+            'middle_eastern_restaurant', 'greek_restaurant', 'spanish_restaurant', 'breakfast_restaurant',
+          ];
+          const selectedKnown = cuisine_types.filter((ct: string) => ct !== 'other');
+          const includesOther = cuisine_types.includes('other');
+          const rawTypes: string[] = place.types || [];
+          const hasKnownMatch = selectedKnown.some((ct: string) => rawTypes.includes(ct));
+          // "Other" = venue doesn't match any of the known cuisine types in our list
+          const isOtherCuisine = !KNOWN_CUISINE_TYPES.some((kt: string) => rawTypes.includes(kt));
+          if (!hasKnownMatch && !(includesOther && isOtherCuisine)) return null;
         }
 
         const isRelaxedAdmission =

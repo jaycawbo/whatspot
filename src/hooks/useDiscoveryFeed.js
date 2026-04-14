@@ -283,6 +283,8 @@ export function useDiscoveryFeed() {
   const radiusRef = useRef(state.filters?.radius || 5);
   const abortRef = useRef(null);
   const hasFetchedRef = useRef(!!cached);
+  const currentQueryRef = useRef(cached?.currentQuery || '');
+  const isFirstFilterRenderRef = useRef(true);
   const reserveVenuesRef = useRef(cached?.reserveVenues || []);
   const radiusRingIndexRef = useRef(0);
   const criteriaPassRef = useRef(1);
@@ -378,6 +380,22 @@ export function useDiscoveryFeed() {
     console.log('[Anchor] Rotation for guest, anchor:', anchorPointRef.current);
   }, [state.userLocation]);
 
+  // Keep currentQueryRef in sync so the filter-change effect can read it without stale closure
+  useEffect(() => { currentQueryRef.current = currentQuery; }, [currentQuery]);
+
+  // Re-run search when filters change while a query is active.
+  // Guard against the initial render so we don't double-fetch on mount.
+  useEffect(() => {
+    if (isFirstFilterRenderRef.current) {
+      isFirstFilterRenderRef.current = false;
+      return;
+    }
+    if (currentQueryRef.current) {
+      radiusRef.current = state.filters?.radius || 5;
+      fetchFeed({ query: currentQueryRef.current });
+    }
+  }, [state.filters]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Tab feed — fires when feedTab or filters change (for DB-driven tabs: new/trending)
   // For You and Popular use the existing recommend pipeline.
   useEffect(() => {
@@ -449,6 +467,7 @@ export function useDiscoveryFeed() {
         radius_km: effectiveRadius,
         open_now: state.filters?.openNow || undefined,
         price_levels: state.filters?.priceLevels?.length ? state.filters.priceLevels : undefined,
+        cuisine_types: state.filters?.cuisines?.length ? state.filters.cuisines : undefined,
         exclude_ids: excludeIds.length ? excludeIds : undefined,
       };
       let res;
