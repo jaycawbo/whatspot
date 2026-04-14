@@ -474,6 +474,7 @@ Deno.serve(async (req) => {
       relaxation_level = 0,
       open_now,
       price_levels,
+      cuisine_types,
       session_context = [],
       exclude_ids = [],
       criteria_pass,
@@ -980,6 +981,18 @@ Deno.serve(async (req) => {
 
     // ─── STEP 3: Filter + admission tagging ───
     console.log('🔍 STEP 3: Filtering...');
+
+    // Precompute cuisine filter state once (not inside the map loop)
+    const activeCuisineTypes: string[] = Array.isArray(cuisine_types) ? cuisine_types : [];
+    const KNOWN_CUISINE_TYPES = [
+      'italian_restaurant', 'japanese_restaurant', 'mexican_restaurant', 'chinese_restaurant',
+      'american_restaurant', 'thai_restaurant', 'indian_restaurant', 'korean_restaurant',
+      'mediterranean_restaurant', 'french_restaurant', 'vietnamese_restaurant',
+      'middle_eastern_restaurant', 'greek_restaurant', 'spanish_restaurant', 'breakfast_restaurant',
+    ];
+    const selectedCuisineKnown = activeCuisineTypes.filter(ct => ct !== 'other');
+    const cuisineIncludesOther = activeCuisineTypes.includes('other');
+
     filteredVenues = googleResults
       .map((place: any) => {
         const distance_km = calculateDistance(lat, lon, place.lat, place.lon);
@@ -999,6 +1012,14 @@ Deno.serve(async (req) => {
                 // Unknown price — keep but flag for down-ranking
                 unknownPrice = true;
             }
+        }
+
+        // Cuisine type filter
+        if (activeCuisineTypes.length > 0) {
+          const rawTypes: string[] = Array.isArray(place.types) ? place.types : [];
+          const hasKnownMatch = selectedCuisineKnown.some(ct => rawTypes.includes(ct));
+          const isOtherCuisine = !KNOWN_CUISINE_TYPES.some(kt => rawTypes.includes(kt));
+          if (!hasKnownMatch && !(cuisineIncludesOther && isOtherCuisine)) return null;
         }
 
         const isRelaxedAdmission =
