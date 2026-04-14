@@ -117,7 +117,7 @@ export default function SearchDialog({
                   type="text"
                   value={query}
                   onChange={(e) => onQueryChange(e.target.value)}
-                  className="w-full h-10 pl-10 pr-10 rounded-full border border-input bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ring-offset-background transition-shadow"
+                  className="w-full h-10 pl-10 pr-10 rounded-full border border-input bg-card text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ring-offset-background transition-shadow"
                   placeholder="Ask and you shall receive..."
                 />
                 {query.trim() && (
