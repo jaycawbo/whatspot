@@ -81,9 +81,8 @@ export default function SearchDialog({
 
   const handleFilterTap = useCallback(() => {
     document.activeElement?.blur();
-    onClose();
     onFilterClick?.();
-  }, [onClose, onFilterClick]);
+  }, [onFilterClick]);
 
   return (
     <AnimatePresence>
