@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.enrich-venues]
 verify_jwt = false
+
+[functions.census-sweep]
+verify_jwt = false

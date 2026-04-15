@@ -19,7 +19,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MAX_VENUES = 100;
+const MAX_VENUES = 200;
 const MAX_PHOTOS = 4;
 
 const FIELD_MASK = [
@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
   let body: { batch_size?: number; dry_run?: boolean; place_ids?: string[] } = {};
   try { body = await req.json(); } catch { /* no body */ }
 
-  const batchSize = Math.min(body.batch_size ?? 33, MAX_VENUES);
+  const batchSize = Math.min(body.batch_size ?? 50, MAX_VENUES);
   const dryRun    = body.dry_run ?? false;
 
   // ── Dry run — count only, zero API calls ────────────────────────────────
