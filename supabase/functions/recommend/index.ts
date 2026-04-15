@@ -976,58 +976,9 @@ Deno.serve(async (req) => {
       console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationBias 3km)`);
     } else {
       if (isDiscoveryMode) {
-        // Discovery mode — tiled multi-query system for geographic diversity
-        const DISCOVERY_QUERIES = [
-          "restaurant OR cafe OR bistro OR diner OR brasserie",
-          "bar OR pub OR lounge OR nightclub OR brewery OR dive bar",
-          "snack bar OR sandwich shop OR burger joint OR food market OR hotel restaurant",
-        ];
-
-        // Generate tile centers: center + 4 cardinal offsets
-        const tileSearchRadius = tile_radius_km || admission.maxRadius;
-        const latOffset = (tileSearchRadius * 0.5) / 111;
-        const lonOffset = (tileSearchRadius * 0.5) / (111 * Math.cos(lat * Math.PI / 180));
-        const tileRadius = tileSearchRadius * 0.75;
-        const allTiles = [
-          { tlat: lat, tlon: lon, tradius: tileSearchRadius },               // center
-          { tlat: lat + latOffset, tlon: lon, tradius: tileRadius },          // north
-          { tlat: lat - latOffset, tlon: lon, tradius: tileRadius },          // south
-          { tlat: lat, tlon: lon + lonOffset, tradius: tileRadius },          // east
-          { tlat: lat, tlon: lon - lonOffset, tradius: tileRadius },          // west
-        ];
-        // On Supabase fallback, cap to center tile only (3 API calls max)
-        const tiles = googleCallCap <= 3 ? allTiles.slice(0, 1) : allTiles;
-
-        // Build all tile × query combinations
-        const tileCalls: Promise<any[]>[] = [];
-        for (const tile of tiles) {
-          for (const q of DISCOVERY_QUERIES) {
-            tileCalls.push(
-              safe(`tile-search`, () => googlePlacesBroadSearch(
-                GOOGLE_KEY,
-                `${q} in ${googleLocationContext}`,
-                tile.tlat, tile.tlon, tile.tradius, open_now, googlePriceLevels
-              ), [])
-            );
-          }
-        }
-
-        const allTileResults = await Promise.all(tileCalls);
-        const totalRaw = allTileResults.reduce((s, r) => s + r.length, 0);
-
-        // Merge and deduplicate by place_id
-        const seenPlaceIds = new Set<string>();
+        // Tiling disabled — extracted to supabase/functions/tile-search/index.ts
+        // Re-enable by calling tile-search edge function here when Supabase-first gating is complete
         googleResults = [];
-        for (const batch of allTileResults) {
-          for (const r of batch) {
-            const pid = (r.place_id || '').replace(/^places\//, '');
-            if (!seenPlaceIds.has(pid)) {
-              seenPlaceIds.add(pid);
-              googleResults.push(r);
-            }
-          }
-        }
-        console.log(`📊 Discovery tiled: ${tiles.length} tiles × ${DISCOVERY_QUERIES.length} queries = ${tileCalls.length} calls, ${totalRaw} raw → ${googleResults.length} unique venues`);
       } else {
         googleResults = await googlePlacesBroadSearch(
           GOOGLE_KEY,
