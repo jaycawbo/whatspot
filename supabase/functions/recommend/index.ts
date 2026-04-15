@@ -9,8 +9,8 @@ const corsHeaders = {
 const SUPPRESSION_DAYS: Record<string, number | null> = {
   passive_skip: 21,
   skip_for_now: 30,
-  interested: 60,
-  not_interested: 90,
+  interested: 90,
+  not_interested: 45,
   been_here: null, // indefinite
 };
 
