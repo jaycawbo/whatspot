@@ -225,19 +225,9 @@ export async function routeVenueRequest(params) {
     });
   }
 
-  // live_fallback: for text search queries, try DB first.
-  // Only fall through to the edge function if DB returns nothing.
-  // Discovery requests (no query) go straight to edge function for LLM ranking.
-  if (params.query) {
-    const dbResult = await queryVenuesFromDb({
-      query:        params.query,
-      excludeIds:   params.exclude_ids || [],
-      locationName: params.location_name || '',
-      lat:          params.lat,
-      lon:          params.lon,
-    });
-    if (dbResult.results.length > 0) return dbResult;
-  }
-
+  // live_fallback: fall through to the recommend edge function for all requests.
+  // The edge function handles Supabase-first lookup with filters (STEP 2a for search,
+  // STEP 2 for discovery) before falling back to Google. Intercepting queries here
+  // would bypass filter application (cuisine, price, open_now).
   return null;
 }
