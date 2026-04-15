@@ -30,6 +30,10 @@ const FEED_CACHE_KEY = 'whatspot_feed_cache';
 function saveFeedCache(data) {
   try {
     sessionStorage.setItem(FEED_CACHE_KEY, JSON.stringify({ ...data, ts: Date.now() }));
+    const venueIdStr = (data.venues || [])
+      .map(v => (v.place_id || v.google_place_id || '').replace(/^places\//, ''))
+      .join(',');
+    sessionStorage.setItem('whatspot_deck_venue_ids', venueIdStr);
   } catch {}
 }
 
@@ -55,6 +59,23 @@ function loadFeedCache() {
  */
 const PRICE_CHIP_TO_INT = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
 
+// Canonical chain blocklist lives in recommend/index.ts — keep in sync when updating
+const TAB_CHAIN_BLOCKLIST = new Set([
+  "mcdonald's", "mcdonalds", "subway", "starbucks", "tim hortons", "burger king",
+  "wendy's", "wendys", "kfc", "pizza hut", "domino's", "dominoes", "taco bell",
+  "popeyes", "dairy queen", "harvey's", "harveys", "a&w", "second cup",
+  "country style", "boston pizza", "swiss chalet", "st. louis", "milestones",
+  "earls", "cactus club", "joeys", "montanas", "kelseys", "jack astors",
+  "the keg", "hero certified burgers", "mucho burrito", "chipotle", "panera",
+  "five guys", "shake shack", "nandos", "pita pit", "quiznos", "mr. sub",
+  "extreme pita", "thai express", "manchu wok", "new york fries", "orange julius",
+  "baskin robbins", "gregory's", "gregorys", "pizza pizza", "little caesars",
+  "papa johns", "mary browns", "church's chicken", "cultures",
+  "jugo juice", "booster juice", "kernels", "great canadian bagel",
+  "robin's donuts", "robins donuts", "baton rouge", "red lobster", "olive garden",
+  "the old spaghetti factory",
+]);
+
 /**
  * Compute a bounding box for a radius query without PostGIS.
  * Returns { latMin, latMax, lngMin, lngMax }.
@@ -77,7 +98,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
 
   let query = supabase
     .from('venues')
-    .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, image_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
+    .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
     .gte('lat', bb.latMin)
     .lte('lat', bb.latMax)
     .gte('lng', bb.lngMin)
@@ -105,13 +126,63 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       .order('review_count', { ascending: false })
       .limit(20);
   } else if (tab === 'new') {
-    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-    query = query
-      .not('review_count_at_ingestion', 'is', null)
-      .lt('review_count_at_ingestion', 75)
-      .gte('created_at', cutoff)
-      .order('created_at', { ascending: false })
-      .limit(30);
+    // Tiered year window — expands annually until 30 venues found
+    let results = [];
+    let yearWindow = 0;
+    for (let years = 1; years <= 10; years++) {
+      yearWindow = years;
+      const cutoff = new Date(Date.now() - years * 365.25 * 24 * 60 * 60 * 1000).toISOString();
+      let newQuery = supabase
+        .from('venues')
+        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
+        .gte('lat', bb.latMin)
+        .lte('lat', bb.latMax)
+        .gte('lng', bb.lngMin)
+        .lte('lng', bb.lngMax)
+        .not('review_count_at_ingestion', 'is', null)
+        .lt('review_count_at_ingestion', 75)
+        .gte('created_at', cutoff)
+        .order('created_at', { ascending: false })
+        .limit(30);
+      if (filters?.priceLevels?.length) {
+        const ints = filters.priceLevels.map((p) => PRICE_CHIP_TO_INT[p]).filter(Boolean);
+        if (ints.length) newQuery = newQuery.in('price_level', ints);
+      }
+      if (filters?.cuisines?.length) {
+        const cuisineFilter = filters.cuisines.map((c) => `types.cs.${JSON.stringify([c])}`).join(',');
+        newQuery = newQuery.or(cuisineFilter);
+      }
+      const { data: newData, error: newError } = await newQuery;
+      if (newError) {
+        console.error('[TabFeed] New query error:', newError);
+        break;
+      }
+      results = newData || [];
+      if (results.length >= 30) break;
+    }
+    console.log('[TabFeed] New: found', results.length, 'venues within', yearWindow, 'year(s)');
+    const newSkipSet = new Set(skippedIds || []);
+    const newFiltered = results.filter((v) => {
+      const id = (v.google_place_id || '').replace(/^places\//, '');
+      return !newSkipSet.has(id) && !TAB_CHAIN_BLOCKLIST.has(v.name?.toLowerCase());
+    });
+    return {
+      venues: newFiltered.map((v) => ({
+        google_place_id: v.google_place_id,
+        place_id: v.google_place_id,
+        name: v.name,
+        address: v.address,
+        lat: v.lat,
+        lon: v.lng,
+        rating: v.rating,
+        review_count: v.review_count,
+        price_level: v.price_level,
+        types: v.venue_types || [],
+        image_urls: v.photo_urls || [],
+        descriptors: v.descriptors || [],
+      })),
+      isEmpty: newFiltered.length === 0,
+    };
   } else if (tab === 'trending') {
     query = query
       .not('trending_score', 'is', null)
@@ -131,7 +202,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
   const skipSet = new Set(skippedIds || []);
   let filtered = (data || []).filter((v) => {
     const id = (v.google_place_id || '').replace(/^places\//, '');
-    return !skipSet.has(id);
+    return !skipSet.has(id) && !TAB_CHAIN_BLOCKLIST.has(v.name?.toLowerCase());
   });
 
   // For Trending: apply std-dev threshold client-side, or fall back to proxy ordering
@@ -153,7 +224,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       // No real trending scores yet — proxy fallback: top-rated with review_count >= 50
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('venues')
-        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, image_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
+        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
         .gte('lat', bb.latMin)
         .lte('lat', Math.min(bb.latMax, 43.773))
         .gte('lng', bb.lngMin)
@@ -186,7 +257,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
     review_count: v.review_count,
     price_level: v.price_level,
     types: v.venue_types || [],
-    image_urls: v.image_urls || [],
+    image_urls: v.photo_urls || [],
     descriptors: v.descriptors || [],
   }));
 
@@ -246,7 +317,6 @@ export function useDiscoveryFeed() {
     if (loc?.locationType && !BROAD_TYPES.includes(loc.locationType)) {
       anchorPointRef.current = { lat: loc.lat, lon: loc.lon };
       console.log('[Anchor] Using exact coords (specific location type:', loc.locationType, ')');
-      return;
     }
 
     // Priority 3: Broad area (city-level or no locationType) — apply rotation
@@ -264,7 +334,7 @@ export function useDiscoveryFeed() {
       const anchorIndex = profile?.discovery_anchor_index ?? 0;
       const nextIndex = (anchorIndex + 1) % TORONTO_ANCHORS.length;
 
-      anchorPointRef.current = TORONTO_ANCHORS[anchorIndex];
+      if (!anchorPointRef.current) anchorPointRef.current = TORONTO_ANCHORS[anchorIndex];
       radiusRingIndexRef.current = 0;
       criteriaPassRef.current = profile?.discovery_last_criteria_pass ?? 1;
 
@@ -312,11 +382,12 @@ export function useDiscoveryFeed() {
   // For You and Popular use the existing recommend pipeline.
   useEffect(() => {
     const tab = state.feedTab;
-    if (!tab || tab === 'for_you' || tab === 'popular') {
+    if (!tab || tab === 'for_you') {
       setTabEmpty(false);
       return;
     }
-    if (!anchorPointRef.current) return; // wait until anchor is initialised
+    const anchor = anchorPointRef.current ?? state.userLocation;
+    if (!anchor) return; // wait until anchor is initialised
 
     setIsLoading(true);
     setTabEmpty(false);
@@ -328,10 +399,11 @@ export function useDiscoveryFeed() {
     } catch {}
 
     fetchTabVenues(tab, {
-      anchor: anchorPointRef.current,
+      anchor,
       filters: state.filters,
       skippedIds,
     }).then(({ venues: tabVenues, isEmpty }) => {
+      console.log(`[TabFeed] ${tab} returned ${tabVenues.length} venues. First 3:`, tabVenues.slice(0, 3).map(v => v.name));
       setVenues(tabVenues);
       setOverflowVenues([]);
       setCurrentQuery('');
@@ -368,7 +440,7 @@ export function useDiscoveryFeed() {
     const excludeIds = Array.from(allServedIdsRef.current);
 
     try {
-      const res = await recommend({
+      const recommendParams = {
         mode: effectiveMode,
         query: query || undefined,
         lat: anchorPointRef.current?.lat ?? state.userLocation?.lat,
@@ -378,7 +450,15 @@ export function useDiscoveryFeed() {
         open_now: state.filters?.openNow || undefined,
         price_levels: state.filters?.priceLevels?.length ? state.filters.priceLevels : undefined,
         exclude_ids: excludeIds.length ? excludeIds : undefined,
-      });
+      };
+      let res;
+      try {
+        res = await recommend(recommendParams);
+      } catch (retryErr) {
+        console.warn('recommend() failed, retrying in 2s:', retryErr?.message);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        res = await recommend(recommendParams);
+      }
 
       const results = res?.results || [];
       const overflow = res?.nearby_overflow || [];
@@ -452,7 +532,11 @@ export function useDiscoveryFeed() {
         } catch {}
       }
     } catch (err) {
-      console.error('Discovery feed fetch failed:', err);
+      let errDetail = err?.message || 'unknown';
+      if (err?.context) {
+        try { const body = await err.context.json(); errDetail = JSON.stringify(body); } catch {}
+      }
+      console.error('Discovery feed fetch failed:', err?.status || 'no status', errDetail);
       setError(err?.message || 'Failed to load venues');
       setVenues([]);
     } finally {
@@ -462,7 +546,21 @@ export function useDiscoveryFeed() {
 
   // Initial load — discovery mode + immediate prefetch
   useEffect(() => {
-    if (hasFetchedRef.current) return;
+    if (hasFetchedRef.current) {
+      // Seed allServedIdsRef from cached venues so exclude_ids is non-empty on first post-remount prefetch
+      if (cached?.venues?.length) {
+        cached.venues.forEach(v => {
+          const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+          if (id) allServedIdsRef.current.add(id);
+        });
+      }
+      // Write whatspot_deck_venue_ids so DiscoveryDeck can restore position on back-nav
+      const venueIdStr = (cached?.venues || [])
+        .map(v => (v.place_id || v.google_place_id || '').replace(/^places\//, ''))
+        .join(',');
+      try { sessionStorage.setItem('whatspot_deck_venue_ids', venueIdStr); } catch {}
+      return;
+    }
     hasFetchedRef.current = true;
     // Clear skipped venues from previous sessions so the feed starts fresh
     try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
@@ -477,7 +575,10 @@ export function useDiscoveryFeed() {
   // Search-driven refresh
   const searchFeed = useCallback((query) => {
     radiusRef.current = state.filters?.radius || 5;
-    try { sessionStorage.setItem('whatspot_deck_index', '0'); } catch {}
+    try {
+      sessionStorage.setItem('whatspot_deck_index', '0');
+      sessionStorage.removeItem('whatspot_deck_venue_ids');
+    } catch {}
     fetchFeed({ query });
   }, [fetchFeed, state.filters]);
 
@@ -565,7 +666,6 @@ export function useDiscoveryFeed() {
     const prevRadius = radiusRingIndexRef.current > 0 ? RADIUS_RINGS[radiusRingIndexRef.current - 1] : 0;
     const tileRadiusKm = prevRadius > 0 ? (currentRadius + prevRadius) / 2 : undefined;
 
-    let willAutoChain = false;
     try {
       const res = await recommend({
         mode: 'discovery',
@@ -631,20 +731,13 @@ export function useDiscoveryFeed() {
         return prefetchNextBatch(retryCount + 1);
       }
 
-      // Auto-chain another prefetch if buffer is still shallow
-      if (filtered.length > 0 && prefetchedVenuesRef.current.length < 15 && retryCount === 0) {
-        willAutoChain = true;
-        isPrefetchingRef.current = false;
-        setTimeout(() => prefetchNextBatch(0), 100);
-      }
-
       return { fetched: filtered.length, reserve: reserve.length };
     } catch (err) {
       console.error('Prefetch failed silently:', err);
       return { fetched: 0, reserve: 0 };
     } finally {
       isPrefetchingRef.current = false;
-      if (pendingPrefetchRef.current && !willAutoChain) {
+      if (pendingPrefetchRef.current) {
         pendingPrefetchRef.current = false;
         setTimeout(() => prefetchNextBatch(0), 50);
       }

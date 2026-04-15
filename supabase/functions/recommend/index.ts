@@ -79,6 +79,32 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
   });
 }
 
+async function getSupabaseVenuesByType(expandedTypes: string[], lat: number, lon: number): Promise<any[]> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const sb = createClient(supabaseUrl, supabaseKey);
+
+  // Build OR filter: match any expanded type keyword in the venue_types array
+  const typeFilter = expandedTypes
+    .map((t: string) => `venue_types.cs.{${t}}`)
+    .join(',');
+
+  const { data, error } = await sb
+    .from('venues')
+    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address')
+    .or(typeFilter)
+    .or('business_status.eq.OPERATIONAL,business_status.is.null')
+    .order('rating', { ascending: false })
+    .order('review_count', { ascending: false })
+    .limit(100);
+
+  if (error) throw error;
+  return (data || []).map((v: any) => ({
+    ...v,
+    distance_km: calculateDistance(lat, lon, v.lat, v.lng),
+  }));
+}
+
 // ─── Fixed scoring constants — never modified by relaxation level ───
 const SCORING = {
   RATING_FLOOR: 4.0,
@@ -720,6 +746,79 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ─── SUPABASE-FIRST SEARCH TRACK ───
+    if (!isDiscoveryMode && !servedFromSupabase && refinedSearchTerm) {
+      const queryWords = refinedSearchTerm.toLowerCase()
+        .split(/\s+/)
+        .filter((w: string) => w.length > 3)
+        .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have',
+          'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
+
+      if (queryWords.length > 0) {
+        const expandedTypes = new Set<string>();
+        for (const word of queryWords) {
+          expandedTypes.add(word.replace(/\s+/g, '_'));
+          if (word === 'steak') { expandedTypes.add('steak_house'); expandedTypes.add('steakhouse'); }
+          if (word === 'sushi') expandedTypes.add('sushi_restaurant');
+          if (word === 'vegan') expandedTypes.add('vegan_restaurant');
+          if (word === 'pizza') expandedTypes.add('pizza_restaurant');
+          if (word === 'ramen') expandedTypes.add('ramen_restaurant');
+          if (word === 'burger') expandedTypes.add('hamburger_restaurant');
+          if (word === 'thai') expandedTypes.add('thai_restaurant');
+          if (word === 'chinese') expandedTypes.add('chinese_restaurant');
+          if (word === 'indian') expandedTypes.add('indian_restaurant');
+          if (word === 'italian') expandedTypes.add('italian_restaurant');
+          if (word === 'mexican') expandedTypes.add('mexican_restaurant');
+          if (word === 'french') expandedTypes.add('french_restaurant');
+          if (word === 'greek') expandedTypes.add('greek_restaurant');
+          if (word === 'korean') expandedTypes.add('korean_restaurant');
+          if (word === 'japanese') expandedTypes.add('japanese_restaurant');
+          if (word === 'spanish') expandedTypes.add('spanish_restaurant');
+          if (word === 'vietnamese') expandedTypes.add('vietnamese_restaurant');
+          if (word === 'brunch' || word === 'breakfast') { expandedTypes.add('brunch_restaurant'); expandedTypes.add('breakfast_restaurant'); }
+          if (word === 'seafood') expandedTypes.add('seafood_restaurant');
+          if (word === 'cocktail') { expandedTypes.add('cocktail_bar'); expandedTypes.add('bar'); }
+          if (word === 'wine') expandedTypes.add('wine_bar');
+          if (word === 'coffee' || word === 'cafe') { expandedTypes.add('coffee_shop'); expandedTypes.add('cafe'); }
+        }
+
+        if (expandedTypes.size > 0) {
+          const sbSearchVenues = await safe('supabase-search', () =>
+            getSupabaseVenuesByType([...expandedTypes], lat, lon), []);
+          console.log(`🗄️ Search Supabase: ${sbSearchVenues.length} type-matched venues for [${[...expandedTypes].join(', ')}]`);
+
+          if (sbSearchVenues.length >= 5) {
+            servedFromSupabase = true;
+            filteredVenues = sbSearchVenues
+              .map((v: any) => {
+                const isRelaxedAdmission = (v.rating ?? 0) < SCORING.RATING_FLOOR || (v.review_count ?? 0) < SCORING.REVIEW_FLOOR;
+                return {
+                  name: v.name,
+                  address: v.address || '',
+                  lat: v.lat,
+                  lon: v.lng,
+                  distance_km: v.distance_km,
+                  rating: v.rating,
+                  review_count: v.review_count,
+                  price_level: mapIntPriceLevel(v.price_level),
+                  place_id: `places/${v.google_place_id}`,
+                  category: (v.venue_types ?? []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+                  cuisine_type: (v.venue_types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+                  isRelaxedAdmission,
+                  unknownPrice: false,
+                  _rawTypes: v.venue_types ?? [],
+                  _photoUrls: v.photo_urls ?? [],
+                  _photosComplete: v.photos_complete ?? false,
+                  _photosFetchedCount: v.photos_fetched_count ?? 0,
+                };
+              })
+              .filter((v: any) => (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount);
+            console.log(`✅ Search Supabase: serving ${filteredVenues.length} venues after admission filter`);
+          }
+        }
+      }
+    }
+
     if (!servedFromSupabase) {
     if (!GOOGLE_KEY) throw new Error('GOOGLE_PLACES_API_KEY not configured');
     if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
@@ -1036,13 +1135,75 @@ Deno.serve(async (req) => {
     const candidatePoolSize = isDiscoveryMode ? 30 : 20;
     const candidates = dedup(scoredVenues).slice(0, candidatePoolSize);
 
+    // ─── Query-intent pre-filter (search mode only) ───
+    // Type-matched venues appear first so the LLM scores them higher.
+    // Unmatched venues (e.g. unclassified gems) fill the remainder so they
+    // can still be selected if the LLM judges them relevant.
+    const isSearchMode = !!searchTerm;
+    let filteredCandidates = candidates;
+
+    if (isSearchMode && refinedSearchTerm) {
+      const queryWords = refinedSearchTerm.toLowerCase()
+        .split(/\s+/)
+        .filter((w: string) => w.length > 3)
+        .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have', 'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
+
+      if (queryWords.length > 0) {
+        // Expand each keyword to related Google place type fragments
+        const expandedTypes = new Set<string>();
+        for (const word of queryWords) {
+          expandedTypes.add(word);
+          // Common expansions — add more as needed
+          if (word === 'steak') { expandedTypes.add('steak_house'); expandedTypes.add('steakhouse'); }
+          if (word === 'sushi') { expandedTypes.add('sushi_restaurant'); }
+          if (word === 'vegan') { expandedTypes.add('vegan_restaurant'); }
+          if (word === 'pizza') { expandedTypes.add('pizza_restaurant'); }
+          if (word === 'ramen') { expandedTypes.add('ramen_restaurant'); }
+          if (word === 'burger') { expandedTypes.add('hamburger_restaurant'); }
+          if (word === 'thai') { expandedTypes.add('thai_restaurant'); }
+          if (word === 'chinese') { expandedTypes.add('chinese_restaurant'); }
+          if (word === 'indian') { expandedTypes.add('indian_restaurant'); }
+          if (word === 'italian') { expandedTypes.add('italian_restaurant'); }
+          if (word === 'mexican') { expandedTypes.add('mexican_restaurant'); }
+          if (word === 'french') { expandedTypes.add('french_restaurant'); }
+          if (word === 'greek') { expandedTypes.add('greek_restaurant'); }
+          if (word === 'korean') { expandedTypes.add('korean_restaurant'); }
+          if (word === 'japanese') { expandedTypes.add('japanese_restaurant'); }
+          if (word === 'spanish') { expandedTypes.add('spanish_restaurant'); }
+          if (word === 'vietnamese') { expandedTypes.add('vietnamese_restaurant'); }
+          if (word === 'brunch') { expandedTypes.add('brunch_restaurant'); expandedTypes.add('breakfast_restaurant'); }
+          if (word === 'breakfast') { expandedTypes.add('breakfast_restaurant'); expandedTypes.add('brunch_restaurant'); }
+          if (word === 'seafood') { expandedTypes.add('seafood_restaurant'); }
+          if (word === 'cocktail') { expandedTypes.add('cocktail_bar'); expandedTypes.add('bar'); }
+          if (word === 'wine') { expandedTypes.add('wine_bar'); }
+          if (word === 'coffee') { expandedTypes.add('coffee_shop'); expandedTypes.add('cafe'); }
+          if (word === 'cafe') { expandedTypes.add('coffee_shop'); expandedTypes.add('cafe'); }
+        }
+
+        const typeMatched = candidates.filter((v: any) => {
+          const types = (v._rawTypes || []).join(' ').toLowerCase();
+          const cat = (v.category || '').toLowerCase();
+          return [...expandedTypes].some((t: string) => types.includes(t) || cat.includes(t));
+        });
+
+        const typeMatchedIds = new Set(typeMatched.map((v: any) => v.place_id));
+        const unmatched = candidates.filter((v: any) => !typeMatchedIds.has(v.place_id));
+
+        // Priority order: type-matched first, then unmatched to fill up to 20
+        filteredCandidates = [...typeMatched, ...unmatched].slice(0, 20);
+        console.log(`🎯 Query-intent pre-filter: ${typeMatched.length} type-matched + ${Math.min(unmatched.length, 20 - typeMatched.length)} unmatched = ${filteredCandidates.length} candidates`);
+      }
+    }
+
     // ─── COMPREHENSIVE LLM: Confidence scoring, descriptors, summary & chips ───
     console.log('🤖 COMPREHENSIVE LLM: Scoring, descriptors, summary & chips...');
     const llmCallStart = Date.now();
 
-    const candidateList = candidates.map((v: any, i: number) =>
-      `${i + 1}. ${v.name} (${v.cuisine_type || 'restaurant'}, ${v.rating}★, ${v.review_count} reviews, ${v.price_level || 'price unknown'}, ${v.distance_km?.toFixed(1)}km)`
-    ).join('\n');
+    const candidateList = filteredCandidates.map((v: any, i: number) => {
+      const displayName = v.name.split(/[|\u2013\u2014:]/).at(0).trim();
+      const typeHints = (v._rawTypes || []).slice(0, 2).join(', ');
+      return `${i + 1}. ${displayName} (${v.cuisine_type || 'restaurant'}${typeHints ? `, types: ${typeHints}` : ''}, ${v.rating}★, ${v.review_count} reviews, ${v.price_level || 'price unknown'}, ${v.distance_km?.toFixed(1)}km)`;
+    }).join('\n');
 
     let finalVenues: any[] = [];
     let search_summary: any = null;
@@ -1141,7 +1302,7 @@ Deno.serve(async (req) => {
       // Normal search mode — full confidence scoring, descriptors, summary and chips
       const comprehensiveResult = await safe('comprehensive-llm', () => callLLM(
         'gemini-2.5-flash',
-        `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues honestly and only include genuinely suitable matches.`,
+        `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues honestly and only include genuinely suitable matches. Venue types reflect what the place actually serves — use them as the primary relevance signal. A venue is NOT relevant if its types don't match the query intent even if keywords coincide in the name.`,
         `The user searched for "${searchTerm}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.5. Order by confidence descending. Maximum 5 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
         [
           {
@@ -1196,7 +1357,7 @@ Deno.serve(async (req) => {
         .filter((r: any) => r.confidence >= 0.5)
         .slice(0, 8)
         .map((r: any, i: number) => {
-          const venue = candidates[r.index - 1];
+          const venue = filteredCandidates[r.index - 1];
           if (!venue) return null;
           return {
             ...venue,
@@ -1210,7 +1371,7 @@ Deno.serve(async (req) => {
       // Backfill to guarantee 8 results
       if (finalVenues.length < 8) {
         const usedIndices = new Set(rankings.filter((r: any) => r.confidence >= 0.5).map((r: any) => r.index - 1));
-        const backfill = candidates
+        const backfill = filteredCandidates
           .filter((_: any, i: number) => !usedIndices.has(i))
           .slice(0, 8 - finalVenues.length)
           .map((v: any) => ({ ...v, descriptors: [], reasoning_explanation: '' }));
