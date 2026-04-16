@@ -66,6 +66,7 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
     .gte('lng', lon - lngBuf)
     .lte('lng', lon + lngBuf)
     .or('business_status.eq.OPERATIONAL,business_status.is.null')
+    .eq('is_chain', false)
     .limit(5000);
 
   if (error || !data) return [];
@@ -114,27 +115,6 @@ const SCORING = {
   RATING_WEIGHT: 0.75,
   TRUST_WEIGHT: 0.25,
 };
-
-// ─── Chain blocklist (discovery mode only) ───
-const CHAIN_BLOCKLIST = [
-  "mcdonald's", "mcdonalds", "subway", "starbucks", "tim hortons", "burger king",
-  "wendy's", "wendys", "kfc", "pizza hut", "domino's", "dominoes", "taco bell",
-  "popeyes", "dairy queen", "harvey's", "harveys", "a&w", "second cup",
-  "country style", "boston pizza", "swiss chalet", "st. louis", "milestones",
-  "earls", "cactus club", "joeys", "montanas", "kelseys", "jack astors",
-  "the keg", "hero certified burgers", "mucho burrito", "chipotle", "panera",
-  "five guys", "shake shack", "nandos", "pita pit", "quiznos", "mr. sub",
-  "extreme pita", "thai express", "manchu wok", "new york fries", "orange julius",
-  "baskin robbins", "gregory's", "gregorys", "pizza pizza", "little caesars",
-  "papa johns", "mary browns", "popeyes", "church's chicken", "cultures",
-  "jugo juice", "booster juice", "kernels", "great canadian bagel",
-  "robin's donuts", "robins donuts", "baton rouge", "red lobster", "olive garden"
-];
-
-function isChain(name: string): boolean {
-  const lower = name.toLowerCase();
-  return CHAIN_BLOCKLIST.some(chain => lower.includes(chain));
-}
 
 // ─── Food/drink venue type allowlist (discovery mode only) ───
 const FOOD_DRINK_TYPES = new Set([
@@ -721,7 +701,6 @@ Deno.serve(async (req) => {
         console.log('✅ Serving from Supabase');
         servedFromSupabase = true;
         filteredVenues = sbVenues
-          .filter((v: any) => !isChain(v.name || ''))
           .filter((v: any) => hasFoodDrinkType(v.venue_types))
           .map((v: any) => {
             const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
@@ -1049,7 +1028,6 @@ Deno.serve(async (req) => {
         };
       })
       .filter((v: any) => v !== null)
-      .filter((v: any) => !isDiscoveryMode || !isChain(v.name || ''))
       .filter((v: any) => !isDiscoveryMode || hasFoodDrinkType(v._rawTypes))
       .filter((v: any) => !isDiscoveryMode || !v.lat || v.lat <= 43.7730);
 

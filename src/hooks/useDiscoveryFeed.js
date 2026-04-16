@@ -59,22 +59,6 @@ function loadFeedCache() {
  */
 const PRICE_CHIP_TO_INT = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
 
-// Canonical chain blocklist lives in recommend/index.ts — keep in sync when updating
-const TAB_CHAIN_BLOCKLIST = new Set([
-  "mcdonald's", "mcdonalds", "subway", "starbucks", "tim hortons", "burger king",
-  "wendy's", "wendys", "kfc", "pizza hut", "domino's", "dominoes", "taco bell",
-  "popeyes", "dairy queen", "harvey's", "harveys", "a&w", "second cup",
-  "country style", "boston pizza", "swiss chalet", "st. louis", "milestones",
-  "earls", "cactus club", "joeys", "montanas", "kelseys", "jack astors",
-  "the keg", "hero certified burgers", "mucho burrito", "chipotle", "panera",
-  "five guys", "shake shack", "nandos", "pita pit", "quiznos", "mr. sub",
-  "extreme pita", "thai express", "manchu wok", "new york fries", "orange julius",
-  "baskin robbins", "gregory's", "gregorys", "pizza pizza", "little caesars",
-  "papa johns", "mary browns", "church's chicken", "cultures",
-  "jugo juice", "booster juice", "kernels", "great canadian bagel",
-  "robin's donuts", "robins donuts", "baton rouge", "red lobster", "olive garden",
-  "the old spaghetti factory",
-]);
 
 /**
  * Compute a bounding box for a radius query without PostGIS.
@@ -102,7 +86,8 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
     .gte('lat', bb.latMin)
     .lte('lat', bb.latMax)
     .gte('lng', bb.lngMin)
-    .lte('lng', bb.lngMax);
+    .lte('lng', bb.lngMax)
+    .eq('is_chain', false);
 
   // Price filter
   if (filters?.priceLevels?.length) {
@@ -139,6 +124,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
         .lte('lat', bb.latMax)
         .gte('lng', bb.lngMin)
         .lte('lng', bb.lngMax)
+        .eq('is_chain', false)
         .not('review_count_at_ingestion', 'is', null)
         .lt('review_count_at_ingestion', 75)
         .gte('created_at', cutoff)
@@ -164,7 +150,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
     const newSkipSet = new Set(skippedIds || []);
     const newFiltered = results.filter((v) => {
       const id = (v.google_place_id || '').replace(/^places\//, '');
-      return !newSkipSet.has(id) && !TAB_CHAIN_BLOCKLIST.has(v.name?.toLowerCase());
+      return !newSkipSet.has(id);
     });
     return {
       venues: newFiltered.map((v) => ({
@@ -202,7 +188,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
   const skipSet = new Set(skippedIds || []);
   let filtered = (data || []).filter((v) => {
     const id = (v.google_place_id || '').replace(/^places\//, '');
-    return !skipSet.has(id) && !TAB_CHAIN_BLOCKLIST.has(v.name?.toLowerCase());
+    return !skipSet.has(id);
   });
 
   // For Trending: apply std-dev threshold client-side, or fall back to proxy ordering
