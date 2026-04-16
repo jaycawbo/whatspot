@@ -38,6 +38,7 @@ export default function VenueDetails() {
   const [venue] = useState(initialVenue);
   const [details, setDetails] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(true);
+  const [detailsError, setDetailsError] = useState(false);
   const [aiInsights, setAiInsights] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiFetched, setAiFetched] = useState(false);
@@ -81,6 +82,7 @@ export default function VenueDetails() {
         }
       } catch (err) {
         console.error('Failed to fetch venue details:', err);
+        setDetailsError(true);
       } finally {
         setDetailsLoading(false);
       }
@@ -222,6 +224,8 @@ export default function VenueDetails() {
               <Skeleton className="h-4 w-40" />
               <Skeleton className="h-4 w-56" />
             </div>
+          ) : detailsError ? (
+            <p className="text-sm text-muted-foreground">Hours and contact info unavailable right now.</p>
           ) : details ? (
             <>
               {details.phone && (
