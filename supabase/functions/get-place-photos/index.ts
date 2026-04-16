@@ -1,3 +1,5 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
@@ -24,7 +26,7 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const { place_id, max_photos = 4, debug = false } = await req.json();
+  const { place_id, max_photos = 4 } = await req.json();
 
   if (!place_id) {
     return new Response(JSON.stringify({ error: 'place_id is required' }), {
@@ -33,134 +35,118 @@ Deno.serve(async (req) => {
     });
   }
 
-  const debugInfo: Record<string, unknown> = {
-    placeId: place_id,
-    placeDetailsUrl: null,
-    placeDetailsStatus: null,
-    placeDetailsBodySnippet: null,
-    photoMediaUrl: null,
-    photoMediaStatus: null,
-    photoMediaLocation: null,
-  };
+  const apiKey = Deno.env.get('GOOGLE_PLACES_API_KEY');
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
+  if (!apiKey) {
+    return new Response(JSON.stringify({ error: 'Google Places API key not configured' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  const sb = createClient(supabaseUrl, supabaseKey);
+  const cleanId = place_id.replace(/^places\//, '');
+
+  // ── Step 1: Cache-first — return stored URLs if photos are complete ────────
   try {
-    const apiKey = Deno.env.get('GOOGLE_PLACES_API_KEY');
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'Google Places API key not configured' }), {
-        status: 500,
+    const { data: cached } = await sb
+      .from('venues')
+      .select('photo_urls, photos_complete')
+      .eq('google_place_id', cleanId)
+      .maybeSingle();
+
+    if (cached?.photos_complete && cached?.photo_urls?.length) {
+      console.log(`📸 Cache hit for ${cleanId} — ${cached.photo_urls.length} photos`);
+      return new Response(JSON.stringify({ success: true, photo_urls: cached.photo_urls }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+  } catch {
+    // DB check failed — fall through to Google
+  }
 
-    const placeResourceName = place_id;
-    console.log('📸 GETPLACEPHOTOS - Incoming place_id:', place_id);
-
-    const detailsUrl = `https://places.googleapis.com/v1/${placeResourceName}?fields=photos`;
-    debugInfo.placeDetailsUrl = detailsUrl;
-
-    const detailsResponse = await fetch(detailsUrl, {
-      method: 'GET',
+  // ── Step 2: Fetch photo resource names from Google ─────────────────────────
+  try {
+    const placeRef = cleanId.startsWith('places/') ? cleanId : `places/${cleanId}`;
+    const detailsResp = await fetch(`https://places.googleapis.com/v1/${placeRef}?fields=photos`, {
       headers: { 'X-Goog-Api-Key': apiKey },
     });
 
-    debugInfo.placeDetailsStatus = detailsResponse.status;
-    const responseText = await detailsResponse.text();
-    const bodySnippet = responseText.substring(0, 300);
-    debugInfo.placeDetailsBodySnippet = bodySnippet;
-
-    if (!detailsResponse.ok) {
-      console.error('❌ GETPLACEPHOTOS - Place Details Error:', responseText);
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'Google Places API error',
-        debug: {
-          googleRequestUrl: detailsUrl,
-          httpMethod: 'GET',
-          status: detailsResponse.status,
-          responseBodySnippet: bodySnippet,
-        },
-      }), {
+    if (!detailsResp.ok) {
+      console.error(`Google Places error ${detailsResp.status} for ${cleanId}`);
+      return new Response(JSON.stringify({ success: false, error: 'Google Places API error', photo_urls: [] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const data = JSON.parse(responseText);
+    const data = await detailsResp.json();
+    const photoResources = ((data.photos || []) as any[]).slice(0, max_photos);
 
-    if (!data.photos || data.photos.length === 0) {
+    if (photoResources.length === 0) {
       return new Response(JSON.stringify({ success: true, photo_urls: [] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const photoResources = data.photos.slice(0, max_photos);
-
-    let isFirstPhoto = true;
+    // ── Step 3: Fetch bytes + upload to Supabase Storage ──────────────────
     const photoUrls = await fetchWithConcurrency(
-      photoResources,
-      async (photo: any) => {
-        const photoName = photo.name;
-        const mediaUrl = `https://places.googleapis.com/v1/${photoName}/media?maxHeightPx=800`;
-
-        if (isFirstPhoto) {
-          debugInfo.photoMediaUrl = mediaUrl;
-          isFirstPhoto = false;
-        }
-
+      photoResources.map((photo: any, index: number) => ({ photo, index })),
+      async ({ photo, index }: { photo: any; index: number }) => {
         try {
-          const mediaResponse = await fetch(mediaUrl, {
-            method: 'GET',
-            headers: { 'X-Goog-Api-Key': apiKey },
-            redirect: 'manual',
-          });
-
-          if (debugInfo.photoMediaStatus === null) {
-            debugInfo.photoMediaStatus = mediaResponse.status;
+          const mediaUrl = `https://places.googleapis.com/v1/${photo.name}/media?maxHeightPx=800&skipHttpRedirect=false&key=${apiKey}`;
+          const imgResp = await fetch(mediaUrl, { redirect: 'follow' });
+          if (!imgResp.ok) {
+            console.warn(`Media fetch failed (${imgResp.status}) for photo ${index} of ${cleanId}`);
+            return null;
           }
 
-          if (mediaResponse.status === 302 || mediaResponse.status === 301) {
-            const locationHeader = mediaResponse.headers.get('Location');
-            if (debugInfo.photoMediaLocation === null) {
-              debugInfo.photoMediaLocation = locationHeader;
-            }
-            return locationHeader;
+          const imageBytes = await imgResp.arrayBuffer();
+          const storagePath = `${cleanId}/${index}.jpg`;
+
+          const { error: uploadError } = await sb.storage
+            .from('venue-photos')
+            .upload(storagePath, imageBytes, { contentType: 'image/jpeg', upsert: true });
+
+          if (uploadError) {
+            console.warn(`Storage upload failed for ${storagePath}:`, uploadError.message);
+            return null;
           }
 
-          if (mediaResponse.ok) {
-            return mediaResponse.url;
-          }
+          const { data: urlData } = sb.storage
+            .from('venue-photos')
+            .getPublicUrl(storagePath);
 
-          console.warn('⚠️ Failed to fetch photo media:', mediaResponse.status);
-          return null;
-        } catch (error) {
-          console.error('❌ Error fetching photo media:', error.message);
+          return urlData.publicUrl;
+        } catch (err: any) {
+          console.error(`Error processing photo ${index} for ${cleanId}:`, err?.message);
           return null;
         }
       },
       3,
     );
 
-    const validPhotoUrls = photoUrls.filter((url) => url !== null);
+    const validUrls = photoUrls.filter((url): url is string => url !== null);
+    console.log(`📸 Stored ${validUrls.length}/${photoResources.length} photos for ${cleanId}`);
 
-    return new Response(JSON.stringify({
-      success: true,
-      photo_urls: validPhotoUrls,
-      ...(debug && { debug: debugInfo }),
-    }), {
+    // ── Step 4: Write permanent URLs to DB (fire-and-forget) ──────────────
+    if (validUrls.length > 0) {
+      sb.from('venues')
+        .update({ photo_urls: validUrls, photos_complete: true, enriched: true })
+        .eq('google_place_id', cleanId)
+        .then(() => {})
+        .catch(() => {});
+    }
+
+    return new Response(JSON.stringify({ success: true, photo_urls: validUrls }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-  } catch (error) {
-    console.error('❌ Error fetching place photos:', error);
-    return new Response(JSON.stringify({
-      success: false,
-      error: 'Google Places API error',
-      debug: {
-        googleRequestUrl: debugInfo.placeDetailsUrl || 'N/A',
-        httpMethod: 'GET',
-        status: debugInfo.placeDetailsStatus || 'N/A',
-        responseBodySnippet: debugInfo.placeDetailsBodySnippet || error.message,
-        exceptionMessage: error.message,
-      },
-    }), {
+
+  } catch (error: any) {
+    console.error('get-place-photos error:', error?.message);
+    return new Response(JSON.stringify({ success: false, error: 'Internal error', photo_urls: [] }), {
+      status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
