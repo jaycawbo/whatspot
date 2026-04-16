@@ -91,8 +91,8 @@ export default function VenueDetails() {
         const { data, error } = await supabase.functions.invoke('get-place-photos', {
           body: { place_id: placeId },
         });
-        if (!error && data?.photos?.length) {
-          setPhotoUrls(data.photos.map(p => p.url || p));
+        if (!error && data?.photo_urls?.length) {
+          setPhotoUrls(data.photo_urls);
         }
       } catch (err) {
         console.error('Failed to fetch photos:', err);

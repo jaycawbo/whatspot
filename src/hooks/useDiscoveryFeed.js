@@ -437,6 +437,10 @@ export function useDiscoveryFeed() {
   }, [state.feedTab, state.filters]);
 
   const fetchFeed = useCallback(async ({ query = '', radius, mode } = {}) => {
+    if (import.meta.env.VITE_TESTING_MODE === 'true') {
+      console.log('[TestMode] fetchFeed blocked — set VITE_TESTING_MODE=false to enable');
+      return;
+    }
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
 
@@ -623,6 +627,10 @@ export function useDiscoveryFeed() {
   }, [fetchFeed, currentQuery]);
 
   const prefetchNextBatch = useCallback(async (retryCount = 0) => {
+    if (import.meta.env.VITE_TESTING_MODE === 'true') {
+      console.log('[TestMode] prefetchNextBatch blocked — set VITE_TESTING_MODE=false to enable');
+      return;
+    }
     if (isPrefetchingRef.current && retryCount === 0) {
       pendingPrefetchRef.current = true;
       return 'busy';

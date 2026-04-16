@@ -9,8 +9,8 @@ const corsHeaders = {
 const SUPPRESSION_DAYS: Record<string, number | null> = {
   passive_skip: 21,
   skip_for_now: 30,
-  interested: 60,
-  not_interested: 90,
+  interested: 90,
+  not_interested: 45,
   been_here: null, // indefinite
 };
 
@@ -444,33 +444,6 @@ async function getPlacePhotos(apiKey: string, placeId: string, maxPhotos = 4): P
   return urls.filter((u): u is string => u !== null);
 }
 
-// ─── Fetch one photo URL by index (one API call per serve) ───
-async function fetchOnePhoto(
-  apiKey: string,
-  placeId: string,
-  startIndex: number,
-): Promise<{ url: string | null; totalAvailable: number }> {
-  try {
-    const detailsResp = await fetch(`https://places.googleapis.com/v1/${placeId}?fields=photos`, {
-      method: 'GET',
-      headers: { 'X-Goog-Api-Key': apiKey },
-    });
-    if (!detailsResp.ok) return { url: null, totalAvailable: 0 };
-    const data = await detailsResp.json();
-    const photos = data.photos || [];
-    if (startIndex >= photos.length) return { url: null, totalAvailable: photos.length };
-    const photo = photos[startIndex];
-    const mediaResp = await fetch(
-      `https://places.googleapis.com/v1/${photo.name}/media?maxHeightPx=800`,
-      { method: 'GET', headers: { 'X-Goog-Api-Key': apiKey }, redirect: 'manual' },
-    );
-    if (mediaResp.status === 301 || mediaResp.status === 302) {
-      return { url: mediaResp.headers.get('Location'), totalAvailable: photos.length };
-    }
-    if (mediaResp.ok) return { url: mediaResp.url, totalAvailable: photos.length };
-  } catch {}
-  return { url: null, totalAvailable: 0 };
-}
 
 // ─── Price level map ───
 const priceLevelMap: Record<string, string> = {
@@ -769,8 +742,6 @@ Deno.serve(async (req) => {
               unknownPrice: false,
               _rawTypes: v.venue_types ?? [],
               _photoUrls: v.photo_urls ?? [],
-              _photosComplete: v.photos_complete ?? false,
-              _photosFetchedCount: v.photos_fetched_count ?? 0,
               _regularOpeningHours: v.regular_opening_hours ?? null,
             };
           })
@@ -889,8 +860,6 @@ Deno.serve(async (req) => {
               unknownPrice: false,
               _rawTypes: v.venue_types ?? [],
               _photoUrls: v.photo_urls ?? [],
-              _photosComplete: v.photos_complete ?? false,
-              _photosFetchedCount: v.photos_fetched_count ?? 0,
             };
           })
           .filter((v: any) => {
@@ -976,58 +945,9 @@ Deno.serve(async (req) => {
       console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationBias 3km)`);
     } else {
       if (isDiscoveryMode) {
-        // Discovery mode — tiled multi-query system for geographic diversity
-        const DISCOVERY_QUERIES = [
-          "restaurant OR cafe OR bistro OR diner OR brasserie",
-          "bar OR pub OR lounge OR nightclub OR brewery OR dive bar",
-          "snack bar OR sandwich shop OR burger joint OR food market OR hotel restaurant",
-        ];
-
-        // Generate tile centers: center + 4 cardinal offsets
-        const tileSearchRadius = tile_radius_km || admission.maxRadius;
-        const latOffset = (tileSearchRadius * 0.5) / 111;
-        const lonOffset = (tileSearchRadius * 0.5) / (111 * Math.cos(lat * Math.PI / 180));
-        const tileRadius = tileSearchRadius * 0.75;
-        const allTiles = [
-          { tlat: lat, tlon: lon, tradius: tileSearchRadius },               // center
-          { tlat: lat + latOffset, tlon: lon, tradius: tileRadius },          // north
-          { tlat: lat - latOffset, tlon: lon, tradius: tileRadius },          // south
-          { tlat: lat, tlon: lon + lonOffset, tradius: tileRadius },          // east
-          { tlat: lat, tlon: lon - lonOffset, tradius: tileRadius },          // west
-        ];
-        // On Supabase fallback, cap to center tile only (3 API calls max)
-        const tiles = googleCallCap <= 3 ? allTiles.slice(0, 1) : allTiles;
-
-        // Build all tile × query combinations
-        const tileCalls: Promise<any[]>[] = [];
-        for (const tile of tiles) {
-          for (const q of DISCOVERY_QUERIES) {
-            tileCalls.push(
-              safe(`tile-search`, () => googlePlacesBroadSearch(
-                GOOGLE_KEY,
-                `${q} in ${googleLocationContext}`,
-                tile.tlat, tile.tlon, tile.tradius, open_now, googlePriceLevels
-              ), [])
-            );
-          }
-        }
-
-        const allTileResults = await Promise.all(tileCalls);
-        const totalRaw = allTileResults.reduce((s, r) => s + r.length, 0);
-
-        // Merge and deduplicate by place_id
-        const seenPlaceIds = new Set<string>();
+        // Tiling disabled — extracted to supabase/functions/tile-search/index.ts
+        // Re-enable by calling tile-search edge function here when Supabase-first gating is complete
         googleResults = [];
-        for (const batch of allTileResults) {
-          for (const r of batch) {
-            const pid = (r.place_id || '').replace(/^places\//, '');
-            if (!seenPlaceIds.has(pid)) {
-              seenPlaceIds.add(pid);
-              googleResults.push(r);
-            }
-          }
-        }
-        console.log(`📊 Discovery tiled: ${tiles.length} tiles × ${DISCOVERY_QUERIES.length} queries = ${tileCalls.length} calls, ${totalRaw} raw → ${googleResults.length} unique venues`);
       } else {
         googleResults = await googlePlacesBroadSearch(
           GOOGLE_KEY,
@@ -1582,111 +1502,21 @@ Deno.serve(async (req) => {
     }
     console.log(`📦 Reserve venues: ${reserveVenues.length}`);
 
-    // ─── Photo enrichment for reserve venues (one photo per serve) ───
-    if (reserveVenues.length > 0) {
-      console.log(`🖼️ Reserve photo enrichment: ${reserveVenues.length} venues (1 photo each)...`);
-      await Promise.all(
-        reserveVenues.map(async (venue: any) => {
-          if (!venue.place_id) { venue.image_urls = []; return; }
-          if (venue._photosComplete) {
-            venue.image_urls = venue._photoUrls || [];
-            return;
-          }
-          const currentCount = venue._photosFetchedCount ?? 0;
-          const result = await safe(
-            'reserve-photos',
-            () => fetchOnePhoto(GOOGLE_KEY, venue.place_id, currentCount),
-            { url: null, totalAvailable: 0 },
-          );
-          const updatedUrls = result.url
-            ? [...(venue._photoUrls || []), result.url]
-            : (venue._photoUrls || []);
-          const newCount = result.url ? currentCount + 1 : currentCount;
-          const isComplete = newCount >= 10 || result.url === null || newCount >= result.totalAvailable;
-          venue.image_urls = updatedUrls;
-          venue._pendingPhotoUpdate = { photo_urls: updatedUrls, photos_fetched_count: newCount, photos_complete: isComplete };
-        }),
-      );
-    }
+    // ─── Reserve venues — photos served from Supabase cache ───
+    reserveVenues.forEach((venue: any) => {
+      venue.image_urls = venue._photoUrls || [];
+    });
 
-    // ─── STEP 5: Photo enrichment (one photo per serve, cache-first) ───
-    console.log(`🖼️ STEP 5: Photos for ${finalVenues.length} venues...`);
-    const enriched = await Promise.all(
-      finalVenues.map(async (venue: any) => {
-        if (!venue.place_id) return { ...venue, image_urls: [] };
-        // photos_complete = true: all photos fetched — zero API calls, serve from cache
-        if (venue._photosComplete) {
-          return { ...venue, image_urls: venue._photoUrls || [] };
-        }
-        const currentCount = venue._photosFetchedCount ?? 0;
-        const result = await safe(
-          'photos',
-          () => fetchOnePhoto(GOOGLE_KEY, venue.place_id, currentCount),
-          { url: null, totalAvailable: 0 },
-        );
-        const updatedUrls = result.url
-          ? [...(venue._photoUrls || []), result.url]
-          : (venue._photoUrls || []);
-        const newCount = result.url ? currentCount + 1 : currentCount;
-        const isComplete = newCount >= 10 || result.url === null || newCount >= result.totalAvailable;
-        return {
-          ...venue,
-          image_urls: updatedUrls,
-          _pendingPhotoUpdate: { photo_urls: updatedUrls, photos_fetched_count: newCount, photos_complete: isComplete },
-        };
-      }),
-    );
+    // ─── STEP 5: Photos — serve from Supabase cache, no Google API calls ───
+    const enriched = finalVenues.map((venue: any) => ({
+      ...venue,
+      image_urls: venue._photoUrls || [],
+    }));
 
     const resultsWithDescriptors = enriched;
 
     // ─── Strip internal fields ───
     const resultsForFrontend = resultsWithDescriptors.map(({ isRelaxedAdmission, unknownPrice, ...rest }: any) => rest);
-
-    // ─── STEP 6: Fire-and-forget venue ingestion ───
-    // Writes primary + reserve venues to the venues table on first discovery.
-    // This populates the DB pool that New/Trending/Popular tabs draw from.
-    // Never blocks the response. The protect_snapshot_review_count DB trigger
-    // ensures snapshot_review_count_at_ingestion is never overwritten on update.
-    // trending_current_review_count is intentionally excluded — owned by the daily trending job.
-    try {
-      const priceLevelIntMap: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
-      const allEnriched = [...enriched, ...(reserveVenues || [])];
-      const venueRows = allEnriched.map((v: any) => {
-        const rawId = (v.place_id || v.google_place_id || '');
-        const placeId = rawId.replace(/^places\//, '');
-        if (!placeId) return null;
-        const pending = v._pendingPhotoUpdate;
-        return {
-          google_place_id: placeId,
-          name: v.name || null,
-          address: v.address || null,
-          lat: v.lat ?? null,
-          lng: v.lon ?? null,
-          rating: v.rating ?? null,
-          review_count: v.review_count ?? null,
-          price_level: priceLevelIntMap[v.price_level] ?? null,
-          photo_urls: pending?.photo_urls ?? (Array.isArray(v.image_urls) && v.image_urls.length ? v.image_urls : null),
-          photos_fetched_count: pending?.photos_fetched_count ?? (v._photosFetchedCount ?? 0),
-          photos_complete: pending?.photos_complete ?? (v._photosComplete ?? false),
-          descriptors: Array.isArray(v.descriptors) && v.descriptors.length ? v.descriptors : null,
-          venue_types: Array.isArray(v._rawTypes) && v._rawTypes.length ? v._rawTypes : null,
-          review_count_at_ingestion: v.review_count ?? null,
-        };
-      }).filter(Boolean);
-
-      if (venueRows.length > 0) {
-        const sbIngest = createClient(
-          Deno.env.get('SUPABASE_URL')!,
-          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-        );
-        sbIngest.from('venues').upsert(venueRows, {
-          onConflict: 'google_place_id',
-          ignoreDuplicates: false,
-        }).then(() => {}).catch(() => {});
-      }
-    } catch {
-      // Ingestion errors must never propagate to the user
-    }
 
     return new Response(
       JSON.stringify({
