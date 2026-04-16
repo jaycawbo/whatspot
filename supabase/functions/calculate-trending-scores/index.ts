@@ -5,17 +5,23 @@
  * Trending score = (current_review_count - previous_review_count) / previous_review_count
  *
  * This job reads ONLY from the venues table — it never calls the Google Places API.
- * trending_current_review_count and trending_previous_review_count are owned
- * exclusively by this job. No other process should write to these columns.
+ * review_count_current and review_count_30d_ago are owned exclusively by this job.
+ * No other process should write to these columns.
  *
  * Idempotency: A venue is only processed if trending_score_date IS NULL
  * or trending_score_date < today - 30 days. Re-running on the same day
  * finds a recent trending_score_date and skips all venues — no changes made.
  *
- * First run for a new venue (trending_previous_review_count IS NULL):
+ * First run for a new venue (review_count_30d_ago IS NULL):
  *   Only establishes the baseline — writes current user_rating_count to
- *   trending_current_review_count and today to trending_score_date.
+ *   review_count_current and today to trending_score_date.
  *   No score is computed yet.
+ *
+ * Bootstrap mode ({ bootstrap: true }):
+ *   For venues where review_count_30d_ago IS NULL but review_count_at_ingestion
+ *   IS NOT NULL, uses review_count_at_ingestion as the prior baseline and
+ *   computes a score immediately — no 30-day wait required. Useful for
+ *   initial setup when venues already have an ingestion snapshot.
  *
  * Known limitation:
  *   Trending analysis only applies to venues already in the Whatspot database.
@@ -27,11 +33,12 @@
  * Qualifying threshold for the Trending feed tab:
  *   trending_score > mean + 1 std dev (across all scored venues)
  *   AND user_rating_count >= 50
- *   AND trending_previous_review_count IS NOT NULL (at least 2 runs completed)
+ *   AND review_count_30d_ago IS NOT NULL (at least 2 runs completed, or bootstrapped)
  *
  * Invocation:
  *   - pg_cron: daily at 3am UTC
  *   - Manual: POST with empty body or { dry_run: true } to preview eligible count
+ *   - Bootstrap: POST with { bootstrap: true } to score all venues with ingestion snapshots
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -53,20 +60,35 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    let body: { dry_run?: boolean } = {};
+    let body: { dry_run?: boolean; bootstrap?: boolean } = {};
     try { body = await req.json(); } catch { /* no body */ }
     const dryRun = body.dry_run === true;
+    const bootstrap = body.bootstrap === true;
 
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
     const eligibleBefore = new Date(Date.now() - ELIGIBILITY_DAYS * 86400_000)
       .toISOString().split('T')[0];
 
-    // Fetch all eligible venues
-    const { data: venues, error: fetchError } = await supabase
-      .from('venues')
-      .select('google_place_id, review_count, trending_current_review_count, trending_previous_review_count, trending_score_date')
-      .or(`trending_score_date.is.null,trending_score_date.lt.${eligibleBefore}`)
-      .not('review_count', 'is', null);
+    // Fetch eligible venues — bootstrap uses a separate query that bypasses the
+    // eligibility date filter, since bootstrap targets venues that already have
+    // a trending_score_date from a prior baseline run but no 30d snapshot yet.
+    let fetchError;
+    let venues;
+
+    if (bootstrap) {
+      ({ data: venues, error: fetchError } = await supabase
+        .from('venues')
+        .select('google_place_id, review_count, review_count_current, review_count_30d_ago, review_count_at_ingestion, trending_score_date')
+        .not('review_count_at_ingestion', 'is', null)
+        .is('review_count_30d_ago', null)
+        .not('review_count', 'is', null));
+    } else {
+      ({ data: venues, error: fetchError } = await supabase
+        .from('venues')
+        .select('google_place_id, review_count, review_count_current, review_count_30d_ago, review_count_at_ingestion, trending_score_date')
+        .or(`trending_score_date.is.null,trending_score_date.lt.${eligibleBefore}`)
+        .not('review_count', 'is', null));
+    }
 
     if (fetchError) throw fetchError;
     if (!venues?.length) {
@@ -76,12 +98,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[calculate-trending-scores] ${venues.length} eligible venues, dry_run=${dryRun}`);
+    console.log(`[calculate-trending-scores] ${venues.length} eligible venues, dry_run=${dryRun}, bootstrap=${bootstrap}`);
 
     if (dryRun) {
-      const withBaseline = venues.filter(v => v.trending_previous_review_count !== null).length;
+      const withBaseline = venues.filter(v => v.review_count_30d_ago !== null).length;
+      const bootstrapEligible = venues.filter(v => v.review_count_30d_ago === null && v.review_count_at_ingestion !== null).length;
       return new Response(
-        JSON.stringify({ eligible: venues.length, with_baseline: withBaseline, without_baseline: venues.length - withBaseline }),
+        JSON.stringify({
+          eligible: venues.length,
+          with_baseline: withBaseline,
+          without_baseline: venues.length - withBaseline,
+          bootstrap_eligible: bootstrapEligible,
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -94,26 +122,51 @@ Deno.serve(async (req) => {
       try {
         const currentReviewCount = venue.review_count ?? 0;
 
-        if (venue.trending_previous_review_count === null) {
-          // First run — establish baseline only, do not compute score
-          const { error } = await supabase
-            .from('venues')
-            .update({
-              trending_current_review_count: currentReviewCount,
-              trending_score_date: today,
-            })
-            .eq('google_place_id', venue.google_place_id);
+        if (venue.review_count_30d_ago === null) {
+          if (bootstrap && venue.review_count_at_ingestion !== null) {
+            // Bootstrap: use ingestion snapshot as prior baseline and score immediately
+            const ingestionCount = venue.review_count_at_ingestion;
+            const score = ingestionCount > 0
+              ? (currentReviewCount - ingestionCount) / ingestionCount
+              : 0;
 
-          if (error) {
-            console.warn(`[calculate-trending-scores] Baseline error for ${venue.google_place_id}:`, error.message);
-            failedCount++;
+            const { error } = await supabase
+              .from('venues')
+              .update({
+                trending_score: score,
+                trending_score_date: today,
+                review_count_30d_ago: ingestionCount,
+                review_count_current: currentReviewCount,
+              })
+              .eq('google_place_id', venue.google_place_id);
+
+            if (error) {
+              console.warn(`[calculate-trending-scores] Bootstrap error for ${venue.google_place_id}:`, error.message);
+              failedCount++;
+            } else {
+              scoredCount++;
+            }
           } else {
-            baselineCount++;
+            // First run — establish baseline only, do not compute score
+            const { error } = await supabase
+              .from('venues')
+              .update({
+                review_count_current: currentReviewCount,
+                trending_score_date: today,
+              })
+              .eq('google_place_id', venue.google_place_id);
+
+            if (error) {
+              console.warn(`[calculate-trending-scores] Baseline error for ${venue.google_place_id}:`, error.message);
+              failedCount++;
+            } else {
+              baselineCount++;
+            }
           }
         } else {
           // Subsequent run — compute score and rotate counts
-          const prevCount = venue.trending_previous_review_count;
-          const currCount = venue.trending_current_review_count ?? prevCount;
+          const prevCount = venue.review_count_30d_ago;
+          const currCount = venue.review_count_current ?? prevCount;
 
           // Guard against division by zero
           const score = prevCount > 0
@@ -126,8 +179,8 @@ Deno.serve(async (req) => {
             .update({
               trending_score: score,
               trending_score_date: today,
-              trending_previous_review_count: currCount,
-              trending_current_review_count: currentReviewCount,
+              review_count_30d_ago: currCount,
+              review_count_current: currentReviewCount,
             })
             .eq('google_place_id', venue.google_place_id);
 
