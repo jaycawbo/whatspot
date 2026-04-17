@@ -509,9 +509,9 @@ Deno.serve(async (req) => {
 
     // ─── Admission thresholds ───
     const admission = {
-      minRating: 4.4,
-      minReviewCount: 50,
-      minScore: 1.2,
+      minRating: 3.8,
+      minReviewCount: 15,
+      minScore: 0,
       maxRadius: radius_km || 5,
     };
     if (isDiscoveryMode) {
@@ -757,7 +757,7 @@ Deno.serve(async (req) => {
       } else if (refinedSearchTerm) {
         const queryWords = refinedSearchTerm.toLowerCase()
           .split(/\s+/)
-          .filter((w: string) => w.length > 3)
+          .filter((w: string) => w.length > 2)
           .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have',
             'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
 
@@ -782,11 +782,40 @@ Deno.serve(async (req) => {
             if (word === 'japanese') expandedTypes.add('japanese_restaurant');
             if (word === 'spanish') expandedTypes.add('spanish_restaurant');
             if (word === 'vietnamese') expandedTypes.add('vietnamese_restaurant');
-            if (word === 'brunch' || word === 'breakfast') { expandedTypes.add('brunch_restaurant'); expandedTypes.add('breakfast_restaurant'); }
+            if (word === 'brunch') { expandedTypes.add('brunch_restaurant'); expandedTypes.add('breakfast_restaurant'); expandedTypes.add('cafe'); }
+            if (word === 'breakfast') { expandedTypes.add('breakfast_restaurant'); expandedTypes.add('brunch_restaurant'); expandedTypes.add('diner'); }
             if (word === 'seafood') expandedTypes.add('seafood_restaurant');
             if (word === 'cocktail') { expandedTypes.add('cocktail_bar'); expandedTypes.add('bar'); }
             if (word === 'wine') expandedTypes.add('wine_bar');
-            if (word === 'coffee' || word === 'cafe') { expandedTypes.add('coffee_shop'); expandedTypes.add('cafe'); }
+            if (word === 'coffee') { expandedTypes.add('coffee_shop'); expandedTypes.add('cafe'); expandedTypes.add('coffee_roastery'); expandedTypes.add('coffee_stand'); }
+            if (word === 'cafe') { expandedTypes.add('cafe'); expandedTypes.add('coffee_shop'); expandedTypes.add('bakery'); }
+            if (word === 'tapas') { expandedTypes.add('tapas_restaurant'); expandedTypes.add('spanish_restaurant'); }
+            if (word === 'diner') { expandedTypes.add('diner'); expandedTypes.add('breakfast_restaurant'); }
+            if (word === 'brewery' || word === 'breweries') { expandedTypes.add('brewery'); expandedTypes.add('brewpub'); expandedTypes.add('bar'); expandedTypes.add('pub'); }
+            if (word === 'winery') { expandedTypes.add('winery'); expandedTypes.add('wine_bar'); }
+            if (word === 'lebanese') { expandedTypes.add('lebanese_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
+            if (word === 'persian') { expandedTypes.add('persian_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
+            if (word === 'ethiopian') { expandedTypes.add('ethiopian_restaurant'); expandedTypes.add('african_restaurant'); }
+            if (word === 'latin') { expandedTypes.add('latin_american_restaurant'); expandedTypes.add('mexican_restaurant'); }
+            if (word === 'peruvian') { expandedTypes.add('peruvian_restaurant'); expandedTypes.add('latin_american_restaurant'); }
+            if (word === 'portuguese') { expandedTypes.add('portuguese_restaurant'); }
+            if (word === 'dim') { expandedTypes.add('dim_sum_restaurant'); expandedTypes.add('chinese_restaurant'); }
+            if (word === 'dumplings' || word === 'dumpling') { expandedTypes.add('dumpling_restaurant'); expandedTypes.add('chinese_restaurant'); }
+            if (word === 'tacos' || word === 'taco') { expandedTypes.add('taco_restaurant'); expandedTypes.add('mexican_restaurant'); }
+            if (word === 'noodles' || word === 'noodle') { expandedTypes.add('noodle_shop'); expandedTypes.add('vietnamese_restaurant'); expandedTypes.add('ramen_restaurant'); }
+            if (word === 'pho') { expandedTypes.add('vietnamese_restaurant'); expandedTypes.add('noodle_shop'); }
+            if (word === 'bar' || word === 'bars') { expandedTypes.add('bar'); expandedTypes.add('pub'); expandedTypes.add('cocktail_bar'); }
+            if (word === 'pub' || word === 'pubs') { expandedTypes.add('pub'); expandedTypes.add('bar'); }
+            if (word === 'sandwich' || word === 'sandwiches') { expandedTypes.add('sandwich_shop'); expandedTypes.add('deli_restaurant'); }
+            if (word === 'bakery' || word === 'bakeries') { expandedTypes.add('bakery'); expandedTypes.add('cafe'); }
+            if (word === 'dessert') { expandedTypes.add('dessert_shop'); expandedTypes.add('ice_cream_shop'); expandedTypes.add('bakery'); }
+            if (word === 'cream') { expandedTypes.add('ice_cream_shop'); expandedTypes.add('dessert_shop'); }
+            if (word === 'bbq' || word === 'barbecue') { expandedTypes.add('barbecue_restaurant'); }
+            if (word === 'wings') { expandedTypes.add('chicken_wings_restaurant'); expandedTypes.add('fast_food_restaurant'); }
+            if (word === 'shawarma' || word === 'kebab' || word === 'falafel') { expandedTypes.add('middle_eastern_restaurant'); expandedTypes.add('turkish_restaurant'); }
+            if (word === 'mediterranean') { expandedTypes.add('mediterranean_restaurant'); expandedTypes.add('greek_restaurant'); }
+            if (word === 'middle') { expandedTypes.add('middle_eastern_restaurant'); }
+            if (word === 'turkish') { expandedTypes.add('turkish_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
           }
           if (expandedTypes.size > 0) effectiveCuisineTypes = [...expandedTypes];
         }
@@ -796,6 +825,7 @@ Deno.serve(async (req) => {
         getSupabaseVenuesForArea(lat, lon, admission.maxRadius, exclude_ids), []);
 
       console.log(`🗄️ Supabase-search: ${sbSearchVenues.length} raw venues found`);
+      const allAreaVenues = sbSearchVenues; // pre-filter snapshot for name fallback
 
       if (effectiveCuisineTypes?.length) {
         sbSearchVenues = sbSearchVenues.filter((v: any) => {
@@ -848,7 +878,64 @@ Deno.serve(async (req) => {
           });
         console.log(`✅ Search served from Supabase: ${filteredVenues.length} venues after filters`);
       } else {
-        console.log(`⚠️ Supabase search returned ${sbAdmitted.length} admitted venues — falling through to Google`);
+        // Name text search fallback — catches venues tagged generically (e.g. steakhouse tagged only as "restaurant")
+        let nameMatchVenues: any[] = [];
+        const searchTermLower = (refinedSearchTerm || searchTerm || '').toLowerCase().trim();
+        const searchWords = searchTermLower.split(/\s+/).filter((w: string) => w.length > 2);
+
+        if (searchWords.length > 0) {
+          const admittedIds = new Set(sbAdmitted.map((v: any) => v.google_place_id));
+          nameMatchVenues = allAreaVenues
+            .filter((v: any) => {
+              const nameLower = (v.name || '').toLowerCase();
+              return searchWords.some((w: string) => nameLower.includes(w));
+            })
+            .filter((v: any) => !admittedIds.has(v.google_place_id))
+            .filter((v: any) =>
+              (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount
+            );
+          if (open_now) {
+            nameMatchVenues = nameMatchVenues.filter((v: any) => isOpenNow(v.regular_opening_hours));
+          }
+          console.log(`🔤 Name search fallback: ${nameMatchVenues.length} additional venues matched`);
+        }
+
+        const combined = [...sbAdmitted, ...nameMatchVenues];
+        if (combined.length >= 5) {
+          servedFromSupabase = true;
+          filteredVenues = combined
+            .map((v: any) => {
+              const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
+              const isRelaxedAdmission = v.rating < SCORING.RATING_FLOOR || v.review_count < SCORING.REVIEW_FLOOR;
+              return {
+                name: v.name,
+                address: v.address || '',
+                lat: v.lat,
+                lon: v.lng,
+                distance_km,
+                rating: v.rating,
+                review_count: v.review_count,
+                price_level: mapIntPriceLevel(v.price_level),
+                place_id: `places/${v.google_place_id}`,
+                category: (v.venue_types ?? []).find((t: string) =>
+                  t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+                cuisine_type: (v.venue_types ?? []).find((t: string) =>
+                  t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+                isRelaxedAdmission,
+                unknownPrice: false,
+                _rawTypes: v.venue_types ?? [],
+                _photoUrls: v.photo_urls ?? [],
+              };
+            })
+            .filter((v: any) => {
+              if (!price_levels?.length) return true;
+              if (v.price_level == null) return true;
+              return price_levels.includes(v.price_level);
+            });
+          console.log(`✅ Search served from Supabase (with name fallback): ${filteredVenues.length} venues`);
+        } else {
+          console.log(`⚠️ Supabase search returned ${combined.length} combined venues — falling through to Google`);
+        }
       }
     }
 
@@ -1148,7 +1235,7 @@ Deno.serve(async (req) => {
     if (isSearchMode && refinedSearchTerm) {
       const queryWords = refinedSearchTerm.toLowerCase()
         .split(/\s+/)
-        .filter((w: string) => w.length > 3)
+        .filter((w: string) => w.length > 2)
         .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have', 'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
 
       if (queryWords.length > 0) {
@@ -1174,13 +1261,40 @@ Deno.serve(async (req) => {
           if (word === 'japanese') { expandedTypes.add('japanese_restaurant'); }
           if (word === 'spanish') { expandedTypes.add('spanish_restaurant'); }
           if (word === 'vietnamese') { expandedTypes.add('vietnamese_restaurant'); }
-          if (word === 'brunch') { expandedTypes.add('brunch_restaurant'); expandedTypes.add('breakfast_restaurant'); }
-          if (word === 'breakfast') { expandedTypes.add('breakfast_restaurant'); expandedTypes.add('brunch_restaurant'); }
+          if (word === 'brunch') { expandedTypes.add('brunch_restaurant'); expandedTypes.add('breakfast_restaurant'); expandedTypes.add('cafe'); }
+          if (word === 'breakfast') { expandedTypes.add('breakfast_restaurant'); expandedTypes.add('brunch_restaurant'); expandedTypes.add('diner'); }
           if (word === 'seafood') { expandedTypes.add('seafood_restaurant'); }
           if (word === 'cocktail') { expandedTypes.add('cocktail_bar'); expandedTypes.add('bar'); }
           if (word === 'wine') { expandedTypes.add('wine_bar'); }
-          if (word === 'coffee') { expandedTypes.add('coffee_shop'); expandedTypes.add('cafe'); }
-          if (word === 'cafe') { expandedTypes.add('coffee_shop'); expandedTypes.add('cafe'); }
+          if (word === 'coffee') { expandedTypes.add('coffee_shop'); expandedTypes.add('cafe'); expandedTypes.add('coffee_roastery'); expandedTypes.add('coffee_stand'); }
+          if (word === 'cafe') { expandedTypes.add('cafe'); expandedTypes.add('coffee_shop'); expandedTypes.add('bakery'); }
+          if (word === 'tapas') { expandedTypes.add('tapas_restaurant'); expandedTypes.add('spanish_restaurant'); }
+          if (word === 'diner') { expandedTypes.add('diner'); expandedTypes.add('breakfast_restaurant'); }
+          if (word === 'brewery' || word === 'breweries') { expandedTypes.add('brewery'); expandedTypes.add('brewpub'); expandedTypes.add('bar'); expandedTypes.add('pub'); }
+          if (word === 'winery') { expandedTypes.add('winery'); expandedTypes.add('wine_bar'); }
+          if (word === 'lebanese') { expandedTypes.add('lebanese_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
+          if (word === 'persian') { expandedTypes.add('persian_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
+          if (word === 'ethiopian') { expandedTypes.add('ethiopian_restaurant'); expandedTypes.add('african_restaurant'); }
+          if (word === 'latin') { expandedTypes.add('latin_american_restaurant'); expandedTypes.add('mexican_restaurant'); }
+          if (word === 'peruvian') { expandedTypes.add('peruvian_restaurant'); expandedTypes.add('latin_american_restaurant'); }
+          if (word === 'portuguese') { expandedTypes.add('portuguese_restaurant'); }
+          if (word === 'dim') { expandedTypes.add('dim_sum_restaurant'); expandedTypes.add('chinese_restaurant'); }
+          if (word === 'dumplings' || word === 'dumpling') { expandedTypes.add('dumpling_restaurant'); expandedTypes.add('chinese_restaurant'); }
+          if (word === 'tacos' || word === 'taco') { expandedTypes.add('taco_restaurant'); expandedTypes.add('mexican_restaurant'); }
+          if (word === 'noodles' || word === 'noodle') { expandedTypes.add('noodle_shop'); expandedTypes.add('vietnamese_restaurant'); expandedTypes.add('ramen_restaurant'); }
+          if (word === 'pho') { expandedTypes.add('vietnamese_restaurant'); expandedTypes.add('noodle_shop'); }
+          if (word === 'bar' || word === 'bars') { expandedTypes.add('bar'); expandedTypes.add('pub'); expandedTypes.add('cocktail_bar'); }
+          if (word === 'pub' || word === 'pubs') { expandedTypes.add('pub'); expandedTypes.add('bar'); }
+          if (word === 'sandwich' || word === 'sandwiches') { expandedTypes.add('sandwich_shop'); expandedTypes.add('deli_restaurant'); }
+          if (word === 'bakery' || word === 'bakeries') { expandedTypes.add('bakery'); expandedTypes.add('cafe'); }
+          if (word === 'dessert') { expandedTypes.add('dessert_shop'); expandedTypes.add('ice_cream_shop'); expandedTypes.add('bakery'); }
+          if (word === 'cream') { expandedTypes.add('ice_cream_shop'); expandedTypes.add('dessert_shop'); }
+          if (word === 'bbq' || word === 'barbecue') { expandedTypes.add('barbecue_restaurant'); }
+          if (word === 'wings') { expandedTypes.add('chicken_wings_restaurant'); expandedTypes.add('fast_food_restaurant'); }
+          if (word === 'shawarma' || word === 'kebab' || word === 'falafel') { expandedTypes.add('middle_eastern_restaurant'); expandedTypes.add('turkish_restaurant'); }
+          if (word === 'mediterranean') { expandedTypes.add('mediterranean_restaurant'); expandedTypes.add('greek_restaurant'); }
+          if (word === 'middle') { expandedTypes.add('middle_eastern_restaurant'); }
+          if (word === 'turkish') { expandedTypes.add('turkish_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
         }
 
         const typeMatched = candidates.filter((v: any) => {
