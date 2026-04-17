@@ -1263,7 +1263,31 @@ Deno.serve(async (req) => {
       let chips: string[] = [];
 
       if (needsLLM.length === 0) {
-        console.log('⚡ All descriptors cached — skipping LLM');
+        console.log('⚡ All descriptors cached — chips-only LLM call');
+        const venueNames = top12.map((v: any, i: number) => `${i + 1}. ${v.name}`).join('\n');
+        const chipsResult = await safe('chips-only-llm', () => callLLM(
+          'gemini-2.5-flash',
+          `You are a knowledgeable local friend who knows the city's food and drink scene intimately.`,
+          `Here are venues a user was shown:\n${venueNames}\n\nReturn a JSON object with:\n- "chips": array of 3-4 short follow-up search suggestions for discovering more venues nearby.`,
+          [
+            {
+              type: 'function',
+              function: {
+                name: 'chips_only',
+                description: 'Generate follow-up search chips',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    chips: { type: 'array', items: { type: 'string' } },
+                  },
+                  required: ['chips'],
+                },
+              },
+            },
+          ],
+          { type: 'function', function: { name: 'chips_only' } },
+        ), { chips: [] });
+        chips = chipsResult.chips || [];
       } else {
         console.log(`🤖 LLM needed for ${needsLLM.length}/${top12.length} venues`);
         const partialList = needsLLM.map((v: any, i: number) =>
