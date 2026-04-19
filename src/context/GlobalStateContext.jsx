@@ -14,13 +14,18 @@ function getInitialState() {
   const anonymousId = localStorage.getItem('whatspot_anonymous_id') || uuidv4();
   localStorage.setItem('whatspot_anonymous_id', anonymousId);
 
-  const savedLocation = localStorage.getItem('whatspot_user_location');
-  const location = savedLocation
-    ? JSON.parse(savedLocation)
-    : { lat: 43.6532, lon: -79.3832 };
-
-  const locationName =
-    localStorage.getItem('whatspot_location_name') || 'Toronto, Ontario, Canada';
+  let location = { lat: 43.6532, lon: -79.3832 };
+  let locationName = 'Toronto, Ontario, Canada';
+  try {
+    const savedLocation = localStorage.getItem('whatspot_user_location');
+    const savedName = localStorage.getItem('whatspot_location_name');
+    if (savedLocation && savedName) {
+      location = JSON.parse(savedLocation);
+      locationName = savedName;
+    }
+  } catch {
+    // malformed data — keep Toronto defaults
+  }
 
   const history = JSON.parse(localStorage.getItem('whatspot_search_history') || '[]');
 
