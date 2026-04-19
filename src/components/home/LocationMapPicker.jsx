@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { Loader2 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { supabase } from '@/integrations/supabase/client';
 
 const LazyMap = lazy(() => import('./LocationMapContent'));
 
@@ -24,17 +25,17 @@ export default function LocationMapPicker({ isOpen, onClose, onLocationSelect })
     if (!selectedPos) return;
     setLoading(true);
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${selectedPos.lat}&lon=${selectedPos.lng}&format=json`);
-      const data = await res.json();
-      const name = data.address?.city || data.address?.town || data.address?.village || data.address?.suburb || "Map Location";
-      
+      const { data } = await supabase.functions.invoke('geocode-address', {
+        body: { lat: selectedPos.lat, lon: selectedPos.lng },
+      });
+      const name = data?.name || 'Map Location';
       onLocationSelect({
         name,
         coords: { lat: selectedPos.lat, lon: selectedPos.lng, isGPS: false, isPinDrop: true, locationType: null },
       });
     } catch {
       onLocationSelect({
-        name: "Map Location",
+        name: 'Map Location',
         coords: { lat: selectedPos.lat, lon: selectedPos.lng, isGPS: false, isPinDrop: true, locationType: null },
       });
     } finally {
