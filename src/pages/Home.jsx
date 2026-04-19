@@ -301,7 +301,7 @@ export default function Home() {
           {feedLoading && (
             <div
               className="fixed inset-0 z-20 flex items-center justify-center"
-              style={{ background: 'rgba(0,0,0,0.45)' }}
+              style={{ background: 'rgba(0,0,0,0.4)' }}
             >
               <LoadingMessages light />
             </div>
@@ -323,29 +323,17 @@ export default function Home() {
           style={{ marginTop: '110px', height: 'calc(100dvh - 110px)' }}
         >
           <div className="w-[40%] overflow-y-auto border-r border-border px-4 py-4 pb-4">
-            {feedLoading ? (
-              <div className="flex items-center justify-center h-full">
-                <LoadingMessages />
-              </div>
-            ) : (
-              <ResultsList
-                results={mappableVenues}
-                isLoading={false}
-                currentQuery={currentQuery}
-              />
-            )}
+            {feedLoading && <LoadingMessages />}
+            <ResultsList
+              results={mappableVenues}
+              isLoading={feedLoading}
+              currentQuery={currentQuery}
+              skeletonCount={Math.max(2, Math.floor((window.innerHeight - 186) / 132))}
+            />
           </div>
           {/* `isolate` contains Leaflet's z-indexes within this stacking context */}
           <div className="w-[60%] isolate h-full relative">
             <MapView results={mappableVenues} isLoading={feedLoading} />
-            {feedLoading && (
-              <div
-                className="absolute inset-0 z-10 flex items-center justify-center"
-                style={{ background: 'rgba(0,0,0,0.45)' }}
-              >
-                <LoadingMessages light />
-              </div>
-            )}
           </div>
         </div>
       )}
