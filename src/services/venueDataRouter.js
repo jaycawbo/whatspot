@@ -74,7 +74,7 @@ function rowToVenue(row) {
   };
 }
 
-function buildResponse(rows) {
+function buildResponse(rows, correctionInfo = null) {
   const venues = rows.map(rowToVenue);
   return {
     results:         venues.slice(0, 12),
@@ -83,6 +83,7 @@ function buildResponse(rows) {
     suggested_chips: [],
     search_summary:  null,
     pagination:      { has_more: false },
+    correction_info: correctionInfo,
   };
 }
 
@@ -114,27 +115,38 @@ function isWeeklyStale(row) {
  * Query venues from the DB.
  *
  * @param {object} params
- * @param {string} [params.query]        - freetext search string
- * @param {string[]} [params.excludeIds] - google_place_ids to exclude
- * @param {number} [params.limit]        - max rows (default 22)
- * @param {number} [params.lat]          - center latitude for bounding box
- * @param {number} [params.lon]          - center longitude for bounding box
- * @param {number} [params.radiusKm]     - search radius in km (default 5)
+ * @param {string} [params.query]            - freetext search string
+ * @param {string[]} [params.excludeIds]    - google_place_ids to exclude
+ * @param {number} [params.limit]           - max rows (default 22)
+ * @param {number} [params.lat]             - center latitude for bounding box
+ * @param {number} [params.lon]             - center longitude for bounding box
+ * @param {number} [params.radiusKm]        - search radius in km (default 5)
+ * @param {boolean} [params.bypassCorrection] - skip autocorrect for this call
  */
-export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, lat, lon, radiusKm = 5, locationName = '' } = {}) {
+export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, lat, lon, radiusKm = 5, locationName = '', bypassCorrection = false } = {}) {
   let qb = supabase.from('venues').select('*');
+  let correctionInfo = null;
 
   if (query) {
-    // Attempt Gemini query refinement for better semantic keyword extraction.
+    // Attempt Gemini query refinement for better semantic keyword extraction + autocorrect.
     // Falls back to simple keyword splitting if the edge function fails.
     let searchTerms = null;
+    let searchQuery = query;
 
     try {
       const { data } = await supabase.functions.invoke('refine-query', {
-        body: { query, locationName },
+        body: { query, locationName, bypassCorrection },
       });
       if (Array.isArray(data?.keywords) && data.keywords.length > 0) {
         searchTerms = data.keywords;
+      }
+      if (data?.corrected_query) {
+        searchQuery = data.corrected_query;
+        correctionInfo = {
+          correctedQuery: data.corrected_query,
+          rawQuery: query,
+          correctionApplied: data.correction_applied === true && data.corrected_query !== query,
+        };
       }
     } catch {
       // Fall through to keyword splitting
@@ -146,11 +158,11 @@ export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, la
         'a', 'an', 'the', 'and', 'or', 'in', 'at', 'to', 'of', 'for',
         'with', 'by', 'near', 'nearby', 'around', 'some', 'my', 'me',
       ]);
-      const keywords = query
+      const keywords = searchQuery
         .toLowerCase()
         .split(/\s+/)
         .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
-      searchTerms = keywords.length > 0 ? keywords : [query];
+      searchTerms = keywords.length > 0 ? keywords : [searchQuery];
     }
 
     const conditions = searchTerms
@@ -198,7 +210,7 @@ export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, la
     });
   }
 
-  return buildResponse(rows);
+  return buildResponse(rows, correctionInfo);
 }
 
 // ─── Main router entry point ──────────────────────────────────────────────────
@@ -215,13 +227,14 @@ export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, la
 export async function routeVenueRequest(params) {
   if (isDbOnly()) {
     return queryVenuesFromDb({
-      query:        params.query,
-      excludeIds:   params.exclude_ids || [],
+      query:            params.query,
+      excludeIds:       params.exclude_ids || [],
       // Text search queries the full DB — no bounding box
-      lat:          params.query ? null : params.lat,
-      lon:          params.query ? null : params.lon,
-      radiusKm:     params.radius_km,
-      locationName: params.location_name || '',
+      lat:              params.query ? null : params.lat,
+      lon:              params.query ? null : params.lon,
+      radiusKm:         params.radius_km,
+      locationName:     params.location_name || '',
+      bypassCorrection: params.bypassCorrection || false,
     });
   }
 

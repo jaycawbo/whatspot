@@ -9,10 +9,29 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { address } = await req.json();
+    const { address, lat, lon } = await req.json();
+
+    // Reverse geocode: lat/lon → place name
+    if (lat !== undefined && lon !== undefined) {
+      const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`;
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'WhatSpot/1.0 (whatspot.app)' },
+      });
+      if (!response.ok) {
+        return new Response(JSON.stringify({ success: true, name: 'Current Location' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const data = await response.json();
+      const a = data.address || {};
+      const name = a.city || a.town || a.village || a.suburb || 'Current Location';
+      return new Response(JSON.stringify({ success: true, name }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     if (!address) {
-      return new Response(JSON.stringify({ error: 'address is required' }), {
+      return new Response(JSON.stringify({ error: 'address or lat/lon is required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

@@ -32,17 +32,29 @@ Deno.serve(async (req) => {
 
     const results = await response.json();
 
+    const BROAD_TYPES = ['city', 'town', 'village', 'municipality', 'administrative', 'county', 'state', 'country', 'postal_code'];
+    const NEIGHBOURHOOD_TYPES = ['neighbourhood', 'suburb', 'quarter', 'city_district'];
+    const STREET_TYPES = ['house', 'building', 'amenity', 'shop', 'tourism', 'leisure', 'road', 'street', 'path'];
+
     const suggestions = results.map((r: any) => {
       const a = r.address || {};
       const mainText = a.neighbourhood || a.suburb || a.quarter || a.city_district || a.city || a.town || a.village || r.display_name.split(',')[0];
       const parts = [a.city || a.town || a.village, a.state, a.country].filter(Boolean);
       const secondaryText = parts.join(', ');
+
+      const checkVal = ((r.addresstype || r.type || r.class) || '').toLowerCase();
+      let locationType = 'other';
+      if (BROAD_TYPES.some((t: string) => checkVal.includes(t))) locationType = 'city';
+      else if (NEIGHBOURHOOD_TYPES.some((t: string) => checkVal.includes(t))) locationType = 'neighbourhood';
+      else if (STREET_TYPES.some((t: string) => checkVal.includes(t))) locationType = 'street';
+
       return {
         display_name: r.display_name,
         full_name: secondaryText ? `${mainText}, ${secondaryText}` : mainText,
         place_id: r.place_id,
         lat: parseFloat(r.lat),
         lon: parseFloat(r.lon),
+        locationType,
       };
     });
 

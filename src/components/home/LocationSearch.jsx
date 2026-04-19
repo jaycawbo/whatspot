@@ -66,18 +66,21 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
         async (position) => {
           const { latitude, longitude } = position.coords;
           try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`);
-            const data = await res.json();
-            const name = data.address?.city || data.address?.town || data.address?.village || data.address?.suburb || "Current Location";
+            const { data } = await supabase.functions.invoke('geocode-address', {
+              body: { lat: latitude, lon: longitude },
+            });
+            const name = data?.name || 'Current Location';
             onLocationSelect({
               name,
               coords: { lat: latitude, lon: longitude, isGPS: true, isPinDrop: false, locationType: null },
             });
           } catch {
             onLocationSelect({
-              name: "Current Location",
+              name: 'Current Location',
               coords: { lat: latitude, lon: longitude, isGPS: true, isPinDrop: false, locationType: null },
             });
+          } finally {
+            setLoading(false);
           }
         },
         (err) => {
@@ -88,32 +91,11 @@ export default function LocationSearch({ currentName, onLocationSelect, onClose 
     }
   };
 
-  const selectSuggestion = async (suggestion) => {
-    setLoading(true);
-    try {
-      // Geocode the selected place to get coordinates
-      const { data, error } = await supabase.functions.invoke('geocode-address', {
-        body: { address: suggestion.display_name },
-      });
-      if (!error && data?.success) {
-        onLocationSelect({
-          name: suggestion.full_name || suggestion.display_name,
-          coords: { lat: data.lat, lon: data.lon, isGPS: false, isPinDrop: false, locationType: data.locationType || null },
-        });
-      } else {
-        onLocationSelect({
-          name: suggestion.full_name || suggestion.display_name,
-          coords: null,
-        });
-      }
-    } catch {
-      onLocationSelect({
-        name: suggestion.full_name || suggestion.display_name,
-        coords: null,
-      });
-    } finally {
-      setLoading(false);
-    }
+  const selectSuggestion = (suggestion) => {
+    onLocationSelect({
+      name: suggestion.full_name || suggestion.display_name,
+      coords: { lat: suggestion.lat, lon: suggestion.lon, isGPS: false, isPinDrop: false, locationType: suggestion.locationType || null },
+    });
   };
 
   const handleSubmit = async (e) => {
