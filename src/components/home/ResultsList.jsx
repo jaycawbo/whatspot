@@ -2,11 +2,11 @@ import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import VenueCard from './VenueCard';
 
-export default function ResultsList({ results, isLoading, currentQuery }) {
+export default function ResultsList({ results, isLoading, currentQuery, skeletonCount = 4 }) {
   if (isLoading) {
     return (
       <div className="space-y-3">
-        {Array.from({ length: 4 }).map((_, i) => (
+        {Array.from({ length: skeletonCount }).map((_, i) => (
           <div key={i} className="flex gap-3 rounded-xl border border-border bg-card p-3 animate-pulse">
             <div className="h-24 w-24 rounded-lg bg-muted shrink-0" />
             <div className="flex-1 space-y-2 py-1">
