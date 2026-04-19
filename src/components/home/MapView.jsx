@@ -1,5 +1,6 @@
 import React, { useMemo, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import L from 'leaflet';
 import { useNavigate } from 'react-router-dom';
 import { Star, MapPin } from 'lucide-react';
 import { useGlobalState } from '@/context/GlobalStateContext';
@@ -33,15 +34,28 @@ function MapAutoFit({ results }) {
   return null;
 }
 
+// Re-centers the map on user location when mounted (i.e. when loading starts).
+function MapCenterOnUser({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    try { map.setView(center, 14); } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
+
+const userLocationIcon = L.divIcon({
+  className: '',
+  html: '<div style="width:14px;height:14px;border-radius:50%;background:#3b82f6;border:3px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>',
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+});
+
 function MapContent({ results, spotsIds, favIds }) {
   const navigate = useNavigate();
   return (
     <>
       <MapAutoFit results={results} />
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
-        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-      />
       {results.map((v, i) => {
         const lat = v.lat;
         const lng = v.lon ?? v.lng;
@@ -103,13 +117,20 @@ export default function MapView({ results, isLoading }) {
     return { spotsIds: spotsSet, favIds: favSet };
   }, [spots]);
 
-  if (isLoading) {
-    return <div className="h-full w-full rounded-xl bg-muted animate-pulse" />;
-  }
-
   return (
     <MapContainer center={center} zoom={13} className="h-full w-full rounded-xl" scrollWheelZoom>
-      <MapContent results={results} spotsIds={spotsIds} favIds={favIds} />
+      <TileLayer
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
+        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+      />
+      {isLoading ? (
+        <>
+          <MapCenterOnUser center={center} />
+          <Marker position={center} icon={userLocationIcon} />
+        </>
+      ) : (
+        <MapContent results={results} spotsIds={spotsIds} favIds={favIds} />
+      )}
     </MapContainer>
   );
 }
