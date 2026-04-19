@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MapPin, Heart, ChevronDown, X, User, LogOut } from 'lucide-react';
+import { MapPin, Heart, ChevronDown, X, LogOut } from 'lucide-react';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Link, useNavigate } from 'react-router-dom';
 import WhatspotLogo from '@/components/brand/WhatspotLogo';
-import LocationSearch from '@/components/home/LocationSearch';
+import LocationPickerSheet from '@/components/location/LocationPickerSheet';
 import AuthModal from '@/components/auth/AuthModal';
 
 export default function Header({ onLogoClick, onCloseSearch } = {}) {
@@ -22,17 +22,6 @@ export default function Header({ onLogoClick, onCloseSearch } = {}) {
   const [editingLocation, setEditingLocation] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const navigate = useNavigate();
-
-  const handleLocationSelect = ({ name, coords }) => {
-    dispatch({
-      type: 'SET_LOCATION',
-      payload: {
-        coords: coords || state.userLocation,
-        name,
-      },
-    });
-    setEditingLocation(false);
-  };
 
   const handleLogoClick = (e) => {
     e.preventDefault();
@@ -52,22 +41,14 @@ export default function Header({ onLogoClick, onCloseSearch } = {}) {
     <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-background border-b border-border flex items-center px-4 md:px-8">
       {/* Left: Location */}
       <div className="flex items-center min-w-0 flex-1 overflow-hidden">
-        {editingLocation ? (
-          <LocationSearch
-            currentName={state.locationName}
-            onLocationSelect={handleLocationSelect}
-            onClose={() => setEditingLocation(false)}
-          />
-        ) : (
-          <button
-            onClick={() => setEditingLocation(true)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors max-w-[160px] truncate"
-          >
-            <MapPin className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{state.locationName}</span>
-            <ChevronDown className="h-3 w-3 shrink-0" />
-          </button>
-        )}
+        <button
+          onClick={() => setEditingLocation(true)}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors max-w-[160px] truncate"
+        >
+          <MapPin className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{state.locationName}</span>
+          <ChevronDown className="h-3 w-3 shrink-0" />
+        </button>
       </div>
 
       {/* Center: Logo — absolutely centered so hit area aligns with visible logo bounds */}
@@ -129,6 +110,7 @@ export default function Header({ onLogoClick, onCloseSearch } = {}) {
         )}
       </div>
 
+      <LocationPickerSheet open={editingLocation} onClose={() => setEditingLocation(false)} />
       <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
     </header>
   );
