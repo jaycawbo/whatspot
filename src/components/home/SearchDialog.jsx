@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Search, ArrowUp, SlidersHorizontal } from 'lucide-react';
+import { X, Search, SlidersHorizontal } from 'lucide-react';
 import CategoryTiles from './CategoryTiles';
 import RefinementChips from './RefinementChips';
 import SuggestedChips from './SuggestedChips';
@@ -50,6 +50,20 @@ export default function SearchDialog({
     }
   }, [open]);
 
+  // Allow CorrectionBanner's undo to trigger a search without Home.jsx needing modification.
+  // SearchDialog is always mounted (AnimatePresence keeps it in the tree), so this listener
+  // is always active regardless of whether the dialog is visually open.
+  useEffect(() => {
+    const handler = (e) => {
+      const q = e.detail?.query;
+      if (q && onSearch) {
+        onSearch(q.trim());
+      }
+    };
+    document.addEventListener('whatspot:auto-search', handler);
+    return () => document.removeEventListener('whatspot:auto-search', handler);
+  }, [onSearch]);
+
   const handleSubmit = useCallback(
     (e) => {
       e.preventDefault();
@@ -94,7 +108,7 @@ export default function SearchDialog({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-[59] bg-black/20 hidden md:block"
+            className="fixed inset-0 z-[59] bg-black/20"
             onClick={onClose}
           />
 
@@ -119,12 +133,14 @@ export default function SearchDialog({
                   className="w-full h-10 pl-10 pr-10 rounded-full border border-input bg-card text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ring-offset-background transition-shadow"
                   placeholder="Ask and you shall receive..."
                 />
-                {query.trim() && (
+                {query && (
                   <button
-                    type="submit"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 flex items-center justify-center rounded-full bg-green-600 text-white hover:bg-green-700 transition-colors"
+                    type="button"
+                    onClick={() => { onQueryChange(''); inputRef.current?.focus(); }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label="Clear search"
                   >
-                    <ArrowUp className="h-4 w-4" />
+                    <X className="h-4 w-4" />
                   </button>
                 )}
               </form>
@@ -143,14 +159,6 @@ export default function SearchDialog({
                 )}
               </button>
 
-              {/* Cancel */}
-              <button
-                onClick={onClose}
-                className="h-9 w-9 flex items-center justify-center rounded-full hover:bg-accent transition-colors shrink-0 text-muted-foreground"
-                aria-label="Close search"
-              >
-                <X className="h-4 w-4" />
-              </button>
             </div>
 
             {/* Scrollable content */}
