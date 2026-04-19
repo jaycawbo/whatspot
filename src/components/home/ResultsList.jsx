@@ -1,21 +1,8 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import VenueCard from './VenueCard';
-import CorrectionBanner from '@/components/search/CorrectionBanner';
-import { useCorrectionInfo } from '@/hooks/useCorrectionInfo';
 
 export default function ResultsList({ results, isLoading, currentQuery, skeletonCount = 4 }) {
-  const { correctionInfo, dismiss } = useCorrectionInfo(currentQuery, results);
-
-  const handleUndo = () => {
-    if (!correctionInfo) return;
-    try { sessionStorage.setItem('ws_bypass_correction', 'true'); } catch {}
-    dismiss();
-    document.dispatchEvent(
-      new CustomEvent('whatspot:auto-search', { detail: { query: correctionInfo.rawQuery } })
-    );
-  };
-
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -35,14 +22,6 @@ export default function ResultsList({ results, isLoading, currentQuery, skeleton
 
   return (
     <div className="space-y-3">
-      {correctionInfo && (
-        <CorrectionBanner
-          correctedQuery={correctionInfo.correctedQuery}
-          rawQuery={correctionInfo.rawQuery}
-          onUndo={handleUndo}
-          onDismiss={dismiss}
-        />
-      )}
       <AnimatePresence initial={false}>
         {results.map((venue, i) => (
           <motion.div
