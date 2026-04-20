@@ -38,7 +38,7 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-export const DATA_SOURCE = import.meta.env.VITE_VENUE_DATA_SOURCE || 'live_fallback';
+export const DATA_SOURCE = import.meta.env.VITE_VENUE_DATA_SOURCE || 'db_only';
 export const isDbOnly = () => DATA_SOURCE === 'db_only';
 
 const WEEKLY_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
