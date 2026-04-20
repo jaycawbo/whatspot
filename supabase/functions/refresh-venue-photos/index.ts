@@ -8,7 +8,7 @@
  * What it does per venue:
  *   1. Calls Places API (New) with fieldMask: photos
  *   2. Resolves the first photo reference into a durable media URL
- *   3. Updates venues.photo_url and venues.photos_last_updated
+ *   3. Updates venues.photo_urls and venues.photos_last_updated
  *
  * Staleness window: 90 days (quarterly)
  *
@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
         const { error } = await supabase
           .from('venues')
           .update({
-            ...(photoUrl ? { photo_url: photoUrl } : {}),
+            ...(photoUrl ? { photo_urls: [photoUrl] } : {}),
             photos_last_updated: now,
           })
           .eq('google_place_id', row.google_place_id);
