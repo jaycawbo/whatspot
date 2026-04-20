@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import HeartButton from '@/components/spots/HeartButton';
 import { logEvent } from '@/lib/logEvent';
 import BeenHereButton from '@/components/ui/BeenHereButton';
-import ConstellationsSheet from '@/components/discovery/ConstellationsSheet';
+import RatingDialog from '@/components/discovery/RatingDialog';
 import { useSpots } from '@/hooks/useSpots';
 
 function formatPrice(level) {
@@ -114,7 +114,7 @@ export default function VenueCard({ venue, index, currentQuery }) {
           ))}
         </div>
       </div>
-      <ConstellationsSheet
+      <RatingDialog
         open={ratingSheetOpen}
         onOpenChange={setRatingSheetOpen}
         venue={venue}

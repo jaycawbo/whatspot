@@ -22,29 +22,28 @@ function ThumbsUpIcon({ className }) {
 
 function TwoThumbsUpIcon({ className }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <g transform="scale(0.55) translate(0, 7)" opacity="0.45">
+    <svg className={className} viewBox="0 0 30 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 10V22" />
+      <path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z" />
+      <g transform="translate(8, 0)">
         <path d="M7 10V22" />
-        <path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z" />
-      </g>
-      <g transform="scale(0.55) translate(20, 0)">
-        <path d="M7 10V22" />
-        <path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z" />
+        <path fill="white" d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z" />
       </g>
     </svg>
   );
 }
 
 const RATING_ICONS = {
-  disliked: ThumbsDownIcon,
-  liked: ThumbsUpIcon,
-  loved: TwoThumbsUpIcon,
+  disliked: { Icon: ThumbsDownIcon, iconClass: 'h-4 w-4 text-white' },
+  liked:    { Icon: ThumbsUpIcon,   iconClass: 'h-4 w-4 text-white' },
+  loved:    { Icon: TwoThumbsUpIcon, iconClass: 'h-4 w-5 text-white' },
 };
 
 export default function BeenHereButton({ rating, onClick, className }) {
-  const ActiveIcon = rating ? RATING_ICONS[rating] : null;
+  const activeEntry = rating ? RATING_ICONS[rating] : null;
 
-  if (ActiveIcon) {
+  if (activeEntry) {
+    const { Icon, iconClass } = activeEntry;
     return (
       <button
         type="button"
@@ -55,7 +54,7 @@ export default function BeenHereButton({ rating, onClick, className }) {
         )}
         aria-label="Been here"
       >
-        <ActiveIcon className="h-4 w-4 text-white" />
+        <Icon className={iconClass} />
       </button>
     );
   }
@@ -65,7 +64,7 @@ export default function BeenHereButton({ rating, onClick, className }) {
       type="button"
       onClick={(e) => { e.stopPropagation(); onClick?.(); }}
       className={cn(
-        'group flex items-center gap-1 h-7 rounded-full border-2 border-white/60 bg-black/20 backdrop-blur-sm px-1.5 transition-all duration-200 hover:px-2.5 hover:bg-black/30 hover:border-white/80',
+        'group flex items-center justify-center gap-1 h-7 rounded-full border-2 border-white/60 bg-black/20 backdrop-blur-sm px-1.5 transition-all duration-200 hover:px-2.5 hover:bg-black/30 hover:border-white/80',
         className
       )}
       aria-label="Been here"

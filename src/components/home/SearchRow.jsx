@@ -21,7 +21,7 @@ export default function SearchRow({
   activeFilterCount = 0,
 }) {
   return (
-    <div className="fixed top-14 left-0 right-0 z-40 bg-background border-b border-border">
+    <div className="fixed top-14 left-0 right-0 z-40 bg-background">
       <div className="flex items-center gap-2 px-3 py-2 max-w-5xl mx-auto" style={{ touchAction: 'manipulation' }}>
         {/* Back button — always mounted, hidden until query is active */}
         <button
