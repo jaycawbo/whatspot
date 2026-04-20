@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, MapPin, Check, MoreHorizontal, Trash2, ArrowRightLeft, Tag, FileText } from 'lucide-react';
 import BeenHereButton from '@/components/ui/BeenHereButton';
-import ConstellationsSheet from '@/components/discovery/ConstellationsSheet';
+import RatingDialog from '@/components/discovery/RatingDialog';
 import { useSpots } from '@/hooks/useSpots';
 import {
   DropdownMenu,
@@ -172,7 +172,7 @@ export default function SpotCard({
           </DropdownMenu>
         </div>
       )}
-      <ConstellationsSheet
+      <RatingDialog
         open={ratingSheetOpen}
         onOpenChange={setRatingSheetOpen}
         venue={spot}

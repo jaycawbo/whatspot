@@ -3,7 +3,7 @@ import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ThumbsUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import DiscoveryCard from './DiscoveryCard';
-import ConstellationsSheet from './ConstellationsSheet';
+import RatingDialog from './RatingDialog';
 import { useDiscoveryInteractions } from '@/hooks/useDiscoveryInteractions';
 import { useNavigate } from 'react-router-dom';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -258,17 +258,14 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     advanceCard();
   }, [ratingPendingVenue, handleRated, advanceCard]);
 
-  // Handle rating cancel
+  // Handle rating cancel — stay on current card, no advance
   const handleRatingCancel = useCallback(() => {
     if (ratingPendingVenue) {
       logRatingSheetCancelled(ratingPendingVenue);
     }
     setRatingSheetOpen(false);
-    if (ratingPendingVenue) {
-      advanceCard();
-    }
     setRatingPendingVenue(null);
-  }, [ratingPendingVenue, logRatingSheetCancelled, advanceCard]);
+  }, [ratingPendingVenue, logRatingSheetCancelled]);
 
   // Drag handlers — track isDragging to disable transition during drag (Fix 2)
   const handleDragStart = useCallback(() => {
@@ -543,7 +540,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       )}
 
       {/* Constellations rating sheet */}
-      <ConstellationsSheet
+      <RatingDialog
         open={ratingSheetOpen}
         onOpenChange={(open) => {
           if (!open) handleRatingCancel();
