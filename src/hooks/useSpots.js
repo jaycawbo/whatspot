@@ -84,6 +84,13 @@ export function useSpots() {
     return spot?.labels || [];
   };
 
+  const getBeenHereRating = (placeId) => {
+    if (!placeId) return null;
+    const spot = spots.find((s) => s.google_place_id === placeId);
+    if (!spot || spot.interactionType !== 'rated') return null;
+    return spot.rating || null;
+  };
+
   // Save a venue to Spots
   const saveMutation = useMutation({
     mutationFn: async ({ venue, labels = [] }) => {
@@ -181,6 +188,29 @@ export function useSpots() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: SPOTS_KEY }),
   });
 
+  const saveBeenHereMutation = useMutation({
+    mutationFn: async ({ venue, rating }) => {
+      if (!user) throw new Error('Not authenticated');
+      const googlePlaceId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
+      if (!googlePlaceId) throw new Error('No place_id available');
+      const { error } = await supabase
+        .from('user_venue_interactions')
+        .upsert(
+          {
+            user_id: user.id,
+            anonymous_id: crypto.randomUUID(),
+            venue_id: googlePlaceId,
+            interaction_type: 'rated',
+            rating,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,venue_id' }
+        );
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: SPOTS_KEY }),
+  });
+
   const allLabels = [...new Set(spots.flatMap((s) => s.labels || []))];
 
   const saveOrUpdateLabel = async ({ venue, label }) => {
@@ -207,6 +237,8 @@ export function useSpots() {
     moveToList: moveToListMutation.mutateAsync,
     updateNote: updateNoteMutation.mutateAsync,
     saveOrUpdateLabel,
+    getBeenHereRating,
+    saveBeenHere: saveBeenHereMutation.mutateAsync,
     isSaving: saveMutation.isPending,
     isRemoving: removeMutation.isPending,
     allLabels,
