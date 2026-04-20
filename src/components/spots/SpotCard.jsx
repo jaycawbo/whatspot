@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, MapPin, Check, MoreHorizontal, Trash2, ArrowRightLeft, Tag, FileText } from 'lucide-react';
+import BeenHereButton from '@/components/ui/BeenHereButton';
+import ConstellationsSheet from '@/components/discovery/ConstellationsSheet';
+import { useSpots } from '@/hooks/useSpots';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,9 +28,21 @@ export default function SpotCard({
   onToggleSelect,
 }) {
   const navigate = useNavigate();
+  const { saveBeenHere } = useSpots();
   const placeId = spot.google_place_id || '';
   const currentList = spot.labels?.[0] || '';
   const [noteExpanded, setNoteExpanded] = useState(false);
+  const [ratingSheetOpen, setRatingSheetOpen] = useState(false);
+
+  const beenHereRating = spot.interactionType === 'rated' ? (spot.rating || null) : null;
+
+  const handleBeenHereRate = async (rating) => {
+    try {
+      await saveBeenHere({ venue: spot, rating });
+    } catch (e) {
+      console.error('Failed to save been here:', e);
+    }
+  };
 
   const handleClick = () => {
     if (isEditMode) {
@@ -62,12 +77,20 @@ export default function SpotCard({
       )}
 
       {/* Thumbnail */}
-      <img
-        src={imgUrl}
-        alt={spot.name}
-        className="h-20 w-20 rounded-lg object-cover shrink-0 bg-muted"
-        loading="lazy"
-      />
+      <div className="relative shrink-0">
+        <img
+          src={imgUrl}
+          alt={spot.name}
+          className="h-20 w-20 rounded-lg object-cover bg-muted"
+          loading="lazy"
+        />
+        <div className="absolute top-1 right-1">
+          <BeenHereButton
+            rating={beenHereRating}
+            onClick={() => setRatingSheetOpen(true)}
+          />
+        </div>
+      </div>
 
       {/* Content */}
       <div className="flex flex-col min-w-0 flex-1 justify-between py-0.5">
@@ -149,6 +172,13 @@ export default function SpotCard({
           </DropdownMenu>
         </div>
       )}
+      <ConstellationsSheet
+        open={ratingSheetOpen}
+        onOpenChange={setRatingSheetOpen}
+        venue={spot}
+        onRate={handleBeenHereRate}
+        onCancel={() => setRatingSheetOpen(false)}
+      />
     </div>
   );
 }

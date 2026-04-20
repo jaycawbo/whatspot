@@ -346,7 +346,7 @@ export default function Home() {
         >
           {/* Feed mode tabs + filter is handled inside SearchRow now for filters;
               tabs remain here since they only show in feed mode */}
-          <div className="flex items-center justify-center gap-3 px-4 pb-2">
+          <div className="flex items-center justify-center gap-3 px-4 py-2">
             <FeedModeTabs onTabChange={handleTabChange} />
           </div>
 

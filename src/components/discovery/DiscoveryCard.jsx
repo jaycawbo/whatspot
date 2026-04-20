@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import BeenHereButton from '@/components/ui/BeenHereButton';
 
 function formatPrice(level) {
   if (!level) return null;
@@ -32,6 +33,8 @@ export default function DiscoveryCard({
   isGhost = false,
   ghostLevel = 0,
   listLabel = null,
+  onBeenHereClick = null,
+  beenHereRating = null,
 }) {
   const navigate = useNavigate();
   const photos = venue?.image_urls?.length > 0 ? venue.image_urls : ['/placeholder.svg'];
@@ -251,10 +254,17 @@ export default function DiscoveryCard({
 
             {/* Spots list membership badge */}
             {listLabel && (
-              <div className="absolute top-3 right-3 z-10 pointer-events-none">
+              <div className={cn('absolute top-3 z-10 pointer-events-none', onBeenHereClick ? 'left-3' : 'right-3')}>
                 <span className="rounded-full px-2.5 py-1 text-xs font-semibold bg-black/55 text-white backdrop-blur-sm">
                   {listLabel}
                 </span>
+              </div>
+            )}
+
+            {/* Been here button */}
+            {!isGhost && onBeenHereClick && (
+              <div className="absolute top-3 right-3 z-20">
+                <BeenHereButton rating={beenHereRating} onClick={onBeenHereClick} />
               </div>
             )}
 
