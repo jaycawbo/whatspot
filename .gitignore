@@ -25,3 +25,4 @@ dist-ssr
 .claude/
 supabase/.temp/
 .vercel
+claude_prompt.txt
