@@ -1040,10 +1040,14 @@ Deno.serve(async (req) => {
         JSON.stringify({
           results: [],
           suggested_chips: [],
+          search_summary: null,
           pagination: { has_more: false },
           relaxation_applied: relaxation_level > 0,
           relaxation_level,
           gated: false,
+          nearby_overflow: [],
+          reserve_venues: [],
+          staged_venues: [],
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
@@ -1188,10 +1192,14 @@ Deno.serve(async (req) => {
         JSON.stringify({
           results: [],
           suggested_chips: [],
+          search_summary: null,
           pagination: { has_more: false },
           relaxation_applied: relaxation_level > 0,
           relaxation_level,
           gated: false,
+          nearby_overflow: [],
+          reserve_venues: [],
+          staged_venues: [],
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
@@ -1202,7 +1210,7 @@ Deno.serve(async (req) => {
       .map((venue: any) => {
         let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
         if (venue.unknownPrice) score *= 0.7; // Down-rank venues with unknown price when price filter is active
-        const display_weight = score + (Math.random() * 0.3);
+        const display_weight = isDiscoveryMode ? score + (Math.random() * 0.3) : score;
         return { ...venue, score, display_weight };
       })
       .filter((v: any) => v.score > admission.minScore)
