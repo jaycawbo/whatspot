@@ -24,12 +24,25 @@ function ThumbsUpIcon({ className }) {
   );
 }
 
+function TwoThumbsUpIcon({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <g transform="scale(0.55) translate(0, 7)" opacity="0.45">
+        <path d="M7 10V22" />
+        <path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z" />
+      </g>
+      <g transform="scale(0.55) translate(20, 0)">
+        <path d="M7 10V22" />
+        <path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z" />
+      </g>
+    </svg>
+  );
+}
+
 const RATING_OPTIONS = [
   { value: 'disliked', label: "Didn't Like", icon: ThumbsDownIcon, activeClass: 'border-destructive text-destructive bg-destructive/10' },
   { value: 'liked',    label: 'Liked It',    icon: ThumbsUpIcon,   activeClass: 'border-green-500 text-green-600 bg-green-50' },
-  { value: 'loved',    label: 'Love It',     icon: ({ className }) => (
-    <span className={className} style={{ fontSize: '1.5rem', lineHeight: 1 }}>❤️</span>
-  ), activeClass: 'border-rose-400 text-rose-500 bg-rose-50' },
+  { value: 'loved',    label: 'Love It',     icon: TwoThumbsUpIcon, activeClass: 'border-rose-400 text-rose-500 bg-rose-50' },
 ];
 
 export default function ConstellationsSheet({ open, onOpenChange, venue, venueName, onRate, onCancel }) {

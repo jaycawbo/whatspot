@@ -22,7 +22,7 @@ export default function FeedModeTabs({ onTabChange }) {
   };
 
   return (
-    <div className="flex items-center gap-0.5 px-1.5 py-1 bg-muted/50 rounded-full w-fit mx-auto">
+    <div className="flex items-center gap-6 px-2">
       {TABS.map(({ key, label }) => {
         const isActive = active === key;
         const isLocked = !isAuthenticated && key === 'for_you';
@@ -32,9 +32,9 @@ export default function FeedModeTabs({ onTabChange }) {
             onClick={() => handleSelect(key)}
             disabled={isLocked}
             className={cn(
-              'px-4 py-1.5 rounded-full text-sm font-medium transition-all',
+              'relative pb-1.5 text-sm font-medium transition-colors',
               isActive
-                ? 'bg-[#22c55e] text-white shadow-sm'
+                ? 'text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:rounded-full after:bg-[#22c55e]'
                 : isLocked
                 ? 'text-muted-foreground/40 cursor-not-allowed'
                 : 'text-muted-foreground hover:text-foreground'

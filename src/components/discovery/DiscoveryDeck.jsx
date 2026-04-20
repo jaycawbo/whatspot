@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Heart } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ThumbsUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import DiscoveryCard from './DiscoveryCard';
 import ConstellationsSheet from './ConstellationsSheet';
@@ -402,22 +402,6 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
   return (
     <div ref={containerRef} className="flex flex-col w-full mx-auto max-w-[calc(100vw-2rem)] sm:max-w-[560px] lg:max-w-[660px]" style={{ height: 'var(--deck-height, 78vh)' }}>
-      {/* Top — Been here (desktop only, in flow) */}
-      {!isMobile && (
-        <div className="flex justify-center mb-3 shrink-0">
-          <button
-            className="flex items-center justify-center gap-1.5 rounded-full bg-card border border-border shadow-md px-4 py-2 hover:bg-blue-500/10 transition-colors"
-            onClick={() => performAction('up', currentVenue)}
-            onMouseEnter={() => setHoveredButton('up')}
-            onMouseLeave={() => setHoveredButton(null)}
-            aria-label="Been here"
-          >
-            <Heart className="h-4 w-4 text-blue-500" />
-            <span className="text-sm text-blue-600">Been here</span>
-          </button>
-        </div>
-      )}
-
       {/* Card area */}
       <div className="relative flex-1 min-h-0">
         {/* Ghost cards */}
@@ -475,7 +459,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
               className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none"
               style={{ opacity: upOverlayOpacity, background: 'hsla(210, 70%, 50%, 0.2)' }}
             >
-              <Heart className="h-10 w-10 text-white fill-white/30" />
+              <ThumbsUp className="h-10 w-10 text-white fill-white/30" />
               <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Been here</span>
             </motion.div>
 
@@ -485,6 +469,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
               onDescriptorTap={onDescriptorTap}
               onCardBodyTap={handleCardBodyTap}
               listLabel={listMembershipMap ? listMembershipMap.get((currentVenue?.place_id || currentVenue?.google_place_id || '').replace(/^places\//, '')) ?? null : null}
+              onBeenHereClick={() => performAction('up', currentVenue)}
             />
           </motion.div>
         ) : hasMore ? (
@@ -527,7 +512,6 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
                   hoveredButton === 'right' && 'bg-green-500/5',
                   hoveredButton === 'left' && 'bg-destructive/5',
                   hoveredButton === 'down' && 'bg-muted/10',
-                  hoveredButton === 'up' && 'bg-blue-500/5',
                 )}
               />
             )}
