@@ -1,9 +1,12 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import HeartButton from '@/components/spots/HeartButton';
 import { logEvent } from '@/lib/logEvent';
+import BeenHereButton from '@/components/ui/BeenHereButton';
+import ConstellationsSheet from '@/components/discovery/ConstellationsSheet';
+import { useSpots } from '@/hooks/useSpots';
 
 function formatPrice(level) {
   if (!level) return null;
@@ -15,6 +18,11 @@ function formatPrice(level) {
 
 export default function VenueCard({ venue, index, currentQuery }) {
   const cardRef = useRef(null);
+  const { getBeenHereRating, saveBeenHere, isAuthenticated } = useSpots();
+  const [ratingSheetOpen, setRatingSheetOpen] = useState(false);
+
+  const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
+  const beenHereRating = getBeenHereRating(placeId);
 
   useEffect(() => {
     const el = cardRef.current;
@@ -35,13 +43,22 @@ export default function VenueCard({ venue, index, currentQuery }) {
     observer.observe(el);
     return () => observer.disconnect();
   }, [venue.place_id, venue.google_place_id, currentQuery, index]);
+
   const navigate = useNavigate();
-  const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
 
   const handleClick = () => {
     if (!placeId) return;
     navigate(`/venue/${placeId}`, { state: { venue } });
   };
+
+  const handleRate = async (rating) => {
+    try {
+      await saveBeenHere({ venue, rating });
+    } catch (e) {
+      console.error('Failed to save been here:', e);
+    }
+  };
+
   const imgUrl = venue.image_urls?.[0] || '/placeholder.svg';
 
   return (
@@ -54,6 +71,12 @@ export default function VenueCard({ venue, index, currentQuery }) {
           loading="lazy"
         />
         <div className="absolute top-1 right-1">
+          <BeenHereButton
+            rating={beenHereRating}
+            onClick={() => setRatingSheetOpen(true)}
+          />
+        </div>
+        <div className="absolute bottom-1 right-1">
           <HeartButton venue={venue} size="sm" />
         </div>
       </div>
@@ -91,6 +114,13 @@ export default function VenueCard({ venue, index, currentQuery }) {
           ))}
         </div>
       </div>
+      <ConstellationsSheet
+        open={ratingSheetOpen}
+        onOpenChange={setRatingSheetOpen}
+        venue={venue}
+        onRate={handleRate}
+        onCancel={() => setRatingSheetOpen(false)}
+      />
     </div>
   );
 }
