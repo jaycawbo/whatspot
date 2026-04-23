@@ -218,7 +218,7 @@ export default function DiscoveryCard({
       {/* Photo zone */}
       <div
         className="relative bg-muted overflow-hidden"
-        style={{ height: 'clamp(220px, 40dvh, 320px)' }}
+        style={{ height: 'clamp(200px, calc(var(--deck-height, 78dvh) * 0.65), 520px)' }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
