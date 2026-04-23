@@ -214,7 +214,7 @@ export default function DiscoveryCard({
   }
 
   return (
-    <div ref={cardRef} className="relative w-full rounded-2xl overflow-hidden bg-card border border-border shadow-xl flex flex-col">
+    <div ref={cardRef} className="relative w-full h-full rounded-2xl overflow-hidden bg-card border border-border shadow-xl flex flex-col">
       {/* Photo zone */}
       <div
         className="relative bg-muted overflow-hidden"
@@ -306,7 +306,7 @@ export default function DiscoveryCard({
 
       {/* Venue info area — tappable to open details */}
       <div
-        className="px-4 py-3 cursor-pointer active:bg-accent/50 transition-colors"
+        className="px-4 py-3 flex-1 cursor-pointer active:bg-accent/50 transition-colors"
         onClick={handleBodyTap}
       >
         <h2 className="text-lg font-bold text-foreground truncate">{(venue?.name || '').split('|')[0].trim()}</h2>
