@@ -352,7 +352,7 @@ export default function Home() {
 
           <div
             className={`flex-1 flex items-center justify-center px-4 ${isMobile ? 'pb-20' : ''}`}
-            style={{ '--deck-height': isMobile ? '85dvh' : 'clamp(500px, 78dvh, 800px)' }}
+            style={{ '--deck-height': isMobile ? '85dvh' : 'clamp(500px, calc(100dvh - 175px), 800px)' }}
           >
             <div className="w-full mx-auto">
               {feedLoading ? (
