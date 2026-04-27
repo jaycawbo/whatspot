@@ -2,9 +2,10 @@ import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import VenueCard from './VenueCard';
 import CorrectionBanner from '@/components/search/CorrectionBanner';
+import SearchSummary from './SearchSummary';
 import { useCorrectionInfo } from '@/hooks/useCorrectionInfo';
 
-export default function ResultsList({ results, isLoading, currentQuery, skeletonCount = 4 }) {
+export default function ResultsList({ results, isLoading, currentQuery, skeletonCount = 4, intentSummary }) {
   const { correctionInfo, dismiss } = useCorrectionInfo(currentQuery, results);
 
   const handleUndo = () => {
@@ -39,6 +40,7 @@ export default function ResultsList({ results, isLoading, currentQuery, skeleton
         onUndo={handleUndo}
         onDismiss={dismiss}
       />
+      {intentSummary && <SearchSummary summary={intentSummary} />}
       <AnimatePresence initial={false}>
         {results.map((venue, i) => (
           <motion.div

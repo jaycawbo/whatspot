@@ -58,6 +58,7 @@ export default function Home() {
   const [labelSheetVenue, setLabelSheetVenue] = useState(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const [intentSummary, setIntentSummary] = useState(null);
 
   const hasInitializedReserve = useRef(false);
   const hasRestoredSearchRef = useRef(false);
@@ -189,10 +190,26 @@ export default function Home() {
     [refetchDiscovery]
   );
 
+  // Read intent summary once results arrive
+  useEffect(() => {
+    if (!feedLoading && currentQuery) {
+      try {
+        const summary = sessionStorage.getItem('ws_intent_summary');
+        setIntentSummary(summary || null);
+      } catch {
+        setIntentSummary(null);
+      }
+    }
+  }, [feedLoading, currentQuery]);
+
   const handleClearSearch = useCallback(() => {
     dispatch({ type: 'SET_QUERY', payload: '' });
     setReserveVenues([]);
-    try { sessionStorage.removeItem('ws_last_search'); } catch {}
+    setIntentSummary(null);
+    try {
+      sessionStorage.removeItem('ws_last_search');
+      sessionStorage.removeItem('ws_intent_summary');
+    } catch {}
     refetchDiscovery();
   }, [dispatch, refetchDiscovery]);
 
@@ -329,6 +346,7 @@ export default function Home() {
               isLoading={feedLoading}
               currentQuery={currentQuery}
               skeletonCount={Math.max(2, Math.floor((window.innerHeight - 186) / 132))}
+              intentSummary={intentSummary}
             />
           </div>
           {/* `isolate` contains Leaflet's z-indexes within this stacking context */}

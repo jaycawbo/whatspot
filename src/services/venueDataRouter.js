@@ -22,6 +22,7 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { buildSearchContext } from '@/lib/buildSearchContext';
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -74,7 +75,7 @@ function rowToVenue(row) {
   };
 }
 
-function buildResponse(rows, correctionInfo = null) {
+function buildResponse(rows, correctionInfo = null, intentSummary = null) {
   const venues = rows.map(rowToVenue);
   return {
     results:         venues.slice(0, 12),
@@ -84,6 +85,7 @@ function buildResponse(rows, correctionInfo = null) {
     search_summary:  null,
     pagination:      { has_more: false },
     correction_info: correctionInfo,
+    intent_summary:  intentSummary,
   };
 }
 
@@ -122,20 +124,23 @@ function isWeeklyStale(row) {
  * @param {number} [params.lon]             - center longitude for bounding box
  * @param {number} [params.radiusKm]        - search radius in km (default 5)
  * @param {boolean} [params.bypassCorrection] - skip autocorrect for this call
+ * @param {string} [params.userId] - user id for building search context
  */
-export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, lat, lon, radiusKm = 5, locationName = '', bypassCorrection = false } = {}) {
+export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, lat, lon, radiusKm = 5, locationName = '', bypassCorrection = false, userId = null } = {}) {
   let qb = supabase.from('venues').select('*');
   let correctionInfo = null;
+  let intentSummary = null;
 
   if (query) {
-    // Attempt Gemini query refinement for better semantic keyword extraction + autocorrect.
+    // Attempt Gemini query refinement for better semantic keyword extraction + autocorrect + intent.
     // Falls back to simple keyword splitting if the edge function fails.
     let searchTerms = null;
     let searchQuery = query;
 
     try {
+      const userContext = await buildSearchContext(userId);
       const { data } = await supabase.functions.invoke('refine-query', {
-        body: { query, locationName, bypassCorrection },
+        body: { query, locationName, bypassCorrection, userContext },
       });
       if (Array.isArray(data?.keywords) && data.keywords.length > 0) {
         searchTerms = data.keywords;
@@ -147,6 +152,9 @@ export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, la
           rawQuery: query,
           correctionApplied: data.correction_applied === true && data.corrected_query !== query,
         };
+      }
+      if (data?.intent?.interpreted_summary) {
+        intentSummary = data.intent.interpreted_summary;
       }
     } catch {
       // Fall through to keyword splitting
@@ -210,7 +218,7 @@ export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, la
     });
   }
 
-  return buildResponse(rows, correctionInfo);
+  return buildResponse(rows, correctionInfo, intentSummary);
 }
 
 // ─── Main router entry point ──────────────────────────────────────────────────
@@ -235,6 +243,7 @@ export async function routeVenueRequest(params) {
       radiusKm:         params.radius_km,
       locationName:     params.location_name || '',
       bypassCorrection: params.bypassCorrection || false,
+      userId:           params.user_id || null,
     });
   }
 
