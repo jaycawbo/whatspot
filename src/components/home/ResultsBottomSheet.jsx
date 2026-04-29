@@ -40,7 +40,16 @@ function nearestSnapIdx(heightPx) {
   );
 }
 
-export default function ResultsBottomSheet({ results, isLoading, currentQuery, open }) {
+export default function ResultsBottomSheet({
+  results,
+  isLoading,
+  currentQuery,
+  open,
+  conversationalResponse,
+  refinementChips,
+  isLimitReached,
+  onChipTap,
+}) {
   const [snapIdx, setSnapIdx] = useState(DEFAULT_SNAP);
   const [liveHeight, setLiveHeight] = useState(null); // px while dragging; null at rest
   const [isDragging, setIsDragging] = useState(false);
@@ -158,6 +167,10 @@ export default function ResultsBottomSheet({ results, isLoading, currentQuery, o
           results={results}
           isLoading={isLoading}
           currentQuery={currentQuery}
+          conversationalResponse={conversationalResponse}
+          refinementChips={refinementChips}
+          isLimitReached={isLimitReached}
+          onChipTap={onChipTap}
         />
       </div>
     </div>
