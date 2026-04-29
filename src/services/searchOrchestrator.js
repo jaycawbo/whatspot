@@ -55,7 +55,7 @@ export async function runConversationalSearch({
       lon,
       radiusKm,
     });
-    venues = dbResponse.results ?? [];
+    venues = (dbResponse.results ?? []).filter(v => (v.rating ?? 0) >= 4.0);
   } catch {
     // Fall through to Places API
   }
@@ -77,7 +77,7 @@ export async function runConversationalSearch({
           session_context: [],
         },
       });
-      const fallbackVenues = data?.results ?? [];
+      const fallbackVenues = (data?.results ?? []).filter(v => (v.rating ?? 0) >= 4.0);
       const seen = new Set(venues.map(v => v.place_id));
       venues = [...venues, ...fallbackVenues.filter(v => !seen.has(v.place_id))];
     } catch { /* leave venues from DB only */ }
