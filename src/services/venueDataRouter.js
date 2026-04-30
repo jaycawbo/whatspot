@@ -22,6 +22,7 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { buildSearchContext } from '@/lib/buildSearchContext';
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -74,7 +75,7 @@ function rowToVenue(row) {
   };
 }
 
-function buildResponse(rows, correctionInfo = null) {
+function buildResponse(rows, correctionInfo = null, intentSummary = null) {
   const venues = rows.map(rowToVenue);
   return {
     results:         venues.slice(0, 12),
@@ -84,6 +85,7 @@ function buildResponse(rows, correctionInfo = null) {
     search_summary:  null,
     pagination:      { has_more: false },
     correction_info: correctionInfo,
+    intent_summary:  intentSummary,
   };
 }
 
@@ -122,34 +124,44 @@ function isWeeklyStale(row) {
  * @param {number} [params.lon]             - center longitude for bounding box
  * @param {number} [params.radiusKm]        - search radius in km (default 5)
  * @param {boolean} [params.bypassCorrection] - skip autocorrect for this call
+ * @param {string} [params.userId] - user id for building search context
  */
-export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, lat, lon, radiusKm = 5, locationName = '', bypassCorrection = false } = {}) {
+export async function queryVenuesFromDb({ query, keywords, venueTypes, priceLevel, areaOverride, excludeIds = [], limit = 22, lat, lon, radiusKm = 5, locationName = '', bypassCorrection = false, userId = null } = {}) {
   let qb = supabase.from('venues').select('*');
   let correctionInfo = null;
+  let intentSummary = null;
 
   if (query) {
-    // Attempt Gemini query refinement for better semantic keyword extraction + autocorrect.
-    // Falls back to simple keyword splitting if the edge function fails.
-    let searchTerms = null;
+    // When pre-parsed keywords are supplied (e.g. from searchOrchestrator), skip the
+    // refine-query round-trip — intent has already been parsed upstream.
+    let searchTerms = keywords?.length > 0 ? keywords : null;
     let searchQuery = query;
 
-    try {
-      const { data } = await supabase.functions.invoke('refine-query', {
-        body: { query, locationName, bypassCorrection },
-      });
-      if (Array.isArray(data?.keywords) && data.keywords.length > 0) {
-        searchTerms = data.keywords;
+    if (!searchTerms) {
+      // Attempt Gemini query refinement for better semantic keyword extraction + autocorrect + intent.
+      // Falls back to simple keyword splitting if the edge function fails.
+      try {
+        const userContext = await buildSearchContext(userId);
+        const { data } = await supabase.functions.invoke('refine-query', {
+          body: { query, locationName, bypassCorrection, userContext },
+        });
+        if (Array.isArray(data?.keywords) && data.keywords.length > 0) {
+          searchTerms = data.keywords;
+        }
+        if (data?.corrected_query) {
+          searchQuery = data.corrected_query;
+          correctionInfo = {
+            correctedQuery: data.corrected_query,
+            rawQuery: query,
+            correctionApplied: data.correction_applied === true && data.corrected_query !== query,
+          };
+        }
+        if (data?.intent?.interpreted_summary) {
+          intentSummary = data.intent.interpreted_summary;
+        }
+      } catch {
+        // Fall through to keyword splitting
       }
-      if (data?.corrected_query) {
-        searchQuery = data.corrected_query;
-        correctionInfo = {
-          correctedQuery: data.corrected_query,
-          rawQuery: query,
-          correctionApplied: data.correction_applied === true && data.corrected_query !== query,
-        };
-      }
-    } catch {
-      // Fall through to keyword splitting
     }
 
     if (!searchTerms) {
@@ -158,11 +170,11 @@ export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, la
         'a', 'an', 'the', 'and', 'or', 'in', 'at', 'to', 'of', 'for',
         'with', 'by', 'near', 'nearby', 'around', 'some', 'my', 'me',
       ]);
-      const keywords = searchQuery
+      const splitKeywords = searchQuery
         .toLowerCase()
         .split(/\s+/)
         .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
-      searchTerms = keywords.length > 0 ? keywords : [searchQuery];
+      searchTerms = splitKeywords.length > 0 ? splitKeywords : [searchQuery];
     }
 
     const conditions = searchTerms
@@ -180,6 +192,16 @@ export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, la
       .lte('lat', Math.min(lat + latBuf, 43.773))
       .gte('lng', lon - lngBuf)
       .lte('lng', lon + lngBuf);
+  }
+
+  if (venueTypes?.length > 0) {
+    qb = qb.contains('venue_types', venueTypes);
+  }
+  if (priceLevel != null) {
+    qb = qb.eq('price_level', priceLevel);
+  }
+  if (areaOverride) {
+    qb = qb.ilike('neighbourhood', `%${areaOverride}%`);
   }
 
   if (excludeIds.length > 0) {
@@ -210,7 +232,7 @@ export async function queryVenuesFromDb({ query, excludeIds = [], limit = 22, la
     });
   }
 
-  return buildResponse(rows, correctionInfo);
+  return buildResponse(rows, correctionInfo, intentSummary);
 }
 
 // ─── Main router entry point ──────────────────────────────────────────────────
@@ -235,6 +257,7 @@ export async function routeVenueRequest(params) {
       radiusKm:         params.radius_km,
       locationName:     params.location_name || '',
       bypassCorrection: params.bypassCorrection || false,
+      userId:           params.user_id || null,
     });
   }
 

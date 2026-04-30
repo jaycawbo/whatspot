@@ -464,6 +464,7 @@ Deno.serve(async (req) => {
       session_context = [],
       exclude_ids = [],
       criteria_pass,
+      intent,
     } = await req.json();
 
     // Build session context string for LLM prompts
@@ -1206,10 +1207,29 @@ Deno.serve(async (req) => {
     }
 
     // ─── STEP 4: Score + sort ───
+    // Map intent price_signal to numeric price levels for soft boost
+    const intentPriceLevels: Record<string, number[]> = {
+      budget: [0, 1],
+      mid: [2],
+      upscale: [3, 4],
+    };
+    const intentPriceTarget = intent?.price_signal ? intentPriceLevels[intent.price_signal] : null;
+
     const scoredVenues = streetFilteredVenues
       .map((venue: any) => {
         let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
         if (venue.unknownPrice) score *= 0.7; // Down-rank venues with unknown price when price filter is active
+
+        // Soft intent boost — never hard-filters, only nudges ranking
+        if (!isDiscoveryMode && intent) {
+          const priceNum = typeof venue.price_level === 'number'
+            ? venue.price_level
+            : { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 }[venue.price_level as string] ?? null;
+          if (intentPriceTarget && priceNum !== null && intentPriceTarget.includes(priceNum)) {
+            score *= 1.15;
+          }
+        }
+
         const display_weight = isDiscoveryMode ? score + (Math.random() * 0.3) : score;
         return { ...venue, score, display_weight };
       })

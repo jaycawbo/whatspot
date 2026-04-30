@@ -18,6 +18,7 @@ import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
 import { useGuestLimits } from '@/hooks/useGuestLimits';
 import { useAuth } from '@/lib/AuthContext';
 import { useVenueListMembership } from '@/hooks/useVenueListMembership';
+import { useSearchConversation } from '@/hooks/useSearchConversation';
 
 const normalizeId = (v) => (v.place_id || v.google_place_id || '').replace(/^places\//, '');
 
@@ -53,35 +54,48 @@ export default function Home() {
 
   const { showGate, closeGate, incrementSearch } = useGuestLimits();
   const listMembershipMap = useVenueListMembership();
+  const conversation = useSearchConversation();
 
   const [reserveVenues, setReserveVenues] = useState([]);
   const [labelSheetVenue, setLabelSheetVenue] = useState(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
+  const [convResults, setConvResults] = useState([]);
+  const [convResponse, setConvResponse] = useState('');
+  const [convChips, setConvChips] = useState([]);
+  const [convQuery, setConvQuery] = useState('');
 
   const hasInitializedReserve = useRef(false);
-  const hasRestoredSearchRef = useRef(false);
 
-  // Persist currentQuery for page-refresh restoration
+  // Restore conv state after back-navigation (runs once on mount)
   useEffect(() => {
-    if (currentQuery) {
-      try { sessionStorage.setItem('ws_last_search', currentQuery); } catch {}
-    }
-  }, [currentQuery]);
-
-  // Restore last search once feedLoading settles — fires after useDiscoveryFeed's
-  // async tab effect completes, ensuring our restore is the final state setter.
-  useEffect(() => {
-    if (feedLoading || hasRestoredSearchRef.current || currentQuery) return;
-    hasRestoredSearchRef.current = true;
     try {
-      const saved = sessionStorage.getItem('ws_last_search');
-      if (saved) {
-        restoreSearch(saved);
-        dispatch({ type: 'SET_QUERY', payload: saved });
+      const raw = sessionStorage.getItem('ws_conv_state');
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (saved.query) {
+        setConvResults(saved.results || []);
+        setConvResponse(saved.response || '');
+        setConvChips(saved.chips || []);
+        setConvQuery(saved.query);
+        dispatch({ type: 'SET_QUERY', payload: saved.query });
       }
     } catch {}
-  }, [feedLoading, currentQuery, restoreSearch, dispatch]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist conv state so back-navigation restores results
+  useEffect(() => {
+    if (!convQuery) return;
+    try {
+      sessionStorage.setItem('ws_conv_state', JSON.stringify({
+        query: convQuery,
+        results: convResults,
+        response: convResponse,
+        chips: convChips,
+      }));
+    } catch {}
+  }, [convQuery, convResults, convResponse, convChips]);
 
   // Post-save label microinteraction
   useEffect(() => {
@@ -144,33 +158,53 @@ export default function Home() {
   );
 
   const handleSearch = useCallback(
-    (queryText) => {
+    async (queryText) => {
       const nextQuery = queryText.trim();
       if (!nextQuery) return;
+      if (conversation.isLimitReached) return;
       if (incrementSearch()) return;
       dispatch({ type: 'SET_QUERY', payload: nextQuery });
       dispatch({ type: 'SET_CATEGORY', payload: null });
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: null });
       addSearchHistory(nextQuery);
-      searchFeed(nextQuery);
       setReserveVenues([]);
       logEvent('search', { search_query: nextQuery, neighborhood_context: state.locationName });
+      const coords = state.userLocation?.lat
+        ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
+        : null;
+      const result = await conversation.search(nextQuery, coords);
+      if (result) {
+        setConvResults(result.venues || []);
+        setConvResponse(result.conversational_response || '');
+        setConvChips(result.refinement_suggestions || []);
+        setConvQuery(nextQuery);
+      }
     },
-    [dispatch, addSearchHistory, searchFeed, incrementSearch, state.locationName]
+    [conversation, dispatch, addSearchHistory, incrementSearch, state.locationName, state.userLocation]
   );
 
   const handleSelectCategory = useCallback(
-    (category) => {
+    async (category) => {
+      if (conversation.isLimitReached) return;
       if (incrementSearch()) return;
       dispatch({ type: 'SET_QUERY', payload: category.prompt });
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: category.prompt });
       dispatch({ type: 'SET_CATEGORY', payload: category.label });
       addSearchHistory(category.prompt);
-      searchFeed(category.prompt);
       setReserveVenues([]);
       logEvent('search', { search_query: category.prompt, neighborhood_context: state.locationName });
+      const coords = state.userLocation?.lat
+        ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
+        : null;
+      const result = await conversation.search(category.prompt, coords);
+      if (result) {
+        setConvResults(result.venues || []);
+        setConvResponse(result.conversational_response || '');
+        setConvChips(result.refinement_suggestions || []);
+        setConvQuery(category.prompt);
+      }
     },
-    [dispatch, addSearchHistory, searchFeed, incrementSearch, state.locationName]
+    [conversation, dispatch, addSearchHistory, incrementSearch, state.locationName, state.userLocation]
   );
 
   const handleAppendChip = useCallback(
@@ -179,6 +213,24 @@ export default function Home() {
       dispatch({ type: 'SET_QUERY', payload: newQuery });
     },
     [state.query, state.tileBaseQuery, dispatch]
+  );
+
+  const handleChipTap = useCallback(
+    async (chipText) => {
+      if (conversation.isLimitReached) return;
+      dispatch({ type: 'SET_QUERY', payload: chipText });
+      const coords = state.userLocation?.lat
+        ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
+        : null;
+      const result = await conversation.search(chipText, coords);
+      if (result) {
+        setConvResults(result.venues || []);
+        setConvResponse(result.conversational_response || '');
+        setConvChips(result.refinement_suggestions || []);
+        setConvQuery(chipText);
+      }
+    },
+    [conversation, dispatch, state.userLocation]
   );
 
   const handleTabChange = useCallback(
@@ -192,9 +244,16 @@ export default function Home() {
   const handleClearSearch = useCallback(() => {
     dispatch({ type: 'SET_QUERY', payload: '' });
     setReserveVenues([]);
-    try { sessionStorage.removeItem('ws_last_search'); } catch {}
+    setConvResults([]);
+    setConvResponse('');
+    setConvChips([]);
+    setConvQuery('');
+    conversation.resetSession();
+    try {
+      sessionStorage.removeItem('ws_conv_state');
+    } catch {}
     refetchDiscovery();
-  }, [dispatch, refetchDiscovery]);
+  }, [dispatch, refetchDiscovery, conversation]);
 
   const handleLogoReset = useCallback(() => {
     setReserveVenues([]);
@@ -207,7 +266,7 @@ export default function Home() {
   // Pushes a sentinel history entry so the first popstate stays on this page
   // and clears search instead of navigating away.
   useEffect(() => {
-    if (!currentQuery) return;
+    if (!state.query) return;
     window.history.pushState({ wsSearchActive: true }, '');
     const onPopstate = (event) => {
       // If we're landing on the sentinel entry (returning from a venue page),
@@ -217,7 +276,7 @@ export default function Home() {
     };
     window.addEventListener('popstate', onPopstate);
     return () => window.removeEventListener('popstate', onPopstate);
-  }, [currentQuery, handleClearSearch]);
+  }, [state.query, handleClearSearch]);
 
   // Count non-default active filters for badge
   const activeFilterCount = useMemo(() => {
@@ -230,14 +289,14 @@ export default function Home() {
     return count;
   }, [state.filters]);
 
-  // Venues valid for map rendering
+  // Venues valid for map rendering — sourced from orchestrator in search mode
   const mappableVenues = useMemo(
-    () => feedVenues.filter(v => v.lat != null && (v.lon ?? v.lng) != null),
-    [feedVenues]
+    () => convResults.filter(v => v.lat != null && (v.lon ?? v.lng) != null),
+    [convResults]
   );
 
-  const isMobilePostSearch = isMobile && !!currentQuery;
-  const isDesktopPostSearch = !isMobile && !!currentQuery;
+  const isMobilePostSearch = isMobile && !!state.query;
+  const isDesktopPostSearch = !isMobile && !!state.query;
 
   return (
     <div className="bg-background flex flex-col" style={{ height: '100dvh', overflow: 'hidden' }}>
@@ -245,7 +304,7 @@ export default function Home() {
 
       {/* Permanent search row — fixed below nav */}
       <SearchRow
-        hasQuery={!!currentQuery}
+        hasQuery={!!state.query}
         query={state.query}
         onBackClick={handleClearSearch}
         onFilterClick={() => setFilterOpen(true)}
@@ -294,11 +353,11 @@ export default function Home() {
               `isolate` contains Leaflet's internal z-indexes (400-1000)
               so they cannot bleed above the search dialog (z-[60]). */}
           <div className="fixed inset-0 z-10 isolate">
-            <MapView results={mappableVenues} isLoading={feedLoading} />
+            <MapView results={mappableVenues} isLoading={conversation.isSearching} />
           </div>
 
           {/* Loading overlay: dims the map and shows cycling messages while results are fetching */}
-          {feedLoading && (
+          {conversation.isSearching && (
             <div
               className="fixed inset-0 z-20 flex items-center justify-center"
               style={{ background: 'rgba(0,0,0,0.4)' }}
@@ -309,8 +368,13 @@ export default function Home() {
 
           <ResultsBottomSheet
             results={mappableVenues}
-            isLoading={feedLoading}
-            currentQuery={currentQuery}
+            isLoading={conversation.isSearching}
+            currentQuery={convQuery}
+            conversationalResponse={convResponse}
+            refinementChips={convChips}
+
+            isLimitReached={conversation.isLimitReached}
+            onChipTap={handleChipTap}
             open
           />
         </>
@@ -323,23 +387,28 @@ export default function Home() {
           style={{ marginTop: '110px', height: 'calc(100dvh - 110px)' }}
         >
           <div className="w-[40%] overflow-y-auto border-r border-border px-4 py-4 pb-4">
-            {feedLoading && <LoadingMessages />}
+            {conversation.isSearching && <LoadingMessages />}
             <ResultsList
               results={mappableVenues}
-              isLoading={feedLoading}
-              currentQuery={currentQuery}
+              isLoading={conversation.isSearching}
+              currentQuery={convQuery}
               skeletonCount={Math.max(2, Math.floor((window.innerHeight - 186) / 132))}
+              conversationalResponse={convResponse}
+              refinementChips={convChips}
+  
+              isLimitReached={conversation.isLimitReached}
+              onChipTap={handleChipTap}
             />
           </div>
           {/* `isolate` contains Leaflet's z-indexes within this stacking context */}
           <div className="w-[60%] isolate h-full relative">
-            <MapView results={mappableVenues} isLoading={feedLoading} />
+            <MapView results={mappableVenues} isLoading={conversation.isSearching} />
           </div>
         </div>
       )}
 
       {/* ── Feed / discovery mode (both breakpoints) ── */}
-      {!currentQuery && (
+      {!state.query && (
         <div
           className="flex flex-col flex-1 overflow-hidden"
           style={{ paddingTop: '120px' }}
