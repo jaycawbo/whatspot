@@ -83,6 +83,9 @@ export default function VenueCard({ venue, index, currentQuery }) {
       <div className="flex flex-col min-w-0 flex-1 justify-between py-0.5">
         <div>
           <h3 className="font-semibold text-sm text-foreground truncate">{(venue.name || '').split('|')[0].trim()}</h3>
+          {venue.why_recommended && (
+            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{venue.why_recommended}</p>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap mt-1.5">
           {venue.rating && (

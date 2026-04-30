@@ -1,11 +1,23 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import VenueCard from './VenueCard';
 import CorrectionBanner from '@/components/search/CorrectionBanner';
+import SearchSummary from './SearchSummary';
 import { useCorrectionInfo } from '@/hooks/useCorrectionInfo';
 
-export default function ResultsList({ results, isLoading, currentQuery, skeletonCount = 4 }) {
+export default function ResultsList({
+  results,
+  isLoading,
+  currentQuery,
+  skeletonCount = 4,
+  intentSummary,
+  conversationalResponse,
+  refinementChips,
+  isLimitReached,
+  onChipTap,
+}) {
   const { correctionInfo, dismiss } = useCorrectionInfo(currentQuery, results);
+  const [convExpanded, setConvExpanded] = useState(false);
 
   const handleUndo = () => {
     try { sessionStorage.setItem('ws_bypass_correction', 'true'); } catch {}
@@ -39,6 +51,31 @@ export default function ResultsList({ results, isLoading, currentQuery, skeleton
         onUndo={handleUndo}
         onDismiss={dismiss}
       />
+      {intentSummary && <SearchSummary summary={intentSummary} />}
+      {conversationalResponse && (
+        <p
+          className={`text-sm text-foreground cursor-pointer select-none ${convExpanded ? '' : 'line-clamp-2'}`}
+          onClick={() => setConvExpanded(e => !e)}
+        >
+          {conversationalResponse}
+        </p>
+      )}
+      {isLimitReached && (
+        <p className="text-xs text-muted-foreground text-center">Start a new search to keep exploring</p>
+      )}
+      {refinementChips?.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
+          {refinementChips.map((chip) => (
+            <button
+              key={chip}
+              onClick={() => onChipTap?.(chip)}
+              className="shrink-0 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors"
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
+      )}
       <AnimatePresence initial={false}>
         {results.map((venue, i) => (
           <motion.div
