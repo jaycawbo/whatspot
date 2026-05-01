@@ -1018,7 +1018,7 @@ Deno.serve(async (req) => {
       } else {
         googleResults = await googlePlacesBroadSearch(
           GOOGLE_KEY,
-          `${googleSearchQuery} in ${googleLocationContext}`,
+          googleLocationContext ? `${googleSearchQuery} in ${googleLocationContext}` : googleSearchQuery,
           lat, lon, admission.maxRadius, open_now, googlePriceLevels
         );
         console.log(`📊 Google returned ${googleResults.length} venues`);
@@ -1547,19 +1547,24 @@ Deno.serve(async (req) => {
         finalVenues.push(...backfill);
       }
 
-      // Separate overflow venues (>2km) from finalVenues
-      overflowVenues = finalVenues
-        .filter((v: any) => v.distance_km > 2.0)
-        .slice(0, 3)
-        .map((v: any) => ({
-          name: v.name,
-          address: v.address,
-          distance_km: v.distance_km,
-          rating: v.rating,
-          cuisine_type: v.cuisine_type,
-          descriptors: v.descriptors || [],
-        }));
-      finalVenues = finalVenues.filter((v: any) => !(v.distance_km > 2.0));
+      // Overflow: only in search mode, only when radius is narrow (≤5km).
+      // Wide-radius searches (user explicitly set >5km) should return all results
+      // in `results` — moving them to overflow would leave an empty response.
+      const searchRadiusKm = radius_km || 5;
+      if (searchRadiusKm <= 5) {
+        overflowVenues = finalVenues
+          .filter((v: any) => v.distance_km > 2.0)
+          .slice(0, 3)
+          .map((v: any) => ({
+            name: v.name,
+            address: v.address,
+            distance_km: v.distance_km,
+            rating: v.rating,
+            cuisine_type: v.cuisine_type,
+            descriptors: v.descriptors || [],
+          }));
+        finalVenues = finalVenues.filter((v: any) => !(v.distance_km > 2.0));
+      }
 
       search_summary = comprehensiveResult.summary || null;
       suggested_chips = comprehensiveResult.chips || [];

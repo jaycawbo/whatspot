@@ -15,14 +15,6 @@ function toPriceLevelString(level) {
 // Maps FilterDialog dollar-sign strings to DB numeric price levels
 const PRICE_STR_TO_NUM = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
 
-// Converts a Google Places venue type to a human-readable label for query augmentation.
-// e.g. 'middle_eastern_restaurant' → 'Middle Eastern'
-function cuisineTypeToLabel(type) {
-  return type
-    .replace(/_restaurant$/, '')
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 export async function runConversationalSearch({
   rawQuery,
@@ -95,33 +87,31 @@ export async function runConversationalSearch({
   }
 
   // Step 2b: Places API fallback when DB results are below threshold.
-  // When a cuisine filter is active, augment the Places query so Google returns
-  // the right venue category instead of ignoring the filter entirely.
+  // Pass cuisine_types directly — the recommend function handles it natively,
+  // which is more reliable than query string augmentation.
   if (venues.length < DB_THRESHOLD) {
     try {
-      const cuisinePrefix = userFilters.cuisines?.length > 0
-        ? userFilters.cuisines.map(cuisineTypeToLabel).join(' ') + ' '
-        : '';
-      const placesQuery = cuisinePrefix ? `${cuisinePrefix}restaurant` : rawQuery;
       const placesPrice = userPriceLevels.length > 0
         ? userPriceLevels.map(toPriceLevelString).filter(Boolean)
         : (intent.priceLevel ? [toPriceLevelString(intent.priceLevel)] : undefined);
       const { data } = await supabase.functions.invoke('recommend', {
         body: {
           mode: 'query',
-          query: placesQuery,
+          query: rawQuery,
           lat,
           lon,
           radius_km: effectiveRadius,
+          location_name: '',
           open_now: effectiveOpenNow || undefined,
           price_levels: placesPrice,
+          cuisine_types: userFilters.cuisines?.length > 0 ? userFilters.cuisines : undefined,
           exclude_ids: venues.map(v => v.place_id),
           intent: { vibe: intent.vibeKeywords },
           session_context: [],
         },
       });
       const fallbackVenues = (data?.results ?? []).filter(v => (v.rating ?? 0) >= 4.0);
-      // Apply cuisine + price filters to Places results as well
+      // Apply cuisine + price filters to fallback results as a safety net
       const filteredFallback = fallbackVenues.filter(v => {
         if (userFilters.cuisines?.length > 0 && !(v.types ?? []).some(t => userFilters.cuisines.includes(t))) return false;
         if (userPriceLevels.length > 0 && !(v.price_level != null && userPriceLevels.includes(Number(v.price_level)))) return false;
