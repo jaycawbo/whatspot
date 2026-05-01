@@ -172,7 +172,7 @@ export default function Home() {
       const coords = state.userLocation?.lat
         ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
         : null;
-      const result = await conversation.search(nextQuery, coords);
+      const result = await conversation.search(nextQuery, coords, state.filters);
       if (result) {
         setConvResults(result.venues || []);
         setConvResponse(result.conversational_response || '');
@@ -180,7 +180,7 @@ export default function Home() {
         setConvQuery(nextQuery);
       }
     },
-    [conversation, dispatch, addSearchHistory, incrementSearch, state.locationName, state.userLocation]
+    [conversation, dispatch, addSearchHistory, incrementSearch, state.locationName, state.userLocation, state.filters]
   );
 
   const handleSelectCategory = useCallback(
@@ -196,7 +196,7 @@ export default function Home() {
       const coords = state.userLocation?.lat
         ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
         : null;
-      const result = await conversation.search(category.prompt, coords);
+      const result = await conversation.search(category.prompt, coords, state.filters);
       if (result) {
         setConvResults(result.venues || []);
         setConvResponse(result.conversational_response || '');
@@ -204,7 +204,7 @@ export default function Home() {
         setConvQuery(category.prompt);
       }
     },
-    [conversation, dispatch, addSearchHistory, incrementSearch, state.locationName, state.userLocation]
+    [conversation, dispatch, addSearchHistory, incrementSearch, state.locationName, state.userLocation, state.filters]
   );
 
   const handleAppendChip = useCallback(
@@ -222,7 +222,7 @@ export default function Home() {
       const coords = state.userLocation?.lat
         ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
         : null;
-      const result = await conversation.search(chipText, coords);
+      const result = await conversation.search(chipText, coords, state.filters);
       if (result) {
         setConvResults(result.venues || []);
         setConvResponse(result.conversational_response || '');
@@ -230,7 +230,7 @@ export default function Home() {
         setConvQuery(chipText);
       }
     },
-    [conversation, dispatch, state.userLocation]
+    [conversation, dispatch, state.userLocation, state.filters]
   );
 
   const handleTabChange = useCallback(
@@ -322,7 +322,21 @@ export default function Home() {
         filters={state.filters}
         open={filterOpen}
         onOpenChange={setFilterOpen}
-        onFilterChange={(f) => dispatch({ type: 'SET_FILTERS', payload: f })}
+        onFilterChange={(f) => {
+          dispatch({ type: 'SET_FILTERS', payload: f });
+          if (state.query && !conversation.isSearching) {
+            const coords = state.userLocation?.lat
+              ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
+              : null;
+            conversation.searchWithFilters(state.query, coords, f).then((result) => {
+              if (result) {
+                setConvResults(result.venues || []);
+                setConvResponse(result.conversational_response || '');
+                setConvChips(result.refinement_suggestions || []);
+              }
+            });
+          }
+        }}
       />
       {labelSheetVenue && (
         <PostSaveLabelSheet
