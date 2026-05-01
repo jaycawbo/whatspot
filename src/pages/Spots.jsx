@@ -203,9 +203,9 @@ export default function Spots() {
       }
     }
 
-    // Price
+    // Price (normalise to number to guard against DB returning strings)
     if (filters.priceLevels.length > 0) {
-      result = result.filter((s) => filters.priceLevels.includes(s.price_level));
+      result = result.filter((s) => s.price_level != null && filters.priceLevels.includes(Number(s.price_level)));
     }
 
     // Cuisine
@@ -213,11 +213,12 @@ export default function Spots() {
       result = result.filter((s) => filters.cuisines.includes(s.category));
     }
 
-    // Distance (requires userLocation)
-    if (filters.maxDistanceKm !== null && userLoc?.lat && userLoc?.lon) {
+    // Distance (requires userLocation — handle both lon and lng field names)
+    const userLon = userLoc?.lon ?? userLoc?.lng;
+    if (filters.maxDistanceKm !== null && userLoc?.lat && userLon) {
       result = result.filter((s) => {
         if (!s.lat || !s.lng) return true; // keep if no coords
-        const dist = haversineKm(userLoc.lat, userLoc.lon, s.lat, s.lng);
+        const dist = haversineKm(userLoc.lat, userLon, s.lat, s.lng);
         return dist <= filters.maxDistanceKm;
       });
     }
