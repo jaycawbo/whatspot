@@ -3,8 +3,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Services we care about — matched against Google Cloud billing service descriptions
-const TRACKED_SERVICES = ['Maps Platform', 'Vertex AI', 'Gemini'];
+const MONTHLY_BUDGET_USD = 20;
+
+const SERVICE_FILTERS: Record<string, string> = {
+  'Maps Platform': 'Google Maps Platform',
+  'Vertex AI': 'Vertex AI',
+  'Gemini': 'Gemini',
+};
 
 async function getAccessToken(serviceAccount: Record<string, string>): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
@@ -23,7 +28,6 @@ async function getAccessToken(serviceAccount: Record<string, string>): Promise<s
 
   const signingInput = `${encode(header)}.${encode(payload)}`;
 
-  // Import the private key from the service account PEM
   const pemContents = serviceAccount.private_key
     .replace(/-----BEGIN PRIVATE KEY-----/, '')
     .replace(/-----END PRIVATE KEY-----/, '')
@@ -50,8 +54,10 @@ async function getAccessToken(serviceAccount: Record<string, string>): Promise<s
     .replace(/\//g, '_')
     .replace(/=+$/, '');
 
-  const jwt = `${signingInput}.${signatureB64}`;
+  return `${signingInput}.${signatureB64}`;
+}
 
+async function exchangeJwtForToken(jwt: string): Promise<string> {
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -84,7 +90,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    const serviceAccount = JSON.parse(credentialsRaw);
     const billingAccountId = Deno.env.get('GOOGLE_BILLING_ACCOUNT_ID');
     if (!billingAccountId) {
       return new Response(JSON.stringify({ error: 'GOOGLE_BILLING_ACCOUNT_ID not configured' }), {
@@ -93,97 +98,89 @@ Deno.serve(async (req) => {
       });
     }
 
-    const accessToken = await getAccessToken(serviceAccount);
+    const serviceAccount = JSON.parse(credentialsRaw);
+    const jwt = await getAccessToken(serviceAccount);
+    const accessToken = await exchangeJwtForToken(jwt);
 
-    // Build month-to-date date range
     const now = new Date();
-    const startDate = { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1, day: 1 };
-    const endDate = { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1, day: now.getUTCDate() };
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth() + 1;
+    const day = now.getUTCDate();
+    const daysInMonth = new Date(year, month, 0).getDate();
 
-    const billingRes = await fetch(
-      `https://cloudbilling.googleapis.com/v1/billingAccounts/${billingAccountId}/skus`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
-    );
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-    // Use Cloud Billing Budget API isn't ideal here — use Cloud Billing catalog + cost data
-    // The correct API for spend data is the Cloud Billing API reports endpoint
-    const reportsRes = await fetch(
-      `https://cloudbilling.googleapis.com/v1beta/billingAccounts/${billingAccountId}:getSpendingInformation?` +
-        new URLSearchParams({
-          'filter.creditTypes': 'DISCOUNT',
-          'filter.services': 'maps-platform',
-        }),
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
-    );
+    // Fetch spend data from Cloud Billing API v1beta
+    const url = `https://cloudbilling.googleapis.com/v1beta/billingAccounts/${billingAccountId}/skus`;
+    const skusRes = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
 
-    // The Cloud Billing API for spend-by-service requires the Cloud Billing Data Export
-    // or the recommender API. The most straightforward read-only approach is the
-    // Cloud Billing Projects.getBillingInfo endpoint combined with the
-    // cloudbilling.googleapis.com/v1/services list + BigQuery export.
-    // Without BigQuery export enabled, we use the budgets API as a proxy.
-
-    const budgetsRes = await fetch(
-      `https://billingbudgets.googleapis.com/v1/billingAccounts/${billingAccountId}/budgets`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
-    );
-
-    if (!budgetsRes.ok) {
-      const err = await budgetsRes.text();
-      console.error('Billing API error:', budgetsRes.status, err);
-
-      // Fall back: return a structured response indicating billing API access works
-      // but budget data isn't available — surface the auth success at minimum
+    if (!skusRes.ok) {
+      const err = await skusRes.text();
+      console.error('Cloud Billing API error:', skusRes.status, err);
       return new Response(
         JSON.stringify({
-          status: 'auth_ok',
-          message: 'Service account authenticated successfully. No budget data returned — ensure the Billing Account Viewer role is granted and budgets exist.',
-          billing_account: billingAccountId,
-          period: {
-            start: `${startDate.year}-${String(startDate.month).padStart(2, '0')}-01`,
-            end: `${endDate.year}-${String(endDate.month).padStart(2, '0')}-${String(endDate.day).padStart(2, '0')}`,
-          },
-          services: [],
+          error: `Cloud Billing API error: ${skusRes.status}`,
+          detail: err,
         }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        { status: skusRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    const budgetsData = await budgetsRes.json();
-    const budgets: Array<Record<string, unknown>> = budgetsData.budgets ?? [];
+    const skusData = await skusRes.json();
+    const skus: Array<Record<string, unknown>> = skusData.skus ?? [];
 
-    // Map budget entries to tracked services
-    const services = budgets
-      .filter((b) => {
-        const displayName = String(b.displayName ?? '');
-        return TRACKED_SERVICES.some((s) => displayName.includes(s));
-      })
-      .map((b) => {
-        const amount = (b.budgetFilter as Record<string, unknown>) ?? {};
-        const spent = (b.amount as Record<string, unknown>) ?? {};
-        return {
-          service: b.displayName,
-          currency: ((spent.specifiedAmount as Record<string, unknown>)?.currencyCode as string) ?? 'USD',
-          budget_usd: (spent.specifiedAmount as Record<string, unknown>)?.units ?? null,
-          last_period_spend: (b.lastPeriodAmount as Record<string, unknown>) ?? null,
-        };
-      });
+    // Group SKUs by service and sum any cost data present
+    const serviceSpend: Record<string, number> = {};
+
+    for (const sku of skus) {
+      const serviceDisplay = String((sku.category as Record<string, unknown>)?.serviceDisplayName ?? '');
+      const matchedLabel = Object.keys(SERVICE_FILTERS).find((label) =>
+        serviceDisplay.includes(SERVICE_FILTERS[label]) || serviceDisplay.includes(label),
+      );
+      if (!matchedLabel) continue;
+
+      // Extract cost units if present (v1beta may include cost data per SKU)
+      const cost = (sku.cost as Record<string, unknown>);
+      const units = Number(cost?.units ?? 0);
+      const nanos = Number((cost as Record<string, unknown>)?.nanos ?? 0);
+      const totalUsd = units + nanos / 1e9;
+
+      serviceSpend[matchedLabel] = (serviceSpend[matchedLabel] ?? 0) + totalUsd;
+    }
+
+    // Build per-service rows with computed fields
+    const services = Object.entries(serviceSpend).map(([label, mtd]) => {
+      const dailyAvg = day > 0 ? mtd / day : 0;
+      const projected = dailyAvg * daysInMonth;
+      return {
+        service_name: label,
+        mtd_spend_usd: Number(mtd.toFixed(4)),
+        currency: 'USD',
+        budget_usd: MONTHLY_BUDGET_USD,
+        remaining_usd: Number((MONTHLY_BUDGET_USD - mtd).toFixed(4)),
+        days_elapsed: day,
+        daily_average_usd: Number(dailyAvg.toFixed(4)),
+        projected_month_end_usd: Number(projected.toFixed(4)),
+      };
+    });
+
+    const totalMtd = services.reduce((sum, s) => sum + s.mtd_spend_usd, 0);
 
     return new Response(
       JSON.stringify({
         status: 'ok',
         billing_account: billingAccountId,
-        period: {
-          start: `${startDate.year}-${String(startDate.month).padStart(2, '0')}-01`,
-          end: `${endDate.year}-${String(endDate.month).padStart(2, '0')}-${String(endDate.day).padStart(2, '0')}`,
-        },
+        period: { start: startDate, end: endDate },
+        budget_usd: MONTHLY_BUDGET_USD,
+        total_mtd_spend_usd: Number(totalMtd.toFixed(4)),
+        total_remaining_usd: Number((MONTHLY_BUDGET_USD - totalMtd).toFixed(4)),
+        days_elapsed: day,
+        days_in_month: daysInMonth,
         services,
-        raw_budget_count: budgets.length,
+        raw_sku_count: skus.length,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
