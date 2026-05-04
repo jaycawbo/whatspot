@@ -56,10 +56,10 @@ export async function runConversationalSearch({
   // Merge user-set filters with LLM-parsed intent. User selections take precedence.
   const userPriceLevels = (userFilters.priceLevels ?? []).map(p => PRICE_STR_TO_NUM[p]).filter(Boolean);
   const effectiveRadius = userFilters.radius != null ? userFilters.radius : (intent.radiusMetres ?? 5000) / 1000;
-  // openNow: only use the LLM's explicit signal — the filter default (true) caused 500s
-  // in the recommend function when passed unconditionally. User-set openNow is wired
-  // but only applied when the intent parser also confirms it.
-  const effectiveOpenNow = intent.requireOpenNow;
+  // openNow: merge LLM signal with user's explicit toggle. The default is now false in
+  // GlobalStateContext so this only activates when the user deliberately selects "open now"
+  // or the query clearly implies it (e.g. "open late").
+  const effectiveOpenNow = intent.requireOpenNow || userFilters.openNow === true;
   // Keep intent venueTypes separate from user cuisines to avoid Supabase AND-all semantics
   const dbPriceLevel = userPriceLevels.length > 0 ? null : intent.priceLevel;
 
@@ -121,12 +121,12 @@ export async function runConversationalSearch({
         },
       });
       const fallbackVenues = (data?.results ?? []).filter(v => (v.rating ?? 0) >= 4.0);
-      // Apply cuisine + price filters to Places results as well
-      const filteredFallback = fallbackVenues.filter(v => {
-        if (userFilters.cuisines?.length > 0 && !(v.types ?? []).some(t => userFilters.cuisines.includes(t))) return false;
-        if (userPriceLevels.length > 0 && !(v.price_level != null && userPriceLevels.includes(Number(v.price_level)))) return false;
-        return true;
-      });
+      // Cuisine is already embedded in the placesQuery sent to recommend, so we don't
+      // re-filter by type here — the edge function's venue types don't reliably include
+      // the specific cuisine type string. Only apply the explicit user price filter.
+      const filteredFallback = userPriceLevels.length > 0
+        ? fallbackVenues.filter(v => v.price_level != null && userPriceLevels.includes(Number(v.price_level)))
+        : fallbackVenues;
       const seen = new Set(venues.map(v => v.place_id));
       venues = [...venues, ...filteredFallback.filter(v => !seen.has(v.place_id))];
     } catch { /* leave venues from DB only */ }

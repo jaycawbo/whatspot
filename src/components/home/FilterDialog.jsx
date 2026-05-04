@@ -34,7 +34,7 @@ const CUISINE_TYPES = [
 ];
 
 const DEFAULT_FILTERS = {
-  openNow: true,
+  openNow: false,
   priceLevels: [],
   cuisines: [],
   radius: 5,
