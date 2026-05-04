@@ -223,6 +223,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       .gte('review_count', 50)
       .order('trending_score', { ascending: false })
       .limit(30);
+<<<<<<< HEAD
   } else if (tab === 'walkin') {
     let walkinQuery = supabase
       .from('venues')

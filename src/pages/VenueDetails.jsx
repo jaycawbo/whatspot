@@ -49,6 +49,7 @@ export default function VenueDetails() {
   const [walkinLoading, setWalkinLoading] = useState(true);
   const [walkinReported, setWalkinReported] = useState(false);
 
+
   // Images: from nav state (image_urls) or single photo_url, or fetched
   const images = venue.image_urls?.length
     ? venue.image_urls
@@ -136,6 +137,7 @@ export default function VenueDetails() {
     setWalkinReported(true);
     try { sessionStorage.setItem(`walkin_reported_${placeId}`, 'true'); } catch {}
   };
+
 
   // Intersection Observer for AI insights lazy load
   useEffect(() => {
@@ -293,6 +295,7 @@ export default function VenueDetails() {
             </CardContent>
           </Card>
         ) : null}
+
 
         {/* Contact & hours — progressive load */}
         <div className="space-y-2">
