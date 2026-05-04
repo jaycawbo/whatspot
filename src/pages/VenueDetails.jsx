@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import HeartButton from '@/components/spots/HeartButton';
+import { getAnonId } from '@/lib/identity';
 import VenueImageCarousel from '@/components/venue/VenueImageCarousel';
 import { supabase } from '@/integrations/supabase/client';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
@@ -43,6 +44,10 @@ export default function VenueDetails() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiFetched, setAiFetched] = useState(false);
   const aiTriggerRef = useRef(null);
+
+  const [walkinScore, setWalkinScore] = useState(null);
+  const [walkinLoading, setWalkinLoading] = useState(true);
+  const [walkinReported, setWalkinReported] = useState(false);
 
   // Images: from nav state (image_urls) or single photo_url, or fetched
   const images = venue.image_urls?.length
@@ -103,6 +108,34 @@ export default function VenueDetails() {
 
     fetchDetails();
   }, [placeId]);
+
+  // Walk-in score fetch + already-reported check
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem(`walkin_reported_${placeId}`) === 'true') setWalkinReported(true);
+    } catch {}
+    if (!placeId) { setWalkinLoading(false); return; }
+    supabase.functions.invoke('get-walkin-score', { body: { placeId } })
+      .then(({ data, error }) => {
+        if (!error && data?.score != null) setWalkinScore(data);
+      })
+      .catch(() => {})
+      .finally(() => setWalkinLoading(false));
+  }, [placeId]);
+
+  const handleWalkinReport = async (signalType) => {
+    try {
+      await supabase.from('walkin_signals').insert({
+        venue_id: placeId,
+        signal_type: signalType,
+        anonymous_id: getAnonId(),
+      });
+    } catch (err) {
+      console.error('Failed to submit walkin signal:', err);
+    }
+    setWalkinReported(true);
+    try { sessionStorage.setItem(`walkin_reported_${placeId}`, 'true'); } catch {}
+  };
 
   // Intersection Observer for AI insights lazy load
   useEffect(() => {
@@ -215,6 +248,51 @@ export default function VenueDetails() {
             ))}
           </div>
         )}
+
+        {/* Walk-In Friendly */}
+        {walkinLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-36" />
+            <Skeleton className="h-2 w-full rounded-full" />
+            <Skeleton className="h-4 w-40" />
+          </div>
+        ) : walkinScore ? (
+          <Card>
+            <CardContent className="p-3 space-y-2">
+              <p className="text-xs font-semibold text-foreground">🚶 Walk-In Friendly</p>
+              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                <div
+                  className="h-2 rounded-full transition-all"
+                  style={{
+                    width: `${walkinScore.score}%`,
+                    background: walkinScore.score >= 70 ? '#22c55e' : walkinScore.score >= 40 ? '#f59e0b' : '#ef4444',
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-foreground">{walkinScore.label}</span>
+                <span className="text-xs text-muted-foreground">{walkinScore.score} / 100</span>
+              </div>
+              {walkinScore.signal_count > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Based on {walkinScore.signal_count} recent report{walkinScore.signal_count !== 1 ? 's' : ''}
+                </p>
+              )}
+              {walkinReported ? (
+                <p className="text-xs text-muted-foreground text-center pt-1">Thanks for the report</p>
+              ) : (
+                <div className="flex gap-2 pt-1">
+                  <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={() => handleWalkinReport('got_in')}>
+                    Got in ✓
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={() => handleWalkinReport('turned_away')}>
+                    Turned away ✗
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
 
         {/* Contact & hours — progressive load */}
         <div className="space-y-2">

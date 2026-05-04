@@ -7,6 +7,7 @@ const TABS = [
   { key: 'for_you', label: 'For You' },
   { key: 'new',     label: 'New'     },
   { key: 'trending', label: 'Trending' },
+  { key: 'walkin',  label: 'Walk-In Friendly' },
   { key: 'popular', label: 'Popular'  },
 ];
 
