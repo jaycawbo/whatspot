@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { GlobalStateProvider } from '@/context/GlobalStateContext';
 import VenueDetails from '@/pages/VenueDetails';
 import EnrichmentDashboard from '@/pages/EnrichmentDashboard';
+import Credits from '@/pages/Credits';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -37,6 +38,7 @@ const AuthenticatedApp = () => {
       } />
       <Route path="/venue/:placeId" element={<VenueDetails />} />
       <Route path="/enrich" element={<EnrichmentDashboard />} />
+      <Route path="/credits" element={<Credits />} />
       {Object.entries(Pages).map(([path, Page]) => (
         <Route
           key={path}

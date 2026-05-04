@@ -59,6 +59,53 @@ function loadFeedCache() {
  */
 const PRICE_CHIP_TO_INT = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
 
+const WALKIN_BAR_TYPES = new Set(['bar', 'pub', 'cocktail_bar', 'wine_bar', 'brewery', 'tavern']);
+
+function getTorontoHourAndDay() {
+  const now = new Date();
+  const dayStr = now.toLocaleDateString('en-US', { timeZone: 'America/Toronto', weekday: 'short' });
+  const hourStr = now.toLocaleTimeString('en-US', { timeZone: 'America/Toronto', hour: '2-digit', hour12: false });
+  const weekdayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  let hour = parseInt(hourStr.split(':')[0], 10);
+  if (hour === 24) hour = 0;
+  return { hour, day: weekdayMap[dayStr] ?? 1 };
+}
+
+function computeInlineWalkinScore(venue) {
+  const { hour, day } = getTorontoHourAndDay();
+  const isWeekday = day >= 1 && day <= 4;
+  const isWeekend = day === 5 || day === 6;
+  let timeScore;
+  if (isWeekday) {
+    if (hour >= 11 && hour <= 14) timeScore = 27;
+    else if (hour >= 17 && hour <= 19) timeScore = 25;
+    else if (hour >= 21) timeScore = 15;
+    else timeScore = 18;
+  } else if (isWeekend) {
+    if (hour >= 11 && hour <= 14) timeScore = 22;
+    else if (hour >= 18 && hour <= 21) timeScore = 5;
+    else if (hour >= 22) timeScore = 12;
+    else timeScore = 10;
+  } else {
+    if (hour >= 10 && hour <= 14) timeScore = 20;
+    else if (hour >= 17 && hour <= 20) timeScore = 14;
+    else timeScore = 12;
+  }
+  const pl = venue.price_level;
+  const priceScore = pl === 1 ? 8 : pl === 2 ? 10 : pl === 3 ? 7 : pl === 4 ? 4 : 6;
+  const rc = venue.review_count ?? 0;
+  const seatScore = rc < 100 ? 5 : rc < 300 ? 12 : rc < 700 ? 18 : 20;
+  const types = venue.types ?? [];
+  const typeModifier = types.some((t) => WALKIN_BAR_TYPES.has(t)) ? 10
+    : (types.includes('fine_dining') || types.includes('fine_dining_restaurant')) ? -15
+    : 0;
+  const primaryType = types[0] ?? '';
+  const isRestaurant = primaryType.endsWith('_restaurant') || primaryType === 'restaurant';
+  const isBar = types.some((t) => WALKIN_BAR_TYPES.has(t));
+  const restaurantPeakPenalty = (isRestaurant && !isBar && (day === 0 || day === 5 || day === 6) && hour >= 17 && hour <= 21) ? -10 : 0;
+  return Math.min(100, Math.max(0, 20 + timeScore + priceScore + seatScore + typeModifier + restaurantPeakPenalty));
+}
+
 
 /**
  * Compute a bounding box for a radius query without PostGIS.
@@ -176,6 +223,49 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       .gte('review_count', 50)
       .order('trending_score', { ascending: false })
       .limit(30);
+<<<<<<< HEAD
+  } else if (tab === 'walkin') {
+    let walkinQuery = supabase
+      .from('venues')
+      .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, descriptors')
+      .eq('is_chain', false)
+      .gte('rating', 3.5)
+      .gte('review_count', 50)
+      .order('review_count', { ascending: false })
+      .limit(60);
+    if (filters?.priceLevels?.length) {
+      const ints = filters.priceLevels.map((p) => PRICE_CHIP_TO_INT[p]).filter(Boolean);
+      if (ints.length) walkinQuery = walkinQuery.in('price_level', ints);
+    }
+    const { data: walkinData, error: walkinError } = await walkinQuery;
+    if (walkinError) {
+      console.error('[TabFeed] Walkin query error:', walkinError);
+      return { venues: [], isEmpty: true };
+    }
+    const walkinSkipSet = new Set(skippedIds || []);
+    const scored = (walkinData || [])
+      .filter((v) => !walkinSkipSet.has((v.google_place_id || '').replace(/^places\//, '')))
+      .map((v) => {
+        const normalised = {
+          google_place_id: v.google_place_id,
+          place_id: v.google_place_id,
+          name: v.name,
+          address: v.address,
+          lat: v.lat,
+          lon: v.lng,
+          rating: v.rating,
+          review_count: v.review_count,
+          price_level: v.price_level,
+          types: v.venue_types || [],
+          image_urls: v.photo_urls || [],
+          descriptors: v.descriptors || [],
+        };
+        return { ...normalised, _walkinScore: computeInlineWalkinScore(normalised) };
+      })
+      .sort((a, b) => b._walkinScore - a._walkinScore)
+      .slice(0, 20);
+    console.log('[TabFeed] Walkin: scored', scored.length, 'venues, top score:', scored[0]?._walkinScore);
+    return { venues: scored, isEmpty: scored.length === 0 };
   }
 
   const { data, error } = await query;
