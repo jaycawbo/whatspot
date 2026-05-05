@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import HeartButton from '@/components/spots/HeartButton';
 import { logEvent } from '@/lib/logEvent';
 import BeenHereButton from '@/components/ui/BeenHereButton';
 import RatingDialog from '@/components/discovery/RatingDialog';
@@ -75,9 +74,6 @@ export default function VenueCard({ venue, index, currentQuery }) {
             rating={beenHereRating}
             onClick={() => setRatingSheetOpen(true)}
           />
-        </div>
-        <div className="absolute bottom-1 right-1">
-          <HeartButton venue={venue} size="sm" />
         </div>
       </div>
       <div className="flex flex-col min-w-0 flex-1 justify-between py-0.5">
