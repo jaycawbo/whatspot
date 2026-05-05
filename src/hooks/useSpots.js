@@ -9,7 +9,7 @@ const LABEL_TO_INTERACTION = {
   'Interested':      { interaction_type: 'interested',    rating: null },
   'Not Interested':  { interaction_type: 'not_interested', rating: null },
   "Didn't Like It":  { interaction_type: 'rated',          rating: 'disliked' },
-  'Favourites':      { interaction_type: 'rated',          rating: 'liked' },
+  'Favourites':      { interaction_type: 'rated',          rating: 'loved' },
   'Been To':         { interaction_type: 'rated',          rating: 'liked' },
 };
 
@@ -17,7 +17,7 @@ const LABEL_TO_INTERACTION = {
 function interactionToLabel(interaction_type, rating) {
   if (interaction_type === 'rated') {
     if (rating === 'loved')    return 'Favourites';
-    if (rating === 'liked')    return 'Favourites';   // liked and loved both → Favourites
+    if (rating === 'liked')    return 'Been To';
     if (rating === 'disliked') return "Didn't Like It";
   }
   if (interaction_type === 'interested')    return 'Interested';
@@ -58,17 +58,21 @@ export function useSpots() {
         (venueRows || []).map((v) => [v.google_place_id, v])
       );
 
-      return interactions.map((row) => ({
-        ...(venueMap[row.venue_id] || {}),
-        favoriteId: row.id,
-        labels: [interactionToLabel(row.interaction_type, row.rating)],
-        interactionType: row.interaction_type,
-        rating: row.rating,
-        notes: row.notes || null,
-        createdAt: row.created_at,
-        venueId: row.venue_id,
-        google_place_id: row.venue_id,
-      }));
+      return interactions.map((row) => {
+        const venue = venueMap[row.venue_id] || {};
+        return {
+          ...venue,
+          favoriteId: row.id,
+          labels: [interactionToLabel(row.interaction_type, row.rating)],
+          interactionType: row.interaction_type,
+          rating: row.rating,
+          google_rating: venue.rating ?? null,
+          notes: row.notes || null,
+          createdAt: row.created_at,
+          venueId: row.venue_id,
+          google_place_id: row.venue_id,
+        };
+      });
     },
     enabled: !!user,
     staleTime: 30_000,
