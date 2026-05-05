@@ -49,7 +49,8 @@ export function createPillMarker(venue, { spotsIds, favIds } = {}) {
   const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
   const iconKey = getVenueIconKey(venue);
   const iconSvg = ICON_SVGS[iconKey] || ICON_SVGS.food;
-  const rating = venue.rating != null ? Number(venue.rating).toFixed(1) : '—';
+  const googleRating = venue.google_rating ?? venue.rating;
+  const rating = googleRating != null && Number.isFinite(Number(googleRating)) ? Number(googleRating).toFixed(1) : '—';
   const bgColor = getPillColor(placeId, spotsIds, favIds);
 
   const html = `
