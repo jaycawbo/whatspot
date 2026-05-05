@@ -242,7 +242,7 @@ export default function Home() {
   );
 
   const handleClearSearch = useCallback(() => {
-    dispatch({ type: 'SET_QUERY', payload: '' });
+    dispatch({ type: 'CLEAR_SEARCH' });
     setReserveVenues([]);
     setConvResults([]);
     setConvResponse('');
@@ -256,11 +256,12 @@ export default function Home() {
   }, [dispatch, refetchDiscovery, conversation]);
 
   const handleLogoReset = useCallback(() => {
+    dispatch({ type: 'CLEAR_SEARCH' });
     setReserveVenues([]);
     hasInitializedReserve.current = false;
     try { sessionStorage.removeItem('ws_last_search'); } catch {}
     refetchDiscovery();
-  }, [refetchDiscovery]);
+  }, [dispatch, refetchDiscovery]);
 
   // Intercept device back button / gesture while search is active.
   // Pushes a sentinel history entry so the first popstate stays on this page
@@ -282,7 +283,7 @@ export default function Home() {
   const activeFilterCount = useMemo(() => {
     const f = state.filters;
     let count = 0;
-    if (!f.openNow) count++;
+    if (f.openNow) count++;
     if (f.priceLevels?.length) count += f.priceLevels.length;
     if (f.cuisines?.length) count += f.cuisines.length;
     if (f.radius && f.radius !== 5) count++;

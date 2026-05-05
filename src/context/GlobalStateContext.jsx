@@ -29,6 +29,14 @@ function getInitialState() {
 
   const history = JSON.parse(localStorage.getItem('whatspot_search_history') || '[]');
 
+  let filters = initialFilters;
+  try {
+    const savedFilters = sessionStorage.getItem('whatspot_filters');
+    if (savedFilters) filters = { ...initialFilters, ...JSON.parse(savedFilters) };
+  } catch {
+    // malformed — use defaults
+  }
+
   return {
     mode: 'pre-search',
     query: '',
@@ -40,7 +48,7 @@ function getInitialState() {
     view: 'list',
     userLocation: location,
     locationName,
-    filters: initialFilters,
+    filters,
     feedTab: 'for_you',
     anonymousId,
     searchHistory: history,
@@ -148,6 +156,7 @@ function reducer(state, action) {
         gated: false,
         isLoading: false,
         isQuerying: false,
+        filters: initialFilters,
       };
     default:
       return state;
@@ -162,6 +171,13 @@ export function GlobalStateProvider({ children }) {
     localStorage.setItem('whatspot_user_location', JSON.stringify(state.userLocation));
     localStorage.setItem('whatspot_location_name', state.locationName);
   }, [state.userLocation, state.locationName]);
+
+  // Persist active filters across hard refreshes; cleared on logo/back navigation
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('whatspot_filters', JSON.stringify(state.filters));
+    } catch {}
+  }, [state.filters]);
 
   return (
     <GlobalStateContext.Provider value={{ state, dispatch }}>

@@ -92,7 +92,7 @@ async function getSupabaseVenuesByType(expandedTypes: string[], lat: number, lon
 
   const { data, error } = await sb
     .from('venues')
-    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address')
+    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address, regular_opening_hours')
     .or(typeFilter)
     .or('business_status.eq.OPERATIONAL,business_status.is.null')
     .order('rating', { ascending: false })
@@ -219,8 +219,46 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function parsePeriods(periods: any[]): any[] {
+  return (periods || []).map((p: any) => ({
+    day: p.open?.day ?? 0,
+    open: `${String(p.open?.hour ?? 0).padStart(2, '0')}:${String(p.open?.minute ?? 0).padStart(2, '0')}`,
+    close: p.close
+      ? `${String(p.close.hour ?? 23).padStart(2, '0')}:${String(p.close.minute ?? 59).padStart(2, '0')}`
+      : '23:59',
+  }));
+}
+
+async function fetchVenueHoursFromPlaces(placeId: string, apiKey: string): Promise<any[] | null> {
+  try {
+    const res = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
+      headers: {
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'regularOpeningHours',
+      },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const hours = parsePeriods(data.regularOpeningHours?.periods ?? []);
+    if (hours.length > 0) {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const sb = createClient(supabaseUrl, supabaseKey);
+      try {
+        await sb.from('venues').update({
+          regular_opening_hours: hours,
+          hours_last_updated: new Date().toISOString(),
+        }).eq('google_place_id', placeId);
+      } catch { /* non-critical */ }
+    }
+    return hours.length > 0 ? hours : null;
+  } catch {
+    return null;
+  }
+}
+
 function isOpenNow(regularOpeningHours: any): boolean {
-  if (!regularOpeningHours || !Array.isArray(regularOpeningHours) || regularOpeningHours.length === 0) return true;
+  if (!regularOpeningHours || !Array.isArray(regularOpeningHours) || regularOpeningHours.length === 0) return false;
   const now = new Date();
   const day = now.getDay();
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -740,6 +778,45 @@ Deno.serve(async (req) => {
             return isOpenNow(v._regularOpeningHours);
           })
           .filter((v: any) => (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount);
+
+        // Places API fallback: attempt to recover venues excluded only due to missing hours data.
+        // Inert while Places API is disabled — fetchVenueHoursFromPlaces returns null on failure.
+        if (open_now && GOOGLE_KEY) {
+          const includedIds = new Set(filteredVenues.map((v: any) => v.place_id));
+          const missingHours = sbVenues
+            .filter((v: any) => hasFoodDrinkType(v.venue_types))
+            .filter((v: any) => !v.regular_opening_hours || (v.regular_opening_hours as any[]).length === 0)
+            .filter((v: any) => !includedIds.has(`places/${v.google_place_id}`))
+            .filter((v: any) => (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount)
+            .slice(0, 5);
+          if (missingHours.length > 0) {
+            const recovered = await Promise.all(missingHours.map(async (v: any) => {
+              const hours = await fetchVenueHoursFromPlaces(v.google_place_id, GOOGLE_KEY);
+              if (!hours || !isOpenNow(hours)) return null;
+              const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
+              const isRelaxedAdmission = (v.rating ?? 0) < SCORING.RATING_FLOOR || (v.review_count ?? 0) < SCORING.REVIEW_FLOOR;
+              return {
+                name: v.name,
+                address: v.address || '',
+                lat: v.lat,
+                lon: v.lng,
+                distance_km,
+                rating: v.rating,
+                review_count: v.review_count,
+                price_level: mapIntPriceLevel(v.price_level),
+                place_id: `places/${v.google_place_id}`,
+                category: (v.venue_types ?? []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+                cuisine_type: (v.venue_types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+                isRelaxedAdmission,
+                unknownPrice: false,
+                _rawTypes: v.venue_types ?? [],
+                _photoUrls: v.photo_urls ?? [],
+                _regularOpeningHours: hours,
+              };
+            }));
+            filteredVenues = [...filteredVenues, ...recovered.filter(Boolean)];
+          }
+        }
       } else {
         console.warn('⚠️ Supabase coverage insufficient for area — falling back to Google');
         googleCallCap = 3;
@@ -844,8 +921,9 @@ Deno.serve(async (req) => {
         (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount
       );
 
-      // Explicit filter: serve with 1+ results. Text-derived: require 5+ to ensure relevance.
-      const threshold = Array.isArray(cuisine_types) && cuisine_types.length > 0 ? 1 : 5;
+      // Explicit filter: serve with 1+ results. Text-derived: require 5+ when Google is available
+      // to ensure relevance; drop to 1 when Google is disabled so Supabase results always surface.
+      const threshold = (Array.isArray(cuisine_types) && cuisine_types.length > 0) || !GOOGLE_KEY ? 1 : 5;
       if (sbAdmitted.length >= threshold) {
         servedFromSupabase = true;
         filteredVenues = sbAdmitted
@@ -941,7 +1019,10 @@ Deno.serve(async (req) => {
     }
 
     if (!servedFromSupabase) {
-    if (!GOOGLE_KEY) throw new Error('GOOGLE_PLACES_API_KEY not configured');
+    if (!GOOGLE_KEY) {
+      console.warn('⚠️ Google Places API key not configured — no fallback available, returning empty results');
+      throw new Error('GOOGLE_PLACES_API_KEY not configured');
+    }
     if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
     // ─── STEP 2: Google Places broad search ───
     const reversePriceLevelMap: Record<string, string[]> = {
@@ -1546,20 +1627,6 @@ Deno.serve(async (req) => {
           .map((v: any) => ({ ...v, descriptors: [], reasoning_explanation: '' }));
         finalVenues.push(...backfill);
       }
-
-      // Separate overflow venues (>2km) from finalVenues
-      overflowVenues = finalVenues
-        .filter((v: any) => v.distance_km > 2.0)
-        .slice(0, 3)
-        .map((v: any) => ({
-          name: v.name,
-          address: v.address,
-          distance_km: v.distance_km,
-          rating: v.rating,
-          cuisine_type: v.cuisine_type,
-          descriptors: v.descriptors || [],
-        }));
-      finalVenues = finalVenues.filter((v: any) => !(v.distance_km > 2.0));
 
       search_summary = comprehensiveResult.summary || null;
       suggested_chips = comprehensiveResult.chips || [];
