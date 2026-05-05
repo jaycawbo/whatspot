@@ -27,9 +27,16 @@ export default function Credits() {
 
   useEffect(() => { fetchBillingData(); }, [fetchBillingData]);
 
-  const totalMtd = data?.total_mtd_spend_usd ?? 0;
-  const budget = data?.budget_usd ?? 20;
-  const remaining = data?.total_remaining_usd ?? budget;
+  const BUDGET = 20;
+  const today = new Date();
+  const dayOfMonth = today.getDate();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+
+  const totalMtd = data?.services?.reduce((sum, s) => sum + (s.mtd_spend ?? 0), 0) ?? 0;
+  const budget = BUDGET;
+  const remaining = budget - totalMtd;
+  const dailyAvg = dayOfMonth > 0 ? totalMtd / dayOfMonth : 0;
+  const projected = dailyAvg * daysInMonth;
   const pctUsed = budget > 0 ? Math.min((totalMtd / budget) * 100, 100) : 0;
 
   return (
@@ -49,8 +56,7 @@ export default function Credits() {
       {lastRefreshed && (
         <p style={{ fontSize: '12px', color: '#888', marginBottom: '20px' }}>
           Last refreshed: {lastRefreshed.toLocaleTimeString()}
-          {data?.period && ` · Period: ${data.period.start} → ${data.period.end}`}
-          {data?.days_elapsed != null && ` · Day ${data.days_elapsed} of ${data.days_in_month}`}
+          {` · Day ${dayOfMonth} of ${daysInMonth}`}
         </p>
       )}
 
@@ -102,15 +108,15 @@ export default function Credits() {
               <tbody>
                 {data.services.map((svc, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '8px 8px 8px 0' }}>{svc.service_name}</td>
-                    <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(svc.mtd_spend_usd)}</td>
-                    <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(svc.daily_average_usd)}</td>
-                    <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(svc.projected_month_end_usd)}</td>
+                    <td style={{ padding: '8px 8px 8px 0' }}>{svc.service}</td>
+                    <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(svc.mtd_spend)}</td>
+                    <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(dayOfMonth > 0 ? svc.mtd_spend / dayOfMonth : 0)}</td>
+                    <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(dayOfMonth > 0 ? (svc.mtd_spend / dayOfMonth) * daysInMonth : 0)}</td>
                   </tr>
                 ))}
                 <tr style={{ borderTop: '2px solid #ddd', fontWeight: '600' }}>
                   <td style={{ padding: '8px 8px 8px 0' }}>Total</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(data.total_mtd_spend_usd)}</td>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>{fmt(totalMtd)}</td>
                   <td style={{ padding: '8px', textAlign: 'right' }}>—</td>
                   <td style={{ padding: '8px', textAlign: 'right' }}>—</td>
                 </tr>

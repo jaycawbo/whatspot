@@ -3,13 +3,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MONTHLY_BUDGET_USD = 20;
+const BQ_PROJECT = 'whatspot-2025';
+const BQ_TABLE   = 'whatspot-2025.whatspot_billing.gcp_billing_export_v1_013FE1_F23402_48EDDE';
 
-const SERVICE_FILTERS: Record<string, string> = {
-  'Maps Platform': 'Google Maps Platform',
-  'Vertex AI': 'Vertex AI',
-  'Gemini': 'Gemini',
-};
+const MTD_QUERY = `
+SELECT service.description, SUM(cost) as mtd_spend
+FROM \`${BQ_TABLE}\`
+WHERE invoice.month = FORMAT_DATE('%Y%m', CURRENT_DATE())
+GROUP BY service.description
+ORDER BY mtd_spend DESC
+`.trim();
 
 async function getAccessToken(serviceAccount: Record<string, string>): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
@@ -17,7 +20,7 @@ async function getAccessToken(serviceAccount: Record<string, string>): Promise<s
   const header = { alg: 'RS256', typ: 'JWT' };
   const payload = {
     iss: serviceAccount.client_email,
-    scope: 'https://www.googleapis.com/auth/cloud-billing.readonly',
+    scope: 'https://www.googleapis.com/auth/bigquery.readonly',
     aud: 'https://oauth2.googleapis.com/token',
     iat: now,
     exp: now + 3600,
@@ -90,98 +93,44 @@ Deno.serve(async (req) => {
       });
     }
 
-    const billingAccountId = Deno.env.get('GOOGLE_BILLING_ACCOUNT_ID');
-    if (!billingAccountId) {
-      return new Response(JSON.stringify({ error: 'GOOGLE_BILLING_ACCOUNT_ID not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     const serviceAccount = JSON.parse(credentialsRaw);
     const jwt = await getAccessToken(serviceAccount);
     const accessToken = await exchangeJwtForToken(jwt);
 
-    const now = new Date();
-    const year = now.getUTCFullYear();
-    const month = now.getUTCMonth() + 1;
-    const day = now.getUTCDate();
-    const daysInMonth = new Date(year, month, 0).getDate();
-
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-
-    // Fetch spend data from Cloud Billing API v1beta
-    const url = `https://cloudbilling.googleapis.com/v1beta/billingAccounts/${billingAccountId}/skus`;
-    const skusRes = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+    // Query BigQuery billing export
+    const bqUrl = `https://bigquery.googleapis.com/bigquery/v2/projects/${BQ_PROJECT}/queries`;
+    const bqRes = await fetch(bqUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: MTD_QUERY,
+        useLegacySql: false,
+        timeoutMs: 30000,
+      }),
     });
 
-    if (!skusRes.ok) {
-      const err = await skusRes.text();
-      console.error('Cloud Billing API error:', skusRes.status, err);
+    if (!bqRes.ok) {
+      const err = await bqRes.text();
+      console.error('BigQuery error:', bqRes.status, err);
       return new Response(
-        JSON.stringify({
-          error: `Cloud Billing API error: ${skusRes.status}`,
-          detail: err,
-        }),
-        { status: skusRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        JSON.stringify({ error: `BigQuery error: ${bqRes.status}`, detail: err }),
+        { status: bqRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    const skusData = await skusRes.json();
-    const skus: Array<Record<string, unknown>> = skusData.skus ?? [];
+    const bqData = await bqRes.json();
+    const rows: Array<{ f: Array<{ v: string }> }> = bqData.rows ?? [];
 
-    // Group SKUs by service and sum any cost data present
-    const serviceSpend: Record<string, number> = {};
-
-    for (const sku of skus) {
-      const serviceDisplay = String((sku.category as Record<string, unknown>)?.serviceDisplayName ?? '');
-      const matchedLabel = Object.keys(SERVICE_FILTERS).find((label) =>
-        serviceDisplay.includes(SERVICE_FILTERS[label]) || serviceDisplay.includes(label),
-      );
-      if (!matchedLabel) continue;
-
-      // Extract cost units if present (v1beta may include cost data per SKU)
-      const cost = (sku.cost as Record<string, unknown>);
-      const units = Number(cost?.units ?? 0);
-      const nanos = Number((cost as Record<string, unknown>)?.nanos ?? 0);
-      const totalUsd = units + nanos / 1e9;
-
-      serviceSpend[matchedLabel] = (serviceSpend[matchedLabel] ?? 0) + totalUsd;
-    }
-
-    // Build per-service rows with computed fields
-    const services = Object.entries(serviceSpend).map(([label, mtd]) => {
-      const dailyAvg = day > 0 ? mtd / day : 0;
-      const projected = dailyAvg * daysInMonth;
-      return {
-        service_name: label,
-        mtd_spend_usd: Number(mtd.toFixed(4)),
-        currency: 'USD',
-        budget_usd: MONTHLY_BUDGET_USD,
-        remaining_usd: Number((MONTHLY_BUDGET_USD - mtd).toFixed(4)),
-        days_elapsed: day,
-        daily_average_usd: Number(dailyAvg.toFixed(4)),
-        projected_month_end_usd: Number(projected.toFixed(4)),
-      };
-    });
-
-    const totalMtd = services.reduce((sum, s) => sum + s.mtd_spend_usd, 0);
+    const services = rows.map((row) => ({
+      service: row.f[0]?.v ?? '',
+      mtd_spend: Number(Number(row.f[1]?.v ?? 0).toFixed(4)),
+    }));
 
     return new Response(
-      JSON.stringify({
-        status: 'ok',
-        billing_account: billingAccountId,
-        period: { start: startDate, end: endDate },
-        budget_usd: MONTHLY_BUDGET_USD,
-        total_mtd_spend_usd: Number(totalMtd.toFixed(4)),
-        total_remaining_usd: Number((MONTHLY_BUDGET_USD - totalMtd).toFixed(4)),
-        days_elapsed: day,
-        days_in_month: daysInMonth,
-        services,
-        raw_sku_count: skus.length,
-      }),
+      JSON.stringify({ status: 'ok', services }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   } catch (error) {
