@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
 const SWIPE_UP_THRESHOLD = 80;
+const RATING_CANCEL_TAP_BLOCK_MS = 500;
 
 const LOCATION_KEYWORDS = [
   'little portugal', 'kensington', 'ossington', 'queen west', 'king street',
@@ -54,6 +55,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const containerRef = useRef(null);
   const moreRequestedRef = useRef(false);
   const isAnimatingRef = useRef(false);
+  const blockCardTapUntilRef = useRef(0);
+  const ratingWasSubmittedRef = useRef(false);
+  const ratingSheetOpenRef = useRef(false);
 
   const {
     handleInterested,
@@ -189,6 +193,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
   // Open rating sheet
   const openRatingSheet = useCallback((venue) => {
+    ratingSheetOpenRef.current = true;
     setRatingPendingVenue(venue);
     setRatingSheetOpen(true);
     logRatingSheetOpened(venue);
@@ -240,8 +245,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     advanceCard();
   }, [handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, opacity, advanceCard]);
 
-  // Handle rating from sheet
   const handleRate = useCallback(async (rating, notes) => {
+    ratingWasSubmittedRef.current = true;
+    ratingSheetOpenRef.current = false;
     setRatingSheetOpen(false);
     if (!ratingPendingVenue) return;
 
@@ -249,6 +255,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     if (success === false) {
       setAuthModalOpen(true);
       setRatingPendingVenue(null);
+      ratingWasSubmittedRef.current = false;
       return;
     }
 
@@ -256,15 +263,23 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     setRatingPendingVenue(null);
     await new Promise((r) => setTimeout(r, 400));
     advanceCard();
+    ratingWasSubmittedRef.current = false;
   }, [ratingPendingVenue, handleRated, advanceCard]);
 
-  // Handle rating cancel — stay on current card, no advance
   const handleRatingCancel = useCallback(() => {
+    ratingSheetOpenRef.current = false;
+    if (ratingWasSubmittedRef.current) {
+      setRatingSheetOpen(false);
+      setRatingPendingVenue(null);
+      return;
+    }
     if (ratingPendingVenue) {
       logRatingSheetCancelled(ratingPendingVenue);
     }
     setRatingSheetOpen(false);
     setRatingPendingVenue(null);
+    // Drawer dismiss touch propagates through to card body — block briefly
+    blockCardTapUntilRef.current = Date.now() + RATING_CANCEL_TAP_BLOCK_MS;
   }, [ratingPendingVenue, logRatingSheetCancelled]);
 
   // Drag handlers — track isDragging to disable transition during drag (Fix 2)
@@ -291,8 +306,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     }
   }, [currentVenue, performAction, x, y]);
 
-  // Card body tap → venue details
   const handleCardBodyTap = useCallback((venue) => {
+    if (ratingSheetOpenRef.current) return;
+    if (Date.now() < blockCardTapUntilRef.current) return;
     const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
     navigate(`/venue/${placeId}`, { state: { venue } });
   }, [navigate]);
