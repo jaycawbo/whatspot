@@ -116,6 +116,7 @@ export async function runConversationalSearch({
           open_now: effectiveOpenNow || undefined,
           price_levels: placesPrice,
           exclude_ids: venues.map(v => v.place_id),
+          cuisine_types: intent.cuisineTypes?.length > 0 ? intent.cuisineTypes : undefined,
           intent: { vibe: intent.vibeKeywords },
           session_context: [],
         },
