@@ -7,6 +7,8 @@ import BeenHereButton from '@/components/ui/BeenHereButton';
 import RatingDialog from '@/components/discovery/RatingDialog';
 import { useSpots } from '@/hooks/useSpots';
 
+const RATING_TAP_BLOCK_MS = 500;
+
 function formatPrice(level) {
   if (!level) return null;
   if (typeof level === 'string' && level.startsWith('$')) return level;
@@ -19,6 +21,7 @@ export default function VenueCard({ venue, index, currentQuery }) {
   const cardRef = useRef(null);
   const { getBeenHereRating, saveBeenHere, isAuthenticated } = useSpots();
   const [ratingSheetOpen, setRatingSheetOpen] = useState(false);
+  const ratingDialogOpenRef = useRef(false);
 
   const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
   const beenHereRating = getBeenHereRating(placeId);
@@ -46,8 +49,19 @@ export default function VenueCard({ venue, index, currentQuery }) {
   const navigate = useNavigate();
 
   const handleClick = () => {
+    if (ratingDialogOpenRef.current) return;
     if (!placeId) return;
     navigate(`/venue/${placeId}`, { state: { venue } });
+  };
+
+  const handleBeenHereClick = () => {
+    ratingDialogOpenRef.current = true;
+    setRatingSheetOpen(true);
+  };
+
+  const handleRatingOpenChange = (open) => {
+    if (!open) setTimeout(() => { ratingDialogOpenRef.current = false; }, RATING_TAP_BLOCK_MS);
+    setRatingSheetOpen(open);
   };
 
   const handleRate = async (rating) => {
@@ -72,7 +86,7 @@ export default function VenueCard({ venue, index, currentQuery }) {
         <div className="absolute top-1 right-1">
           <BeenHereButton
             rating={beenHereRating}
-            onClick={() => setRatingSheetOpen(true)}
+            onClick={handleBeenHereClick}
           />
         </div>
       </div>
@@ -115,10 +129,9 @@ export default function VenueCard({ venue, index, currentQuery }) {
       </div>
       <RatingDialog
         open={ratingSheetOpen}
-        onOpenChange={setRatingSheetOpen}
+        onOpenChange={handleRatingOpenChange}
         venue={venue}
         onRate={handleRate}
-        onCancel={() => setRatingSheetOpen(false)}
       />
     </div>
   );
