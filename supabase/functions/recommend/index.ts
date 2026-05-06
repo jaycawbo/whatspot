@@ -1340,6 +1340,7 @@ Deno.serve(async (req) => {
     // can still be selected if the LLM judges them relevant.
     const isSearchMode = !!searchTerm;
     let filteredCandidates = candidates;
+    let typeMatchedIds = new Set<string>();
 
     if (isSearchMode && refinedSearchTerm) {
       const queryWords = refinedSearchTerm.toLowerCase()
@@ -1412,7 +1413,7 @@ Deno.serve(async (req) => {
           return [...expandedTypes].some((t: string) => types.includes(t) || cat.includes(t));
         });
 
-        const typeMatchedIds = new Set(typeMatched.map((v: any) => v.place_id));
+        typeMatchedIds = new Set(typeMatched.map((v: any) => v.place_id));
         const unmatched = candidates.filter((v: any) => !typeMatchedIds.has(v.place_id));
 
         // Priority order: type-matched first, then unmatched to fill up to 20
@@ -1618,11 +1619,21 @@ Deno.serve(async (req) => {
         })
         .filter(Boolean);
 
-      // Backfill to guarantee 8 results
+      // Backfill to guarantee 8 results.
+      // When cuisine-type matching was applied, restrict backfill to type-matched
+      // candidates so high-scored but cuisine-irrelevant venues don't slip in.
       if (finalVenues.length < 8) {
-        const usedIndices = new Set(rankings.filter((r: any) => r.confidence >= 0.5).map((r: any) => r.index - 1));
-        const backfill = filteredCandidates
-          .filter((_: any, i: number) => !usedIndices.has(i))
+        const usedPlaceIds = new Set(
+          rankings
+            .filter((r: any) => r.confidence >= 0.5)
+            .map((r: any) => filteredCandidates[r.index - 1]?.place_id)
+            .filter(Boolean)
+        );
+        const backfillPool = typeMatchedIds.size > 0
+          ? filteredCandidates.filter((v: any) => typeMatchedIds.has(v.place_id))
+          : filteredCandidates;
+        const backfill = backfillPool
+          .filter((v: any) => !usedPlaceIds.has(v.place_id))
           .slice(0, 8 - finalVenues.length)
           .map((v: any) => ({ ...v, descriptors: [], reasoning_explanation: '' }));
         finalVenues.push(...backfill);
