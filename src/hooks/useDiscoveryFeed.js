@@ -557,7 +557,6 @@ export function useDiscoveryFeed() {
         await new Promise(resolve => setTimeout(resolve, 2000));
         res = await recommend(recommendParams);
       }
-
       const results = res?.results || [];
       const overflow = res?.nearby_overflow || [];
       const reserve = res?.reserve_venues || [];
