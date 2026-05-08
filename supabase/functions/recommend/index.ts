@@ -67,6 +67,7 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
     .lte('lng', lon + lngBuf)
     .or('business_status.eq.OPERATIONAL,business_status.is.null')
     .eq('is_chain', false)
+    .not('google_place_id', 'is', null)
     .limit(5000);
 
   if (error || !data) return [];
@@ -514,90 +515,168 @@ async function getSupabaseVenues(params: {
   cuisine_types?: string[];
   open_now?: boolean;
   GOOGLE_KEY?: string;
-}): Promise<{ filteredVenues: any[]; servedFromSupabase: boolean }> {
-  const { lat, lon, admission, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY } = params;
+  isDiscoveryMode?: boolean;
+}): Promise<{ filteredVenues: any[]; reserve_venues: any[]; staged_venues: any[]; servedFromSupabase: boolean; relaxation_applied: boolean; relaxation_level: number }> {
+  const { lat, lon, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY, isDiscoveryMode } = params;
 
-  const sbVenues = await safe('supabase-first', () =>
-    getSupabaseVenuesForArea(lat, lon, admission.maxRadius, exclude_ids), []);
-  console.log(`🗄️ Supabase-first: ${sbVenues.length} venues found for area`);
+  const RIPPLE_RINGS = [2, 4, 6, 8, 10, 12];
+  const THRESHOLD = 22; // 12 primary + 10 reserve
 
-  if (sbVenues.length < 15) {
-    console.warn('⚠️ Supabase coverage insufficient for area — falling back to Google');
-    return { filteredVenues: [], servedFromSupabase: false };
+  // ─── Ripple ring expansion: find smallest radius with >= 22 pass-1 quality venues ───
+  let rawPool: any[] = [];
+  let activeRadius = 0;
+
+  for (const ring of RIPPLE_RINGS) {
+    const raw = await getSupabaseVenuesForArea(lat, lon, ring, exclude_ids);
+    const typed = raw.filter((v: any) => hasFoodDrinkType(v.venue_types));
+    if (typed.length >= THRESHOLD) {
+      rawPool = typed;
+      activeRadius = ring;
+      break;
+    }
   }
 
-  console.log('✅ Serving from Supabase');
-  let filteredVenues: any[] = sbVenues
-    .filter((v: any) => hasFoodDrinkType(v.venue_types))
+  if (activeRadius === 0) {
+    console.warn('⚠️ getSupabaseVenues: no ring produced >= 22 quality venues — falling back to Google');
+    return { filteredVenues: [], reserve_venues: [], staged_venues: [], servedFromSupabase: false, relaxation_applied: false, relaxation_level: 0 };
+  }
+
+  console.log(`🗄️ getSupabaseVenues: viable at ${activeRadius}km, ${rawPool.length} typed venues`);
+
+  // ─── Apply filters ───
+  let filtered = rawPool;
+
+  if (price_levels?.length) {
+    filtered = filtered.filter((v: any) => {
+      const pl = mapIntPriceLevel(v.price_level);
+      return pl == null || price_levels.includes(pl);
+    });
+  }
+
+  if (cuisine_types?.length) {
+    filtered = filtered.filter((v: any) =>
+      v.venue_types?.length && cuisine_types.some((ct: string) => v.venue_types.includes(ct))
+    );
+  }
+
+  if (open_now) {
+    filtered = filtered.filter((v: any) => isOpenNow(v.regular_opening_hours));
+  }
+
+  // ─── Criteria pass ladder ───
+  let admittedPool: any[] = [];
+  let passIndex = 0;
+
+  for (let i = 0; i < DISCOVERY_CRITERIA.length; i++) {
+    const c = DISCOVERY_CRITERIA[i];
+    const passed = filtered
+      .map((v: any) => {
+        const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
+        const isRelaxedAdmission = i > 0;
+        const score = calculateVenueScore(v.rating, v.review_count, isRelaxedAdmission);
+        return { ...v, distance_km, score, isRelaxedAdmission };
+      })
+      .filter((v: any) =>
+        (v.rating ?? 0) >= c.minRating &&
+        (v.review_count ?? 0) >= c.minReviewCount &&
+        v.score >= c.scoreThreshold
+      );
+    if (passed.length >= THRESHOLD || i === DISCOVERY_CRITERIA.length - 1) {
+      admittedPool = passed;
+      passIndex = i;
+      break;
+    }
+  }
+
+  // ─── Cap candidate pool at 200 by score ───
+  if (admittedPool.length > 200) {
+    admittedPool = admittedPool.sort((a: any, b: any) => b.score - a.score).slice(0, 200);
+  }
+
+  // ─── Weighted shuffle (feed mode only — search results are always deterministic) ───
+  const shuffled = isDiscoveryMode
+    ? admittedPool
+        .map((v: any) => ({ ...v, display_weight: v.score + (Math.random() * 0.3) }))
+        .sort((a: any, b: any) => b.display_weight - a.display_weight)
+    : admittedPool
+        .map((v: any) => ({ ...v, display_weight: v.score }))
+        .sort((a: any, b: any) => b.display_weight - a.display_weight);
+
+  // ─── Shared venue shape mapper ───
+  const toShape = (v: any, extra: Record<string, any> = {}) => ({
+    name: v.name,
+    address: v.address || '',
+    lat: v.lat,
+    lon: v.lng,
+    distance_km: v.distance_km,
+    rating: v.rating,
+    review_count: v.review_count,
+    price_level: mapIntPriceLevel(v.price_level),
+    place_id: `places/${v.google_place_id}`,
+    category: (v.venue_types ?? []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+    cuisine_type: (v.venue_types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+    isRelaxedAdmission: v.isRelaxedAdmission ?? false,
+    unknownPrice: false,
+    _rawTypes: v.venue_types ?? [],
+    _photoUrls: v.photo_urls ?? [],
+    _regularOpeningHours: v.regular_opening_hours ?? null,
+    score: v.score,
+    display_weight: v.display_weight,
+    ...extra,
+  });
+
+  // ─── Result split ───
+  // filteredVenues = full shuffled pool for the handler's scoring/LLM/reserve/staged pipeline
+  let filteredVenues: any[] = shuffled.map((v: any) => toShape(v));
+
+  // Pre-computed split (for future handler use when it reads these fields directly)
+  const reserve_venues = shuffled.slice(12, 22).map((v: any) => toShape(v, { image_urls: v.photo_urls ?? [] }));
+
+  const admittedIds = new Set(shuffled.map((v: any) => v.google_place_id));
+  const staged_venues = rawPool
+    .filter((v: any) => !admittedIds.has(v.google_place_id))
     .map((v: any) => {
       const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
-      const isRelaxedAdmission = (v.rating ?? 0) < SCORING.RATING_FLOOR || (v.review_count ?? 0) < SCORING.REVIEW_FLOOR;
-      return {
-        name: v.name,
-        address: v.address || '',
-        lat: v.lat,
-        lon: v.lng,
-        distance_km,
-        rating: v.rating,
-        review_count: v.review_count,
-        price_level: mapIntPriceLevel(v.price_level),
-        place_id: `places/${v.google_place_id}`,
-        category: (v.venue_types ?? []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
-        cuisine_type: (v.venue_types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
-        isRelaxedAdmission,
-        unknownPrice: false,
-        _rawTypes: v.venue_types ?? [],
-        _photoUrls: v.photo_urls ?? [],
-        _regularOpeningHours: v.regular_opening_hours ?? null,
-      };
+      const score = calculateVenueScore(v.rating, v.review_count, true);
+      return { ...toShape({ ...v, distance_km, score, isRelaxedAdmission: true, display_weight: score }), staged_for_relaxation: true };
     })
-    .filter((v: any) => {
-      if (!price_levels?.length) return true;
-      if (v.price_level == null) return true;
-      return price_levels.includes(v.price_level);
-    })
-    .filter((v: any) => {
-      if (!cuisine_types?.length) return true;
-      if (!v._rawTypes?.length) return false;
-      return cuisine_types.some((ct: string) => v._rawTypes.includes(ct));
-    })
-    .filter((v: any) => {
-      if (!open_now) return true;
-      return isOpenNow(v._regularOpeningHours);
-    })
-    .filter((v: any) => (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount);
+    .filter((v: any) => v.score > 0)
+    .sort((a: any, b: any) => b.score - a.score)
+    .slice(0, 30);
 
-  // Places API fallback: recover venues excluded only due to missing hours data.
+  // ─── Places API missing-hours recovery (open_now only) ───
   // Inert while Places API is disabled — fetchVenueHoursFromPlaces returns null on failure.
   if (open_now && GOOGLE_KEY) {
     const includedIds = new Set(filteredVenues.map((v: any) => v.place_id));
-    const missingHours = sbVenues
+    const missingHours = rawPool
       .filter((v: any) => hasFoodDrinkType(v.venue_types))
       .filter((v: any) => !v.regular_opening_hours || (v.regular_opening_hours as any[]).length === 0)
       .filter((v: any) => !includedIds.has(`places/${v.google_place_id}`))
-      .filter((v: any) => (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount)
+      .filter((v: any) => (v.rating ?? 0) >= DISCOVERY_CRITERIA[passIndex].minRating && (v.review_count ?? 0) >= DISCOVERY_CRITERIA[passIndex].minReviewCount)
       .slice(0, 5);
     if (missingHours.length > 0) {
       const recovered = await Promise.all(missingHours.map(async (v: any) => {
         const hours = await fetchVenueHoursFromPlaces(v.google_place_id, GOOGLE_KEY);
         if (!hours || !isOpenNow(hours)) return null;
         const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
-        const isRelaxedAdmission = (v.rating ?? 0) < SCORING.RATING_FLOOR || (v.review_count ?? 0) < SCORING.REVIEW_FLOOR;
-        return {
-          name: v.name, address: v.address || '', lat: v.lat, lon: v.lng, distance_km,
-          rating: v.rating, review_count: v.review_count, price_level: mapIntPriceLevel(v.price_level),
-          place_id: `places/${v.google_place_id}`,
-          category: (v.venue_types ?? []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
-          cuisine_type: (v.venue_types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
-          isRelaxedAdmission, unknownPrice: false, _rawTypes: v.venue_types ?? [],
-          _photoUrls: v.photo_urls ?? [], _regularOpeningHours: hours,
-        };
+        const isRelaxedAdmission = passIndex > 0;
+        const score = calculateVenueScore(v.rating, v.review_count, isRelaxedAdmission);
+        return toShape({ ...v, distance_km, score, isRelaxedAdmission, display_weight: score + Math.random() * 0.3, regular_opening_hours: hours });
       }));
       filteredVenues = [...filteredVenues, ...recovered.filter(Boolean)];
     }
   }
 
-  return { filteredVenues, servedFromSupabase: true };
+  console.log(`✅ getSupabaseVenues: pass ${passIndex + 1}/${DISCOVERY_CRITERIA.length}, radius ${activeRadius}km → ${filteredVenues.length} pool, ${reserve_venues.length} reserve, ${staged_venues.length} staged`);
+
+  return {
+    filteredVenues,
+    reserve_venues,
+    staged_venues,
+    servedFromSupabase: true,
+    relaxation_applied: passIndex > 0,
+    relaxation_level: passIndex + 1,
+  };
 }
 
 // ─── Club disambiguation helper (search path) ───
@@ -1001,7 +1080,7 @@ Deno.serve(async (req) => {
     let filteredVenues: any[] = [];
     let servedFromSupabase = false;
     if (isDiscoveryMode) {
-      const result = await getSupabaseVenues({ lat, lon, admission, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY });
+      const result = await getSupabaseVenues({ lat, lon, admission, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY, isDiscoveryMode });
       filteredVenues = result.filteredVenues;
       servedFromSupabase = result.servedFromSupabase;
     }

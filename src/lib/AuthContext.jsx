@@ -14,6 +14,9 @@ export const AuthProvider = ({ children }) => {
     // Set up auth state listener FIRST (before getSession)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (event === 'SIGNED_IN') {
+          try { sessionStorage.removeItem('whatspot_feed_cache'); } catch {}
+        }
         setSession(session);
         setUser(session?.user ?? null);
         setIsLoadingAuth(false);
