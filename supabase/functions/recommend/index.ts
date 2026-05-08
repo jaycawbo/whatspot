@@ -207,6 +207,67 @@ const DISCOVERY_CRITERIA = [
   { minRating: 2.5, minReviewCount: 3,  scoreThreshold: 0.5 },
   { minRating: 0,   minReviewCount: 1,  scoreThreshold: 0.3 },
 ];
+// ─── Expand query keywords to venue type fragments (canonical copy) ───
+
+function expandQueryToTypes(queryWords: string[]): Set<string> {
+  const expandedTypes = new Set<string>();
+  for (const word of queryWords) {
+    expandedTypes.add(word);
+    if (word === 'steak') { expandedTypes.add('steak_house'); expandedTypes.add('steakhouse'); }
+    if (word === 'sushi') { expandedTypes.add('sushi_restaurant'); }
+    if (word === 'vegan') { expandedTypes.add('vegan_restaurant'); }
+    if (word === 'pizza') { expandedTypes.add('pizza_restaurant'); }
+    if (word === 'ramen') { expandedTypes.add('ramen_restaurant'); }
+    if (word === 'burger') { expandedTypes.add('hamburger_restaurant'); }
+    if (word === 'thai') { expandedTypes.add('thai_restaurant'); }
+    if (word === 'chinese') { expandedTypes.add('chinese_restaurant'); }
+    if (word === 'indian') { expandedTypes.add('indian_restaurant'); }
+    if (word === 'italian') { expandedTypes.add('italian_restaurant'); }
+    if (word === 'mexican') { expandedTypes.add('mexican_restaurant'); }
+    if (word === 'french') { expandedTypes.add('french_restaurant'); }
+    if (word === 'greek') { expandedTypes.add('greek_restaurant'); }
+    if (word === 'korean') { expandedTypes.add('korean_restaurant'); }
+    if (word === 'japanese') { expandedTypes.add('japanese_restaurant'); }
+    if (word === 'spanish') { expandedTypes.add('spanish_restaurant'); }
+    if (word === 'vietnamese') { expandedTypes.add('vietnamese_restaurant'); }
+    if (word === 'brunch') { expandedTypes.add('brunch_restaurant'); expandedTypes.add('breakfast_restaurant'); expandedTypes.add('cafe'); }
+    if (word === 'breakfast') { expandedTypes.add('breakfast_restaurant'); expandedTypes.add('brunch_restaurant'); expandedTypes.add('diner'); }
+    if (word === 'seafood') { expandedTypes.add('seafood_restaurant'); }
+    if (word === 'cocktail') { expandedTypes.add('cocktail_bar'); expandedTypes.add('bar'); }
+    if (word === 'wine') { expandedTypes.add('wine_bar'); }
+    if (word === 'coffee') { expandedTypes.add('coffee_shop'); expandedTypes.add('cafe'); expandedTypes.add('coffee_roastery'); expandedTypes.add('coffee_stand'); }
+    if (word === 'cafe') { expandedTypes.add('cafe'); expandedTypes.add('coffee_shop'); expandedTypes.add('bakery'); }
+    if (word === 'tapas') { expandedTypes.add('tapas_restaurant'); expandedTypes.add('spanish_restaurant'); }
+    if (word === 'diner') { expandedTypes.add('diner'); expandedTypes.add('breakfast_restaurant'); }
+    if (word === 'brewery' || word === 'breweries') { expandedTypes.add('brewery'); expandedTypes.add('brewpub'); expandedTypes.add('bar'); expandedTypes.add('pub'); }
+    if (word === 'winery') { expandedTypes.add('winery'); expandedTypes.add('wine_bar'); }
+    if (word === 'lebanese') { expandedTypes.add('lebanese_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
+    if (word === 'persian') { expandedTypes.add('persian_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
+    if (word === 'ethiopian') { expandedTypes.add('ethiopian_restaurant'); expandedTypes.add('african_restaurant'); }
+    if (word === 'latin') { expandedTypes.add('latin_american_restaurant'); expandedTypes.add('mexican_restaurant'); }
+    if (word === 'peruvian') { expandedTypes.add('peruvian_restaurant'); expandedTypes.add('latin_american_restaurant'); }
+    if (word === 'portuguese') { expandedTypes.add('portuguese_restaurant'); }
+    if (word === 'dim') { expandedTypes.add('dim_sum_restaurant'); expandedTypes.add('chinese_restaurant'); }
+    if (word === 'dumplings' || word === 'dumpling') { expandedTypes.add('dumpling_restaurant'); expandedTypes.add('chinese_restaurant'); }
+    if (word === 'tacos' || word === 'taco') { expandedTypes.add('taco_restaurant'); expandedTypes.add('mexican_restaurant'); }
+    if (word === 'noodles' || word === 'noodle') { expandedTypes.add('noodle_shop'); expandedTypes.add('vietnamese_restaurant'); expandedTypes.add('ramen_restaurant'); }
+    if (word === 'pho') { expandedTypes.add('vietnamese_restaurant'); expandedTypes.add('noodle_shop'); }
+    if (word === 'bar' || word === 'bars') { expandedTypes.add('bar'); expandedTypes.add('pub'); expandedTypes.add('cocktail_bar'); }
+    if (word === 'pub' || word === 'pubs') { expandedTypes.add('pub'); expandedTypes.add('bar'); }
+    if (word === 'sandwich' || word === 'sandwiches') { expandedTypes.add('sandwich_shop'); expandedTypes.add('deli_restaurant'); }
+    if (word === 'bakery' || word === 'bakeries') { expandedTypes.add('bakery'); expandedTypes.add('cafe'); }
+    if (word === 'dessert') { expandedTypes.add('dessert_shop'); expandedTypes.add('ice_cream_shop'); expandedTypes.add('bakery'); }
+    if (word === 'cream') { expandedTypes.add('ice_cream_shop'); expandedTypes.add('dessert_shop'); }
+    if (word === 'bbq' || word === 'barbecue') { expandedTypes.add('barbecue_restaurant'); }
+    if (word === 'wings') { expandedTypes.add('chicken_wings_restaurant'); expandedTypes.add('fast_food_restaurant'); }
+    if (word === 'shawarma' || word === 'kebab' || word === 'falafel') { expandedTypes.add('middle_eastern_restaurant'); expandedTypes.add('turkish_restaurant'); }
+    if (word === 'mediterranean') { expandedTypes.add('mediterranean_restaurant'); expandedTypes.add('greek_restaurant'); }
+    if (word === 'middle') { expandedTypes.add('middle_eastern_restaurant'); }
+    if (word === 'turkish') { expandedTypes.add('turkish_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
+  }
+  return expandedTypes;
+}
+
 // ─── Helpers ───
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -427,41 +488,6 @@ async function googlePlacesBroadSearch(apiKey: string, query: string, lat: numbe
   });
 }
 
-async function getPlacePhotos(apiKey: string, placeId: string, maxPhotos = 4): Promise<string[]> {
-  const detailsUrl = `https://places.googleapis.com/v1/${placeId}?fields=photos`;
-  const detailsResp = await fetch(detailsUrl, {
-    method: 'GET',
-    headers: { 'X-Goog-Api-Key': apiKey },
-  });
-  if (!detailsResp.ok) return [];
-  const data = await detailsResp.json();
-  if (!data.photos || data.photos.length === 0) return [];
-
-  const photoResources = data.photos.slice(0, maxPhotos);
-  const urls = await fetchWithConcurrency(
-    photoResources,
-    async (photo: any) => {
-      const mediaUrl = `https://places.googleapis.com/v1/${photo.name}/media?maxHeightPx=800`;
-      try {
-        const mediaResp = await fetch(mediaUrl, {
-          method: 'GET',
-          headers: { 'X-Goog-Api-Key': apiKey },
-          redirect: 'manual',
-        });
-        if (mediaResp.status === 302 || mediaResp.status === 301) {
-          return mediaResp.headers.get('Location');
-        }
-        if (mediaResp.ok) return mediaResp.url;
-        return null;
-      } catch {
-        return null;
-      }
-    },
-    3,
-  );
-  return urls.filter((u): u is string => u !== null);
-}
-
 
 // ─── Price level map ───
 const priceLevelMap: Record<string, string> = {
@@ -476,6 +502,251 @@ function mapIntPriceLevel(level: number | null | undefined): string | null {
   if (level == null) return null;
   const map: Record<number, string> = { 0: '$', 1: '$', 2: '$$', 3: '$$$', 4: '$$$$' };
   return map[level] ?? null;
+}
+
+// ─── getSupabaseVenues — discovery feed, Supabase-first, zero Google API calls ───
+
+async function getSupabaseVenues(params: {
+  lat: number; lon: number;
+  admission: { maxRadius: number; minRating: number; minReviewCount: number };
+  exclude_ids: string[];
+  price_levels?: string[];
+  cuisine_types?: string[];
+  open_now?: boolean;
+  GOOGLE_KEY?: string;
+}): Promise<{ filteredVenues: any[]; servedFromSupabase: boolean }> {
+  const { lat, lon, admission, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY } = params;
+
+  const sbVenues = await safe('supabase-first', () =>
+    getSupabaseVenuesForArea(lat, lon, admission.maxRadius, exclude_ids), []);
+  console.log(`🗄️ Supabase-first: ${sbVenues.length} venues found for area`);
+
+  if (sbVenues.length < 15) {
+    console.warn('⚠️ Supabase coverage insufficient for area — falling back to Google');
+    return { filteredVenues: [], servedFromSupabase: false };
+  }
+
+  console.log('✅ Serving from Supabase');
+  let filteredVenues: any[] = sbVenues
+    .filter((v: any) => hasFoodDrinkType(v.venue_types))
+    .map((v: any) => {
+      const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
+      const isRelaxedAdmission = (v.rating ?? 0) < SCORING.RATING_FLOOR || (v.review_count ?? 0) < SCORING.REVIEW_FLOOR;
+      return {
+        name: v.name,
+        address: v.address || '',
+        lat: v.lat,
+        lon: v.lng,
+        distance_km,
+        rating: v.rating,
+        review_count: v.review_count,
+        price_level: mapIntPriceLevel(v.price_level),
+        place_id: `places/${v.google_place_id}`,
+        category: (v.venue_types ?? []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+        cuisine_type: (v.venue_types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+        isRelaxedAdmission,
+        unknownPrice: false,
+        _rawTypes: v.venue_types ?? [],
+        _photoUrls: v.photo_urls ?? [],
+        _regularOpeningHours: v.regular_opening_hours ?? null,
+      };
+    })
+    .filter((v: any) => {
+      if (!price_levels?.length) return true;
+      if (v.price_level == null) return true;
+      return price_levels.includes(v.price_level);
+    })
+    .filter((v: any) => {
+      if (!cuisine_types?.length) return true;
+      if (!v._rawTypes?.length) return false;
+      return cuisine_types.some((ct: string) => v._rawTypes.includes(ct));
+    })
+    .filter((v: any) => {
+      if (!open_now) return true;
+      return isOpenNow(v._regularOpeningHours);
+    })
+    .filter((v: any) => (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount);
+
+  // Places API fallback: recover venues excluded only due to missing hours data.
+  // Inert while Places API is disabled — fetchVenueHoursFromPlaces returns null on failure.
+  if (open_now && GOOGLE_KEY) {
+    const includedIds = new Set(filteredVenues.map((v: any) => v.place_id));
+    const missingHours = sbVenues
+      .filter((v: any) => hasFoodDrinkType(v.venue_types))
+      .filter((v: any) => !v.regular_opening_hours || (v.regular_opening_hours as any[]).length === 0)
+      .filter((v: any) => !includedIds.has(`places/${v.google_place_id}`))
+      .filter((v: any) => (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount)
+      .slice(0, 5);
+    if (missingHours.length > 0) {
+      const recovered = await Promise.all(missingHours.map(async (v: any) => {
+        const hours = await fetchVenueHoursFromPlaces(v.google_place_id, GOOGLE_KEY);
+        if (!hours || !isOpenNow(hours)) return null;
+        const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
+        const isRelaxedAdmission = (v.rating ?? 0) < SCORING.RATING_FLOOR || (v.review_count ?? 0) < SCORING.REVIEW_FLOOR;
+        return {
+          name: v.name, address: v.address || '', lat: v.lat, lon: v.lng, distance_km,
+          rating: v.rating, review_count: v.review_count, price_level: mapIntPriceLevel(v.price_level),
+          place_id: `places/${v.google_place_id}`,
+          category: (v.venue_types ?? []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+          cuisine_type: (v.venue_types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+          isRelaxedAdmission, unknownPrice: false, _rawTypes: v.venue_types ?? [],
+          _photoUrls: v.photo_urls ?? [], _regularOpeningHours: hours,
+        };
+      }));
+      filteredVenues = [...filteredVenues, ...recovered.filter(Boolean)];
+    }
+  }
+
+  return { filteredVenues, servedFromSupabase: true };
+}
+
+// ─── Club disambiguation helper (search path) ───
+
+const CLUB_FOOD_PREFIXES = /\b(supper|dinner|lunch|breakfast|brunch|country|social)\s+club\b/i;
+const CLUB_FOOD_SUFFIXES = /\bclub\s+(sandwich|sandwiches|soda|wrap|salad)\b/i;
+const CLUB_DINING_CONTEXT = /\b(food|dining|dinner|eat|restaurant|menu|cuisine|brunch|lunch|breakfast)\b/i;
+
+function disambiguateClub(q: string): string {
+  if (!/\bclub\b/i.test(q)) return q;
+  if (CLUB_FOOD_PREFIXES.test(q) || CLUB_FOOD_SUFFIXES.test(q) || CLUB_DINING_CONTEXT.test(q.replace(/\bclub\b/gi, ''))) {
+    return q;
+  }
+  return q.replace(/\bclub\b/gi, 'nightclub');
+}
+
+// ─── getGoogleVenues — Google Places fallback when Supabase coverage is insufficient ───
+
+async function getGoogleVenues(params: {
+  GOOGLE_KEY: string;
+  refinedSearchTerm: string;
+  location_name: string;
+  lat: number; lon: number;
+  admission: { maxRadius: number; minRating: number; minReviewCount: number };
+  open_now?: boolean;
+  price_levels?: string[];
+  cuisine_types?: string[];
+  isDiscoveryMode: boolean;
+  isOnStreetSearch: boolean;
+  detectedStreetName: string;
+  detectedStreetBase: string;
+  exclude_ids: string[];
+  relaxation_level: number;
+}): Promise<any[] | null> {
+  const {
+    GOOGLE_KEY, refinedSearchTerm, location_name, lat, lon, admission,
+    open_now, price_levels, cuisine_types, isDiscoveryMode,
+    isOnStreetSearch, detectedStreetName, detectedStreetBase,
+    exclude_ids, relaxation_level,
+  } = params;
+
+  const reversePriceLevelMap: Record<string, string[]> = {
+    '$': ['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE'],
+    '$$': ['PRICE_LEVEL_MODERATE'],
+    '$$$': ['PRICE_LEVEL_EXPENSIVE'],
+    '$$$$': ['PRICE_LEVEL_VERY_EXPENSIVE'],
+  };
+  const googlePriceLevels: string[] = [];
+  if (price_levels && price_levels.length > 0) {
+    price_levels.forEach((pl: string) => {
+      if (reversePriceLevelMap[pl]) googlePriceLevels.push(...reversePriceLevelMap[pl]);
+    });
+  }
+
+  let googleSearchQuery = disambiguateClub(refinedSearchTerm);
+  if (isOnStreetSearch && detectedStreetBase) {
+    const streetWords = detectedStreetBase.split(/\s+/);
+    const locationWords = [...streetWords, 'street', 'st', 'avenue', 'ave', 'road', 'rd', 'boulevard', 'blvd', 'drive', 'dr', 'lane', 'ln', 'toronto', 'ontario', 'canada'];
+    googleSearchQuery = refinedSearchTerm
+      .split(/[\s,]+/)
+      .filter(w => !locationWords.includes(w.toLowerCase()))
+      .join(' ')
+      .trim();
+    if (googleSearchQuery && !/(restaurant|cafe|bar|bistro|pub|eatery|diner|trattoria|pizzeria|bakery)/i.test(googleSearchQuery)) {
+      googleSearchQuery += ' restaurant';
+    }
+    if (!googleSearchQuery) googleSearchQuery = 'restaurant';
+    console.log(`📍 On-street: cleaned query "${refinedSearchTerm}" → "${googleSearchQuery}"`);
+  }
+
+  const googleLocationContext = isOnStreetSearch && detectedStreetName
+    ? `${detectedStreetName}, ${location_name}`
+    : location_name;
+
+  console.log(`🌍 STEP 2: Google Places search for "${googleSearchQuery}" in "${googleLocationContext}"...`);
+
+  let googleResults: any[];
+  if (isOnStreetSearch && detectedStreetName) {
+    googleResults = await googlePlacesBroadSearch(
+      GOOGLE_KEY,
+      `${googleSearchQuery} on ${detectedStreetName}, ${location_name}`,
+      lat, lon, 3, open_now, googlePriceLevels, false,
+    );
+    console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationBias 3km)`);
+  } else if (isDiscoveryMode) {
+    // Tiling disabled — extracted to supabase/functions/tile-search/index.ts
+    googleResults = [];
+  } else {
+    googleResults = await googlePlacesBroadSearch(
+      GOOGLE_KEY,
+      `${googleSearchQuery} in ${googleLocationContext}`,
+      lat, lon, admission.maxRadius, open_now, googlePriceLevels,
+    );
+    console.log(`📊 Google returned ${googleResults.length} venues`);
+  }
+
+  if (exclude_ids.length > 0) {
+    const excludeSet = new Set(exclude_ids.map((id: string) => id.replace(/^places\//, '')));
+    const before = googleResults.length;
+    googleResults = googleResults.filter((r: any) => !excludeSet.has((r.place_id || '').replace(/^places\//, '')));
+    console.log(`🚫 Excluded ${before - googleResults.length} previously seen venues (${exclude_ids.length} exclude_ids)`);
+  }
+
+  if (googleResults.length === 0) return null;
+
+  // ─── STEP 3: Filter + admission tagging ───
+  console.log('🔍 STEP 3: Filtering...');
+  const activeCuisineTypes: string[] = Array.isArray(cuisine_types) ? cuisine_types : [];
+  const KNOWN_CUISINE_TYPES = [
+    'italian_restaurant', 'japanese_restaurant', 'mexican_restaurant', 'chinese_restaurant',
+    'american_restaurant', 'thai_restaurant', 'indian_restaurant', 'korean_restaurant',
+    'mediterranean_restaurant', 'french_restaurant', 'vietnamese_restaurant',
+    'middle_eastern_restaurant', 'greek_restaurant', 'spanish_restaurant', 'breakfast_restaurant',
+  ];
+  const selectedCuisineKnown = activeCuisineTypes.filter(ct => ct !== 'other');
+  const cuisineIncludesOther = activeCuisineTypes.includes('other');
+
+  return googleResults
+    .map((place: any) => {
+      const distance_km = calculateDistance(lat, lon, place.lat, place.lon);
+      if (distance_km > admission.maxRadius) return null;
+      if (place.business_status === 'CLOSED_PERMANENTLY') return null;
+      if (!place.rating || !place.user_ratings_total) return null;
+      if (place.rating < admission.minRating || place.user_ratings_total < admission.minReviewCount) return null;
+      const mappedPriceLevel = priceLevelMap[place.price_level] || null;
+      let unknownPrice = false;
+      if (price_levels && price_levels.length > 0) {
+        if (mappedPriceLevel && !price_levels.includes(mappedPriceLevel)) return null;
+        if (!mappedPriceLevel) unknownPrice = true;
+      }
+      if (activeCuisineTypes.length > 0) {
+        const rawTypes: string[] = Array.isArray(place.types) ? place.types : [];
+        const hasKnownMatch = selectedCuisineKnown.some(ct => rawTypes.includes(ct));
+        const isOtherCuisine = !KNOWN_CUISINE_TYPES.some(kt => rawTypes.includes(kt));
+        if (!hasKnownMatch && !(cuisineIncludesOther && isOtherCuisine)) return null;
+      }
+      const isRelaxedAdmission = place.rating < SCORING.RATING_FLOOR || place.user_ratings_total < SCORING.REVIEW_FLOOR;
+      return {
+        name: place.name, address: place.address, lat: place.lat, lon: place.lon,
+        distance_km, rating: place.rating, review_count: place.user_ratings_total,
+        price_level: mappedPriceLevel, place_id: place.place_id,
+        category: place.types?.find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+        cuisine_type: place.types?.find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+        isRelaxedAdmission, unknownPrice, _rawTypes: place.types,
+      };
+    })
+    .filter((v: any) => v !== null)
+    .filter((v: any) => !isDiscoveryMode || hasFoodDrinkType(v._rawTypes))
+    .filter((v: any) => !isDiscoveryMode || !v.lat || v.lat <= 43.7730);
 }
 
 // ─── Main handler ───
@@ -729,98 +1000,10 @@ Deno.serve(async (req) => {
     // ─── SUPABASE-FIRST DISCOVERY TRACK ───
     let filteredVenues: any[] = [];
     let servedFromSupabase = false;
-    let googleCallCap = Infinity;
-
     if (isDiscoveryMode) {
-      const sbVenues = await safe('supabase-first', () =>
-        getSupabaseVenuesForArea(lat, lon, admission.maxRadius, exclude_ids), []);
-      console.log(`🗄️ Supabase-first: ${sbVenues.length} venues found for area`);
-
-      if (sbVenues.length >= 15) {
-        console.log('✅ Serving from Supabase');
-        servedFromSupabase = true;
-        filteredVenues = sbVenues
-          .filter((v: any) => hasFoodDrinkType(v.venue_types))
-          .map((v: any) => {
-            const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
-            const isRelaxedAdmission = (v.rating ?? 0) < SCORING.RATING_FLOOR || (v.review_count ?? 0) < SCORING.REVIEW_FLOOR;
-            return {
-              name: v.name,
-              address: v.address || '',
-              lat: v.lat,
-              lon: v.lng,
-              distance_km,
-              rating: v.rating,
-              review_count: v.review_count,
-              price_level: mapIntPriceLevel(v.price_level),
-              place_id: `places/${v.google_place_id}`,
-              category: (v.venue_types ?? []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
-              cuisine_type: (v.venue_types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
-              isRelaxedAdmission,
-              unknownPrice: false,
-              _rawTypes: v.venue_types ?? [],
-              _photoUrls: v.photo_urls ?? [],
-              _regularOpeningHours: v.regular_opening_hours ?? null,
-            };
-          })
-          .filter((v: any) => {
-            if (!price_levels?.length) return true;
-            if (v.price_level == null) return true;
-            return price_levels.includes(v.price_level);
-          })
-          .filter((v: any) => {
-            if (!cuisine_types?.length) return true;
-            if (!v._rawTypes?.length) return false;
-            return cuisine_types.some((ct: string) => v._rawTypes.includes(ct));
-          })
-          .filter((v: any) => {
-            if (!open_now) return true;
-            return isOpenNow(v._regularOpeningHours);
-          })
-          .filter((v: any) => (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount);
-
-        // Places API fallback: attempt to recover venues excluded only due to missing hours data.
-        // Inert while Places API is disabled — fetchVenueHoursFromPlaces returns null on failure.
-        if (open_now && GOOGLE_KEY) {
-          const includedIds = new Set(filteredVenues.map((v: any) => v.place_id));
-          const missingHours = sbVenues
-            .filter((v: any) => hasFoodDrinkType(v.venue_types))
-            .filter((v: any) => !v.regular_opening_hours || (v.regular_opening_hours as any[]).length === 0)
-            .filter((v: any) => !includedIds.has(`places/${v.google_place_id}`))
-            .filter((v: any) => (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount)
-            .slice(0, 5);
-          if (missingHours.length > 0) {
-            const recovered = await Promise.all(missingHours.map(async (v: any) => {
-              const hours = await fetchVenueHoursFromPlaces(v.google_place_id, GOOGLE_KEY);
-              if (!hours || !isOpenNow(hours)) return null;
-              const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
-              const isRelaxedAdmission = (v.rating ?? 0) < SCORING.RATING_FLOOR || (v.review_count ?? 0) < SCORING.REVIEW_FLOOR;
-              return {
-                name: v.name,
-                address: v.address || '',
-                lat: v.lat,
-                lon: v.lng,
-                distance_km,
-                rating: v.rating,
-                review_count: v.review_count,
-                price_level: mapIntPriceLevel(v.price_level),
-                place_id: `places/${v.google_place_id}`,
-                category: (v.venue_types ?? []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
-                cuisine_type: (v.venue_types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
-                isRelaxedAdmission,
-                unknownPrice: false,
-                _rawTypes: v.venue_types ?? [],
-                _photoUrls: v.photo_urls ?? [],
-                _regularOpeningHours: hours,
-              };
-            }));
-            filteredVenues = [...filteredVenues, ...recovered.filter(Boolean)];
-          }
-        }
-      } else {
-        console.warn('⚠️ Supabase coverage insufficient for area — falling back to Google');
-        googleCallCap = 3;
-      }
+      const result = await getSupabaseVenues({ lat, lon, admission, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY });
+      filteredVenues = result.filteredVenues;
+      servedFromSupabase = result.servedFromSupabase;
     }
 
     // ─── SUPABASE-FIRST SEARCH TRACK ───
@@ -840,61 +1023,7 @@ Deno.serve(async (req) => {
             'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
 
         if (queryWords.length > 0) {
-          const expandedTypes = new Set<string>();
-          for (const word of queryWords) {
-            expandedTypes.add(word.replace(/\s+/g, '_'));
-            if (word === 'steak') { expandedTypes.add('steak_house'); expandedTypes.add('steakhouse'); }
-            if (word === 'sushi') expandedTypes.add('sushi_restaurant');
-            if (word === 'vegan') expandedTypes.add('vegan_restaurant');
-            if (word === 'pizza') expandedTypes.add('pizza_restaurant');
-            if (word === 'ramen') expandedTypes.add('ramen_restaurant');
-            if (word === 'burger') expandedTypes.add('hamburger_restaurant');
-            if (word === 'thai') expandedTypes.add('thai_restaurant');
-            if (word === 'chinese') expandedTypes.add('chinese_restaurant');
-            if (word === 'indian') expandedTypes.add('indian_restaurant');
-            if (word === 'italian') expandedTypes.add('italian_restaurant');
-            if (word === 'mexican') expandedTypes.add('mexican_restaurant');
-            if (word === 'french') expandedTypes.add('french_restaurant');
-            if (word === 'greek') expandedTypes.add('greek_restaurant');
-            if (word === 'korean') expandedTypes.add('korean_restaurant');
-            if (word === 'japanese') expandedTypes.add('japanese_restaurant');
-            if (word === 'spanish') expandedTypes.add('spanish_restaurant');
-            if (word === 'vietnamese') expandedTypes.add('vietnamese_restaurant');
-            if (word === 'brunch') { expandedTypes.add('brunch_restaurant'); expandedTypes.add('breakfast_restaurant'); expandedTypes.add('cafe'); }
-            if (word === 'breakfast') { expandedTypes.add('breakfast_restaurant'); expandedTypes.add('brunch_restaurant'); expandedTypes.add('diner'); }
-            if (word === 'seafood') expandedTypes.add('seafood_restaurant');
-            if (word === 'cocktail') { expandedTypes.add('cocktail_bar'); expandedTypes.add('bar'); }
-            if (word === 'wine') expandedTypes.add('wine_bar');
-            if (word === 'coffee') { expandedTypes.add('coffee_shop'); expandedTypes.add('cafe'); expandedTypes.add('coffee_roastery'); expandedTypes.add('coffee_stand'); }
-            if (word === 'cafe') { expandedTypes.add('cafe'); expandedTypes.add('coffee_shop'); expandedTypes.add('bakery'); }
-            if (word === 'tapas') { expandedTypes.add('tapas_restaurant'); expandedTypes.add('spanish_restaurant'); }
-            if (word === 'diner') { expandedTypes.add('diner'); expandedTypes.add('breakfast_restaurant'); }
-            if (word === 'brewery' || word === 'breweries') { expandedTypes.add('brewery'); expandedTypes.add('brewpub'); expandedTypes.add('bar'); expandedTypes.add('pub'); }
-            if (word === 'winery') { expandedTypes.add('winery'); expandedTypes.add('wine_bar'); }
-            if (word === 'lebanese') { expandedTypes.add('lebanese_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
-            if (word === 'persian') { expandedTypes.add('persian_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
-            if (word === 'ethiopian') { expandedTypes.add('ethiopian_restaurant'); expandedTypes.add('african_restaurant'); }
-            if (word === 'latin') { expandedTypes.add('latin_american_restaurant'); expandedTypes.add('mexican_restaurant'); }
-            if (word === 'peruvian') { expandedTypes.add('peruvian_restaurant'); expandedTypes.add('latin_american_restaurant'); }
-            if (word === 'portuguese') { expandedTypes.add('portuguese_restaurant'); }
-            if (word === 'dim') { expandedTypes.add('dim_sum_restaurant'); expandedTypes.add('chinese_restaurant'); }
-            if (word === 'dumplings' || word === 'dumpling') { expandedTypes.add('dumpling_restaurant'); expandedTypes.add('chinese_restaurant'); }
-            if (word === 'tacos' || word === 'taco') { expandedTypes.add('taco_restaurant'); expandedTypes.add('mexican_restaurant'); }
-            if (word === 'noodles' || word === 'noodle') { expandedTypes.add('noodle_shop'); expandedTypes.add('vietnamese_restaurant'); expandedTypes.add('ramen_restaurant'); }
-            if (word === 'pho') { expandedTypes.add('vietnamese_restaurant'); expandedTypes.add('noodle_shop'); }
-            if (word === 'bar' || word === 'bars') { expandedTypes.add('bar'); expandedTypes.add('pub'); expandedTypes.add('cocktail_bar'); }
-            if (word === 'pub' || word === 'pubs') { expandedTypes.add('pub'); expandedTypes.add('bar'); }
-            if (word === 'sandwich' || word === 'sandwiches') { expandedTypes.add('sandwich_shop'); expandedTypes.add('deli_restaurant'); }
-            if (word === 'bakery' || word === 'bakeries') { expandedTypes.add('bakery'); expandedTypes.add('cafe'); }
-            if (word === 'dessert') { expandedTypes.add('dessert_shop'); expandedTypes.add('ice_cream_shop'); expandedTypes.add('bakery'); }
-            if (word === 'cream') { expandedTypes.add('ice_cream_shop'); expandedTypes.add('dessert_shop'); }
-            if (word === 'bbq' || word === 'barbecue') { expandedTypes.add('barbecue_restaurant'); }
-            if (word === 'wings') { expandedTypes.add('chicken_wings_restaurant'); expandedTypes.add('fast_food_restaurant'); }
-            if (word === 'shawarma' || word === 'kebab' || word === 'falafel') { expandedTypes.add('middle_eastern_restaurant'); expandedTypes.add('turkish_restaurant'); }
-            if (word === 'mediterranean') { expandedTypes.add('mediterranean_restaurant'); expandedTypes.add('greek_restaurant'); }
-            if (word === 'middle') { expandedTypes.add('middle_eastern_restaurant'); }
-            if (word === 'turkish') { expandedTypes.add('turkish_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
-          }
+          const expandedTypes = expandQueryToTypes(queryWords);
           if (expandedTypes.size > 0) effectiveCuisineTypes = [...expandedTypes];
         }
       }
@@ -1019,192 +1148,32 @@ Deno.serve(async (req) => {
     }
 
     if (!servedFromSupabase) {
-    if (!GOOGLE_KEY) {
-      console.warn('⚠️ Google Places API key not configured — no fallback available, returning empty results');
-      throw new Error('GOOGLE_PLACES_API_KEY not configured');
-    }
-    if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
-    // ─── STEP 2: Google Places broad search ───
-    const reversePriceLevelMap: Record<string, string[]> = {
-      '$': ['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE'],
-      '$$': ['PRICE_LEVEL_MODERATE'],
-      '$$$': ['PRICE_LEVEL_EXPENSIVE'],
-      '$$$$': ['PRICE_LEVEL_VERY_EXPENSIVE'],
-    };
+      if (!GOOGLE_KEY) {
+        console.warn('⚠️ Google Places API key not configured — no fallback available, returning empty results');
+        throw new Error('GOOGLE_PLACES_API_KEY not configured');
+      }
+      if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
 
-    let googlePriceLevels: string[] = [];
-    if (price_levels && Array.isArray(price_levels) && price_levels.length > 0) {
-      price_levels.forEach((pl: string) => {
-        if (reversePriceLevelMap[pl]) {
-          googlePriceLevels.push(...reversePriceLevelMap[pl]);
-        }
+      const googleVenues = await getGoogleVenues({
+        GOOGLE_KEY, refinedSearchTerm, location_name, lat, lon, admission,
+        open_now, price_levels, cuisine_types, isDiscoveryMode,
+        isOnStreetSearch, detectedStreetName, detectedStreetBase,
+        exclude_ids, relaxation_level,
       });
-    }
 
-    // ─── "Club" disambiguation ───
-    // Bare "club" → nightclub intent, unless qualified by food/dining context
-    const CLUB_FOOD_PREFIXES = /\b(supper|dinner|lunch|breakfast|brunch|country|social)\s+club\b/i;
-    const CLUB_FOOD_SUFFIXES = /\bclub\s+(sandwich|sandwiches|soda|wrap|salad)\b/i;
-    const CLUB_DINING_CONTEXT = /\b(food|dining|dinner|eat|restaurant|menu|cuisine|brunch|lunch|breakfast)\b/i;
-
-    function disambiguateClub(q: string): string {
-      if (!/\bclub\b/i.test(q)) return q;
-      // If food-qualified, leave as-is for the LLM/Google to interpret
-      if (CLUB_FOOD_PREFIXES.test(q) || CLUB_FOOD_SUFFIXES.test(q) || CLUB_DINING_CONTEXT.test(q.replace(/\bclub\b/gi, ''))) {
-        return q;
-      }
-      // Bare "club" → replace with "nightclub"
-      return q.replace(/\bclub\b/gi, 'nightclub');
-    }
-
-    // For on-street searches, strip any location words that may have leaked into the refined term
-    let googleSearchQuery = disambiguateClub(refinedSearchTerm);
-    if (isOnStreetSearch && detectedStreetBase) {
-      // Remove the street name and common location words from the refined query
-      const streetWords = detectedStreetBase.split(/\s+/);
-      const locationWords = [...streetWords, 'street', 'st', 'avenue', 'ave', 'road', 'rd', 'boulevard', 'blvd', 'drive', 'dr', 'lane', 'ln', 'toronto', 'ontario', 'canada'];
-      googleSearchQuery = refinedSearchTerm
-        .split(/[\s,]+/)
-        .filter(w => !locationWords.includes(w.toLowerCase()))
-        .join(' ')
-        .trim();
-      // Ensure we have a meaningful cuisine query; append "restaurant" if it's just a cuisine word
-      if (googleSearchQuery && !/(restaurant|cafe|bar|bistro|pub|eatery|diner|trattoria|pizzeria|bakery)/i.test(googleSearchQuery)) {
-        googleSearchQuery += ' restaurant';
-      }
-      if (!googleSearchQuery) googleSearchQuery = 'restaurant';
-      console.log(`📍 On-street: cleaned query "${refinedSearchTerm}" → "${googleSearchQuery}"`);
-    }
-    // For on-street searches, include the street name in the Google query to bias toward that street
-    let googleLocationContext = location_name;
-    if (isOnStreetSearch && detectedStreetName) {
-      googleLocationContext = `${detectedStreetName}, ${location_name}`;
-    }
-    console.log(`🌍 STEP 2: Google Places search for "${googleSearchQuery}" in "${googleLocationContext}"...`);
-    
-    let googleResults: any[];
-    if (isOnStreetSearch && detectedStreetName) {
-      // Use locationBias (not locationRestriction) with 3km radius centered on geocoded street coords
-      googleResults = await googlePlacesBroadSearch(
-        GOOGLE_KEY,
-        `${googleSearchQuery} on ${detectedStreetName}, ${location_name}`,
-        lat, lon, 3, open_now, googlePriceLevels, false // locationBias, 3km radius
-      );
-      console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationBias 3km)`);
-    } else {
-      if (isDiscoveryMode) {
-        // Tiling disabled — extracted to supabase/functions/tile-search/index.ts
-        // Re-enable by calling tile-search edge function here when Supabase-first gating is complete
-        googleResults = [];
-      } else {
-        googleResults = await googlePlacesBroadSearch(
-          GOOGLE_KEY,
-          `${googleSearchQuery} in ${googleLocationContext}`,
-          lat, lon, admission.maxRadius, open_now, googlePriceLevels
+      if (googleVenues === null) {
+        return new Response(
+          JSON.stringify({
+            results: [], suggested_chips: [], search_summary: null,
+            pagination: { has_more: false },
+            relaxation_applied: relaxation_level > 0, relaxation_level,
+            gated: false, nearby_overflow: [], reserve_venues: [], staged_venues: [],
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
-        console.log(`📊 Google returned ${googleResults.length} venues`);
       }
+      filteredVenues = googleVenues;
     }
-
-    // ─── Exclude previously seen venues (discovery offset) ───
-    if (Array.isArray(exclude_ids) && exclude_ids.length > 0) {
-      const excludeSet = new Set(exclude_ids.map((id: string) => id.replace(/^places\//, '')));
-      const before = googleResults.length;
-      googleResults = googleResults.filter((r: any) => {
-        const stripped = (r.place_id || '').replace(/^places\//, '');
-        return !excludeSet.has(stripped);
-      });
-      console.log(`🚫 Excluded ${before - googleResults.length} previously seen venues (${exclude_ids.length} exclude_ids)`);
-    }
-
-    if (googleResults.length === 0) {
-      return new Response(
-        JSON.stringify({
-          results: [],
-          suggested_chips: [],
-          search_summary: null,
-          pagination: { has_more: false },
-          relaxation_applied: relaxation_level > 0,
-          relaxation_level,
-          gated: false,
-          nearby_overflow: [],
-          reserve_venues: [],
-          staged_venues: [],
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
-    // ─── STEP 3: Filter + admission tagging ───
-    console.log('🔍 STEP 3: Filtering...');
-
-    // Precompute cuisine filter state once (not inside the map loop)
-    const activeCuisineTypes: string[] = Array.isArray(cuisine_types) ? cuisine_types : [];
-    const KNOWN_CUISINE_TYPES = [
-      'italian_restaurant', 'japanese_restaurant', 'mexican_restaurant', 'chinese_restaurant',
-      'american_restaurant', 'thai_restaurant', 'indian_restaurant', 'korean_restaurant',
-      'mediterranean_restaurant', 'french_restaurant', 'vietnamese_restaurant',
-      'middle_eastern_restaurant', 'greek_restaurant', 'spanish_restaurant', 'breakfast_restaurant',
-    ];
-    const selectedCuisineKnown = activeCuisineTypes.filter(ct => ct !== 'other');
-    const cuisineIncludesOther = activeCuisineTypes.includes('other');
-
-    filteredVenues = googleResults
-      .map((place: any) => {
-        const distance_km = calculateDistance(lat, lon, place.lat, place.lon);
-        if (distance_km > admission.maxRadius) return null;
-        if (place.business_status === 'CLOSED_PERMANENTLY') return null;
-        if (!place.rating || !place.user_ratings_total) return null;
-        if (place.rating < admission.minRating || place.user_ratings_total < admission.minReviewCount) return null;
-
-        const mappedPriceLevel = priceLevelMap[place.price_level] || null;
-        let unknownPrice = false;
-        if (price_levels && Array.isArray(price_levels) && price_levels.length > 0) {
-            if (mappedPriceLevel && !price_levels.includes(mappedPriceLevel)) {
-                // Known price that doesn't match filter — exclude
-                return null;
-            }
-            if (!mappedPriceLevel) {
-                // Unknown price — keep but flag for down-ranking
-                unknownPrice = true;
-            }
-        }
-
-        // Cuisine type filter
-        if (activeCuisineTypes.length > 0) {
-          const rawTypes: string[] = Array.isArray(place.types) ? place.types : [];
-          const hasKnownMatch = selectedCuisineKnown.some(ct => rawTypes.includes(ct));
-          const isOtherCuisine = !KNOWN_CUISINE_TYPES.some(kt => rawTypes.includes(kt));
-          if (!hasKnownMatch && !(cuisineIncludesOther && isOtherCuisine)) return null;
-        }
-
-        const isRelaxedAdmission =
-          place.rating < SCORING.RATING_FLOOR || place.user_ratings_total < SCORING.REVIEW_FLOOR;
-
-        return {
-          name: place.name,
-          address: place.address,
-          lat: place.lat,
-          lon: place.lon,
-          distance_km,
-          rating: place.rating,
-          review_count: place.user_ratings_total,
-          price_level: mappedPriceLevel,
-          place_id: place.place_id,
-          category:
-            place.types?.find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) ||
-            'Restaurant',
-          cuisine_type: place.types?.find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
-          isRelaxedAdmission,
-          unknownPrice,
-          _rawTypes: place.types,
-        };
-      })
-      .filter((v: any) => v !== null)
-      .filter((v: any) => !isDiscoveryMode || hasFoodDrinkType(v._rawTypes))
-      .filter((v: any) => !isDiscoveryMode || !v.lat || v.lat <= 43.7730);
-
-    } // end !servedFromSupabase (Steps 2–3)
     console.log(`✅ ${filteredVenues.length} passed filters`);
 
     // ─── STEP 3a: Skip history suppression (authenticated users only) ───
@@ -1349,63 +1318,7 @@ Deno.serve(async (req) => {
         .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have', 'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
 
       if (queryWords.length > 0) {
-        // Expand each keyword to related Google place type fragments
-        const expandedTypes = new Set<string>();
-        for (const word of queryWords) {
-          expandedTypes.add(word);
-          // Common expansions — add more as needed
-          if (word === 'steak') { expandedTypes.add('steak_house'); expandedTypes.add('steakhouse'); }
-          if (word === 'sushi') { expandedTypes.add('sushi_restaurant'); }
-          if (word === 'vegan') { expandedTypes.add('vegan_restaurant'); }
-          if (word === 'pizza') { expandedTypes.add('pizza_restaurant'); }
-          if (word === 'ramen') { expandedTypes.add('ramen_restaurant'); }
-          if (word === 'burger') { expandedTypes.add('hamburger_restaurant'); }
-          if (word === 'thai') { expandedTypes.add('thai_restaurant'); }
-          if (word === 'chinese') { expandedTypes.add('chinese_restaurant'); }
-          if (word === 'indian') { expandedTypes.add('indian_restaurant'); }
-          if (word === 'italian') { expandedTypes.add('italian_restaurant'); }
-          if (word === 'mexican') { expandedTypes.add('mexican_restaurant'); }
-          if (word === 'french') { expandedTypes.add('french_restaurant'); }
-          if (word === 'greek') { expandedTypes.add('greek_restaurant'); }
-          if (word === 'korean') { expandedTypes.add('korean_restaurant'); }
-          if (word === 'japanese') { expandedTypes.add('japanese_restaurant'); }
-          if (word === 'spanish') { expandedTypes.add('spanish_restaurant'); }
-          if (word === 'vietnamese') { expandedTypes.add('vietnamese_restaurant'); }
-          if (word === 'brunch') { expandedTypes.add('brunch_restaurant'); expandedTypes.add('breakfast_restaurant'); expandedTypes.add('cafe'); }
-          if (word === 'breakfast') { expandedTypes.add('breakfast_restaurant'); expandedTypes.add('brunch_restaurant'); expandedTypes.add('diner'); }
-          if (word === 'seafood') { expandedTypes.add('seafood_restaurant'); }
-          if (word === 'cocktail') { expandedTypes.add('cocktail_bar'); expandedTypes.add('bar'); }
-          if (word === 'wine') { expandedTypes.add('wine_bar'); }
-          if (word === 'coffee') { expandedTypes.add('coffee_shop'); expandedTypes.add('cafe'); expandedTypes.add('coffee_roastery'); expandedTypes.add('coffee_stand'); }
-          if (word === 'cafe') { expandedTypes.add('cafe'); expandedTypes.add('coffee_shop'); expandedTypes.add('bakery'); }
-          if (word === 'tapas') { expandedTypes.add('tapas_restaurant'); expandedTypes.add('spanish_restaurant'); }
-          if (word === 'diner') { expandedTypes.add('diner'); expandedTypes.add('breakfast_restaurant'); }
-          if (word === 'brewery' || word === 'breweries') { expandedTypes.add('brewery'); expandedTypes.add('brewpub'); expandedTypes.add('bar'); expandedTypes.add('pub'); }
-          if (word === 'winery') { expandedTypes.add('winery'); expandedTypes.add('wine_bar'); }
-          if (word === 'lebanese') { expandedTypes.add('lebanese_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
-          if (word === 'persian') { expandedTypes.add('persian_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
-          if (word === 'ethiopian') { expandedTypes.add('ethiopian_restaurant'); expandedTypes.add('african_restaurant'); }
-          if (word === 'latin') { expandedTypes.add('latin_american_restaurant'); expandedTypes.add('mexican_restaurant'); }
-          if (word === 'peruvian') { expandedTypes.add('peruvian_restaurant'); expandedTypes.add('latin_american_restaurant'); }
-          if (word === 'portuguese') { expandedTypes.add('portuguese_restaurant'); }
-          if (word === 'dim') { expandedTypes.add('dim_sum_restaurant'); expandedTypes.add('chinese_restaurant'); }
-          if (word === 'dumplings' || word === 'dumpling') { expandedTypes.add('dumpling_restaurant'); expandedTypes.add('chinese_restaurant'); }
-          if (word === 'tacos' || word === 'taco') { expandedTypes.add('taco_restaurant'); expandedTypes.add('mexican_restaurant'); }
-          if (word === 'noodles' || word === 'noodle') { expandedTypes.add('noodle_shop'); expandedTypes.add('vietnamese_restaurant'); expandedTypes.add('ramen_restaurant'); }
-          if (word === 'pho') { expandedTypes.add('vietnamese_restaurant'); expandedTypes.add('noodle_shop'); }
-          if (word === 'bar' || word === 'bars') { expandedTypes.add('bar'); expandedTypes.add('pub'); expandedTypes.add('cocktail_bar'); }
-          if (word === 'pub' || word === 'pubs') { expandedTypes.add('pub'); expandedTypes.add('bar'); }
-          if (word === 'sandwich' || word === 'sandwiches') { expandedTypes.add('sandwich_shop'); expandedTypes.add('deli_restaurant'); }
-          if (word === 'bakery' || word === 'bakeries') { expandedTypes.add('bakery'); expandedTypes.add('cafe'); }
-          if (word === 'dessert') { expandedTypes.add('dessert_shop'); expandedTypes.add('ice_cream_shop'); expandedTypes.add('bakery'); }
-          if (word === 'cream') { expandedTypes.add('ice_cream_shop'); expandedTypes.add('dessert_shop'); }
-          if (word === 'bbq' || word === 'barbecue') { expandedTypes.add('barbecue_restaurant'); }
-          if (word === 'wings') { expandedTypes.add('chicken_wings_restaurant'); expandedTypes.add('fast_food_restaurant'); }
-          if (word === 'shawarma' || word === 'kebab' || word === 'falafel') { expandedTypes.add('middle_eastern_restaurant'); expandedTypes.add('turkish_restaurant'); }
-          if (word === 'mediterranean') { expandedTypes.add('mediterranean_restaurant'); expandedTypes.add('greek_restaurant'); }
-          if (word === 'middle') { expandedTypes.add('middle_eastern_restaurant'); }
-          if (word === 'turkish') { expandedTypes.add('turkish_restaurant'); expandedTypes.add('middle_eastern_restaurant'); }
-        }
+        const expandedTypes = expandQueryToTypes(queryWords);
 
         const typeMatched = candidates.filter((v: any) => {
           const types = (v._rawTypes || []).join(' ').toLowerCase();
