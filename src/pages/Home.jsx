@@ -359,6 +359,7 @@ export default function Home() {
         onAppendChip={handleAppendChip}
         onFilterClick={() => setFilterOpen(true)}
         activeFilterCount={activeFilterCount}
+        userCoordinates={state.userLocation}
       />
 
       {/* ── Mobile post-search: fullscreen map + snap bottom sheet ── */}
