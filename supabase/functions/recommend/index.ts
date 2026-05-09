@@ -293,6 +293,14 @@ function parsePeriods(periods: any[]): any[] {
 
 async function fetchVenueHoursFromPlaces(placeId: string, apiKey: string): Promise<any[] | null> {
   try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const sb = createClient(supabaseUrl, supabaseKey);
+
+    const { checkAndLog } = await import('../_shared/apiCallLog.ts');
+    const allowed = await checkAndLog(sb, 'hours', placeId);
+    if (!allowed) return null;
+
     const res = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
       headers: {
         'X-Goog-Api-Key': apiKey,
@@ -303,9 +311,6 @@ async function fetchVenueHoursFromPlaces(placeId: string, apiKey: string): Promi
     const data = await res.json();
     const hours = parsePeriods(data.regularOpeningHours?.periods ?? []);
     if (hours.length > 0) {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-      const sb = createClient(supabaseUrl, supabaseKey);
       try {
         await sb.from('venues').update({
           regular_opening_hours: hours,

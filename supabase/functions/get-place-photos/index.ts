@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { checkAndLog } from '../_shared/apiCallLog.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -68,6 +69,14 @@ Deno.serve(async (req) => {
   }
 
   // ── Step 2: Fetch photo resource names from Google ─────────────────────────
+  const allowed = await checkAndLog(sb, 'photos', cleanId);
+  if (!allowed) {
+    return new Response(JSON.stringify({ success: false, error: 'Monthly API cap reached', photo_urls: [] }), {
+      status: 429,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
     const placeRef = cleanId.startsWith('places/') ? cleanId : `places/${cleanId}`;
     const detailsResp = await fetch(`https://places.googleapis.com/v1/${placeRef}?fields=photos`, {

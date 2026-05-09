@@ -13,6 +13,7 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { checkAndLog } from '../_shared/apiCallLog.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -163,6 +164,13 @@ Deno.serve(async (req) => {
   for (const row of rows) {
     const cleanId = row.google_place_id.replace(/^places\//, '');
     const placeRef = `places/${cleanId}`;
+
+    const allowed = await checkAndLog(sb, 'enrich', cleanId);
+    if (!allowed) {
+      console.warn(`[enrich-venues] Monthly cap reached — skipping ${cleanId}`);
+      failed++;
+      continue;
+    }
 
     try {
       // ── Step 1: Google Places Details (single call, Atmosphere tier) ──
