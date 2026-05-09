@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Search, SlidersHorizontal } from 'lucide-react';
 import CategoryTiles from './CategoryTiles';
 import RefinementChips from './RefinementChips';
 import SuggestedChips from './SuggestedChips';
+import { useVenueAutocomplete } from '@/hooks/useVenueAutocomplete';
 
 /**
  * Animated search overlay that appears when the user taps the search pill.
@@ -15,6 +17,7 @@ import SuggestedChips from './SuggestedChips';
  *  - Cancel / X button
  *
  * Contents (scrollable):
+ *  - Autocomplete suggestions (direct venue name lookups, feature-flagged)
  *  - Category chips
  *  - Dynamic refinement chips (reactive to typed text, 500 ms debounce)
  *  - Suggested chips (if any)
@@ -32,9 +35,16 @@ export default function SearchDialog({
   onAppendChip,
   onFilterClick,
   activeFilterCount = 0,
+  userCoordinates = null,
 }) {
+  const navigate = useNavigate();
   const inputRef = useRef(null);
   const [debouncedQuery, setDebouncedQuery] = useState('');
+
+  const { suggestions, onSearchFocus, selectSuggestion } = useVenueAutocomplete(
+    query,
+    userCoordinates
+  );
 
   // Debounce typed input so RefinementChips only re-fetches after the user pauses
   useEffect(() => {
@@ -98,6 +108,16 @@ export default function SearchDialog({
     onFilterClick?.();
   }, [onFilterClick]);
 
+  const handleSelectSuggestion = useCallback(
+    async (suggestion) => {
+      const result = await selectSuggestion(suggestion);
+      if (!result?.venue) return;
+      onClose();
+      navigate(`/venue/${result.venue.place_id}`, { state: { venue: result.venue } });
+    },
+    [selectSuggestion, onClose, navigate]
+  );
+
   return (
     <AnimatePresence>
       {open && (
@@ -130,6 +150,7 @@ export default function SearchDialog({
                   type="text"
                   value={query}
                   onChange={(e) => onQueryChange(e.target.value)}
+                  onFocus={onSearchFocus}
                   className="w-full h-10 pl-10 pr-10 rounded-full border border-input bg-card text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ring-offset-background transition-shadow"
                   placeholder="Ask and you shall receive..."
                 />
@@ -160,6 +181,33 @@ export default function SearchDialog({
               </button>
 
             </div>
+
+            {/* Autocomplete suggestions — direct venue name hits */}
+            {suggestions.length > 0 && (
+              <div className="border-b border-border max-w-5xl mx-auto w-full">
+                {suggestions.map((s) => {
+                  const pred = s.placePrediction;
+                  const main = pred?.structuredFormat?.mainText?.text ?? pred?.text?.text ?? '';
+                  const secondary = pred?.structuredFormat?.secondaryText?.text ?? '';
+                  return (
+                    <button
+                      key={pred?.placeId}
+                      onMouseDown={(e) => e.preventDefault()} // prevent input blur before click fires
+                      onClick={() => handleSelectSuggestion(s)}
+                      className="w-full flex items-start gap-3 text-left px-4 py-3 hover:bg-accent transition-colors"
+                    >
+                      <Search className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                      <span className="flex flex-col min-w-0">
+                        <span className="text-sm font-medium text-foreground truncate">{main}</span>
+                        {secondary && (
+                          <span className="text-xs text-muted-foreground truncate">{secondary}</span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Scrollable content */}
             <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-5 max-w-5xl mx-auto w-full">

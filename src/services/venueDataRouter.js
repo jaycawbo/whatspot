@@ -50,7 +50,7 @@ const WEEKLY_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
  * Map a venues table row to the venue object shape the rest of the frontend expects.
  * Matches the shape returned by the recommend edge function.
  */
-function rowToVenue(row) {
+export function rowToVenue(row) {
   return {
     place_id:              row.google_place_id,
     google_place_id:       row.google_place_id,
