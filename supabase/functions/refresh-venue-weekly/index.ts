@@ -23,6 +23,7 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { checkAndLog } from '../_shared/apiCallLog.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -141,6 +142,13 @@ Deno.serve(async (req) => {
     let updated = 0, failed = 0;
 
     for (const row of rows) {
+      const allowed = await checkAndLog(supabase, 'weekly', row.google_place_id);
+      if (!allowed) {
+        console.warn(`[refresh-venue-weekly] Monthly cap reached — skipping ${row.google_place_id}`);
+        failed++;
+        continue;
+      }
+
       try {
         const fields = await fetchEnterpriseFields(row.google_place_id, apiKey);
         if (!fields) { failed++; continue; }
