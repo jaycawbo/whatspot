@@ -388,6 +388,7 @@ async function fetchWithConcurrency<T, R>(items: T[], fn: (item: T) => Promise<R
 // ─── LLM helper ───
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? '';
+let sessionGapFills = 0;
 
 async function callLLM(model: string, systemPrompt: string, userPrompt: string, tools?: any[], toolChoice?: any, options?: { max_tokens?: number; temperature?: number }): Promise<any> {
   const body: any = {
@@ -1257,6 +1258,304 @@ Deno.serve(async (req) => {
         } else {
           console.log(`⚠️ Supabase search returned ${combined.length} combined venues — falling through to Google`);
         }
+      }
+    }
+
+    // ─── Mechanism 1: Gemini gap detection (search mode only) ───
+    // Fires when Supabase served results; asks Gemini for top venue names and checks
+    // whether any are missing from the DB. Confirmed gaps are fetched from Places API,
+    // written as skeleton rows, and appended to the current result set.
+    if (!isDiscoveryMode && GEMINI_API_KEY && servedFromSupabase && sessionGapFills < 10) {
+      try {
+        const gapRaw = await callLLM(
+          'gemini-2.5-flash',
+          'You are a Toronto restaurant and venue expert.',
+          `A user searched for: "${refinedSearchTerm}". List the top 5 real venues in Toronto that best match this search intent. Return ONLY a JSON array of venue names, nothing else. Example: ["Alo", "Canoe", "Edulis"]. Only include venues you are confident exist in Toronto.`,
+          undefined, undefined,
+          { max_tokens: 200, temperature: 0 },
+        );
+
+        let geminiNames: string[] = [];
+        try {
+          geminiNames = JSON.parse(gapRaw);
+          if (!Array.isArray(geminiNames)) geminiNames = [];
+        } catch { /* parse failed — skip */ }
+
+        if (geminiNames.length > 0 && GOOGLE_KEY) {
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          const sbGap = createClient(supabaseUrl, supabaseKey);
+          const { checkAndLog } = await import('../_shared/apiCallLog.ts');
+          let gapFillsThisSearch = 0;
+
+          for (const name of geminiNames.slice(0, 5)) {
+            if (sessionGapFills >= 10 || gapFillsThisSearch >= 3) break;
+
+            // Check if name already exists in Supabase
+            const { data: existingByName } = await sbGap
+              .from('venues')
+              .select('google_place_id')
+              .ilike('name', `%${name}%`)
+              .limit(1);
+
+            if (existingByName && existingByName.length > 0) continue;
+
+            console.log(`🔍 Gap detected: "${name}" not in DB — fetching from Places API`);
+
+            // Spend guard before each Places API call
+            const allowed = await checkAndLog(sbGap, 'enrich', `gap_${name}`);
+            if (!allowed) continue;
+
+            // Places API text search
+            let searchResults: any[] = [];
+            try {
+              searchResults = await googlePlacesBroadSearch(
+                GOOGLE_KEY, `${name}, Toronto`, lat, lon, admission.maxRadius, undefined, [],
+              );
+            } catch { continue; }
+
+            if (!searchResults.length) continue;
+
+            const firstResult = searchResults[0];
+            const rawPlaceId = (firstResult.place_id || '').replace(/^places\//, '');
+            if (!rawPlaceId) continue;
+
+            // Check if google_place_id already exists in Supabase (name mismatch but venue exists)
+            const { data: existingById } = await sbGap
+              .from('venues')
+              .select('google_place_id')
+              .eq('google_place_id', rawPlaceId)
+              .maybeSingle();
+
+            if (existingById) continue;
+
+            // Distance check
+            const gapDist = calculateDistance(lat, lon, firstResult.lat, firstResult.lon);
+            if (gapDist > admission.maxRadius) continue;
+
+            // Write skeleton row
+            const gapPriceToInt: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
+            const gapMappedPL = priceLevelMap[firstResult.price_level] || null;
+            await sbGap.from('venues').upsert([{
+              google_place_id: rawPlaceId,
+              name:            firstResult.name,
+              lat:             firstResult.lat,
+              lng:             firstResult.lon,
+              rating:          firstResult.rating,
+              review_count:    firstResult.user_ratings_total,
+              price_level:     gapMappedPL ? (gapPriceToInt[gapMappedPL] ?? null) : null,
+              venue_types:     firstResult.types || [],
+              business_status: null,
+              address:         firstResult.address,
+              enriched:        false,
+              is_chain:        false,
+            }], { onConflict: 'google_place_id', ignoreDuplicates: true });
+
+            // Add to current results
+            const gapRelaxed = (firstResult.rating || 0) < SCORING.RATING_FLOOR || (firstResult.user_ratings_total || 0) < SCORING.REVIEW_FLOOR;
+            filteredVenues.push({
+              name:              firstResult.name,
+              address:           firstResult.address || '',
+              lat:               firstResult.lat,
+              lon:               firstResult.lon,
+              distance_km:       gapDist,
+              rating:            firstResult.rating,
+              review_count:      firstResult.user_ratings_total,
+              price_level:       gapMappedPL,
+              place_id:          `places/${rawPlaceId}`,
+              category:          (firstResult.types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+              cuisine_type:      (firstResult.types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+              isRelaxedAdmission: gapRelaxed,
+              unknownPrice:      false,
+              _rawTypes:         firstResult.types || [],
+              _photoUrls:        [],
+            });
+
+            sessionGapFills++;
+            gapFillsThisSearch++;
+            console.log(`✅ Gap filled: "${name}" added to DB and current results`);
+          }
+        }
+      } catch (e: any) {
+        console.warn('⚠️ Gap detection failed silently:', e.message);
+      }
+    }
+
+    // ─── Mechanism 2: Gemini Maps Grounding (search mode only) ───
+    // Uses Google Search grounding to find venues the Supabase DB may not have.
+    // Extracts CIDs / place IDs from grounding chunk URIs, resolves them via Places API,
+    // writes skeleton rows to the DB, and appends to the current result set.
+    if (!isDiscoveryMode && GEMINI_API_KEY && sessionGapFills < 10) {
+      try {
+        const groundingResp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: `Find venues in Toronto matching: ${refinedSearchTerm}` }] }],
+              tools: [{ googleSearch: {} }],
+              toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+            }),
+          },
+        );
+
+        if (groundingResp.ok) {
+          const groundingData = await groundingResp.json();
+          const chunks: any[] = groundingData.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+          console.log('🗺️ Maps Grounding chunks:', JSON.stringify(chunks));
+
+          // Extract CIDs and any place_id= references from chunk URIs
+          const extractedIds: Array<{ cid?: string; placeId?: string; title: string }> = [];
+          for (const chunk of chunks) {
+            const uri: string  = chunk.web?.uri   || '';
+            const title: string = chunk.web?.title || '';
+            const cidMatch   = uri.match(/[?&]cid=(\d+)/);
+            const placeMatch = uri.match(/place_id=(ChIJ[^&]+)/);
+            if (cidMatch)   { extractedIds.push({ cid:     cidMatch[1],   title }); continue; }
+            if (placeMatch) { extractedIds.push({ placeId: placeMatch[1], title }); }
+          }
+
+          if (extractedIds.length === 0) {
+            console.log('🗺️ Maps Grounding: no placeIds extracted from response');
+          } else if (GOOGLE_KEY) {
+            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+            const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+            const sbM2 = createClient(supabaseUrl, supabaseKey);
+            const { checkAndLog } = await import('../_shared/apiCallLog.ts');
+            let m2FillsThisSearch = 0;
+
+            for (const item of extractedIds.slice(0, 5)) {
+              if (sessionGapFills >= 10 || m2FillsThisSearch >= 3) break;
+
+              // Spend guard before any Places API call
+              const guardKey = item.cid ? `m2_cid_${item.cid}` : `m2_${item.placeId}`;
+              const allowed = await checkAndLog(sbM2, 'enrich', guardKey);
+              if (!allowed) continue;
+
+              let cleanId: string | null = null;
+              let resolvedDetails: any = null;
+
+              if (item.cid) {
+                // CID → place details in one call via legacy Places Details endpoint
+                const legacyResp = await fetch(
+                  `https://maps.googleapis.com/maps/api/place/details/json?cid=${item.cid}&fields=place_id,name,formatted_address,geometry,rating,user_ratings_total,price_level,types,business_status&key=${GOOGLE_KEY}`,
+                );
+                if (!legacyResp.ok) continue;
+                const legacyData = await legacyResp.json();
+                if (!legacyData.result?.place_id) continue;
+                cleanId = legacyData.result.place_id.replace(/^places\//, '');
+                resolvedDetails = legacyData.result;
+              } else if (item.placeId) {
+                cleanId = item.placeId.replace(/^places\//, '');
+              }
+
+              if (!cleanId) continue;
+
+              // Check if already in Supabase
+              const { data: existingById } = await sbM2
+                .from('venues')
+                .select('google_place_id')
+                .eq('google_place_id', cleanId)
+                .maybeSingle();
+
+              if (existingById) continue;
+
+              // Fetch full details via new Places API if not already resolved via CID
+              if (!resolvedDetails) {
+                const newDetailsResp = await fetch(
+                  `https://places.googleapis.com/v1/places/${cleanId}`,
+                  {
+                    headers: {
+                      'X-Goog-Api-Key': GOOGLE_KEY,
+                      'X-Goog-FieldMask': 'displayName,formattedAddress,location,rating,userRatingCount,priceLevel,types,businessStatus',
+                    },
+                  },
+                );
+                if (!newDetailsResp.ok) continue;
+                const nd = await newDetailsResp.json();
+                // Normalise to legacy-style shape so the write-back below works for both paths
+                resolvedDetails = {
+                  name:               nd.displayName?.text    || '',
+                  formatted_address:  nd.formattedAddress     || '',
+                  geometry:           { location: { lat: nd.location?.latitude, lng: nd.location?.longitude } },
+                  rating:             nd.rating               ?? null,
+                  user_ratings_total: nd.userRatingCount      ?? null,
+                  price_level:        nd.priceLevel           ?? null,
+                  types:              nd.types                || [],
+                  business_status:    nd.businessStatus       || null,
+                };
+              }
+
+              const vLat = resolvedDetails.geometry?.location?.lat;
+              const vLon = resolvedDetails.geometry?.location?.lng;
+              if (!vLat || !vLon) continue;
+
+              // Distance check
+              const m2Dist = calculateDistance(lat, lon, vLat, vLon);
+              if (m2Dist > admission.maxRadius) continue;
+
+              // Normalise price level → DB integer (1–4)
+              const m2PLRaw = resolvedDetails.price_level;
+              let m2PLInt: number | null = null;
+              if (m2PLRaw != null) {
+                if (typeof m2PLRaw === 'number') {
+                  m2PLInt = m2PLRaw === 0 ? 1 : Math.min(m2PLRaw, 4);
+                } else {
+                  const m2PLMap: Record<string, number> = {
+                    PRICE_LEVEL_FREE: 1, PRICE_LEVEL_INEXPENSIVE: 1,
+                    PRICE_LEVEL_MODERATE: 2, PRICE_LEVEL_EXPENSIVE: 3, PRICE_LEVEL_VERY_EXPENSIVE: 4,
+                  };
+                  m2PLInt = m2PLMap[m2PLRaw] ?? null;
+                }
+              }
+              const m2PLStrs = ['$', '$', '$$', '$$$', '$$$$'];
+              const m2MappedPL = m2PLInt != null ? (m2PLStrs[m2PLInt] || null) : null;
+
+              // Write skeleton row
+              await sbM2.from('venues').upsert([{
+                google_place_id: cleanId,
+                name:            resolvedDetails.name || item.title || '',
+                lat:             vLat,
+                lng:             vLon,
+                rating:          resolvedDetails.rating,
+                review_count:    resolvedDetails.user_ratings_total,
+                price_level:     m2PLInt,
+                venue_types:     resolvedDetails.types || [],
+                business_status: null,
+                address:         resolvedDetails.formatted_address || '',
+                enriched:        false,
+                is_chain:        false,
+              }], { onConflict: 'google_place_id', ignoreDuplicates: true });
+
+              // Add to current results
+              const m2Relaxed = (resolvedDetails.rating || 0) < SCORING.RATING_FLOOR || (resolvedDetails.user_ratings_total || 0) < SCORING.REVIEW_FLOOR;
+              filteredVenues.push({
+                name:               resolvedDetails.name || item.title || '',
+                address:            resolvedDetails.formatted_address || '',
+                lat:                vLat,
+                lon:                vLon,
+                distance_km:        m2Dist,
+                rating:             resolvedDetails.rating,
+                review_count:       resolvedDetails.user_ratings_total,
+                price_level:        m2MappedPL,
+                place_id:           `places/${cleanId}`,
+                category:           (resolvedDetails.types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+                cuisine_type:       (resolvedDetails.types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+                isRelaxedAdmission: m2Relaxed,
+                unknownPrice:       false,
+                _rawTypes:          resolvedDetails.types || [],
+                _photoUrls:         [],
+              });
+
+              sessionGapFills++;
+              m2FillsThisSearch++;
+              console.log(`✅ Gap filled (Maps Grounding): "${resolvedDetails.name || item.title}" added to DB and current results`);
+            }
+          }
+        }
+      } catch (e: any) {
+        console.warn('⚠️ Maps Grounding failed silently:', e.message);
       }
     }
 
