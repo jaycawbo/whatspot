@@ -10,6 +10,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import AuthModal from '@/components/auth/AuthModal';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { supabase } from '@/integrations/supabase/client';
 
 const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
@@ -81,6 +82,14 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     if (placeId && placeId !== lastPassiveSkipRef.current) {
       lastPassiveSkipRef.current = placeId;
       writePassiveSkip(currentVenue);
+    }
+    if (currentVenue && !currentVenue.photos_complete) {
+      const rawId = (currentVenue.place_id || currentVenue.google_place_id || '').replace(/^places\//, '');
+      if (rawId) {
+        supabase.functions.invoke('get-place-photos', {
+          body: { place_id: rawId }
+        }).catch(() => {});  // fire and forget — never blocks card rendering
+      }
     }
   }, [currentVenue, writePassiveSkip]);
 
