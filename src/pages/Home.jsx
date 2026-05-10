@@ -67,35 +67,6 @@ export default function Home() {
 
   const hasInitializedReserve = useRef(false);
 
-  // Restore conv state after back-navigation (runs once on mount)
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem('ws_conv_state');
-      if (!raw) return;
-      const saved = JSON.parse(raw);
-      if (saved.query) {
-        setConvResults(saved.results || []);
-        setConvResponse(saved.response || '');
-        setConvChips(saved.chips || []);
-        setConvQuery(saved.query);
-        dispatch({ type: 'SET_QUERY', payload: saved.query });
-      }
-    } catch {}
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Persist conv state so back-navigation restores results
-  useEffect(() => {
-    if (!convQuery) return;
-    try {
-      sessionStorage.setItem('ws_conv_state', JSON.stringify({
-        query: convQuery,
-        results: convResults,
-        response: convResponse,
-        chips: convChips,
-      }));
-    } catch {}
-  }, [convQuery, convResults, convResponse, convChips]);
 
   // Post-save label microinteraction
   useEffect(() => {
