@@ -799,7 +799,7 @@ async function getGoogleVenues(params: {
   const selectedCuisineKnown = activeCuisineTypes.filter(ct => ct !== 'other');
   const cuisineIncludesOther = activeCuisineTypes.includes('other');
 
-  return googleResults
+  const venueRows = googleResults
     .map((place: any) => {
       const distance_km = calculateDistance(lat, lon, place.lat, place.lon);
       if (distance_km > admission.maxRadius) return null;
@@ -831,6 +831,35 @@ async function getGoogleVenues(params: {
     .filter((v: any) => v !== null)
     .filter((v: any) => !isDiscoveryMode || hasFoodDrinkType(v._rawTypes))
     .filter((v: any) => !isDiscoveryMode || !v.lat || v.lat <= 43.7730);
+
+  // Fire-and-forget: persist Google venues as skeleton rows so future Supabase searches find them.
+  // ignoreDuplicates=true means existing rows are never overwritten — only net-new venues are inserted.
+  if (venueRows.length > 0) {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const sb = createClient(supabaseUrl, supabaseKey);
+    const priceToInt: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
+    const rows = venueRows.map((v: any) => ({
+      google_place_id: (v.place_id || '').replace(/^places\//, ''),
+      name:            v.name,
+      lat:             v.lat,
+      lng:             v.lon,
+      rating:          v.rating,
+      review_count:    v.review_count,
+      price_level:     v.price_level ? (priceToInt[v.price_level] ?? null) : null,
+      venue_types:     v._rawTypes || [],
+      business_status: null,
+      address:         v.address,
+      enriched:        false,
+      is_chain:        false,
+    }));
+    sb.from('venues')
+      .upsert(rows, { onConflict: 'google_place_id', ignoreDuplicates: true })
+      .then(() => {})
+      .catch(() => {});
+  }
+
+  return venueRows;
 }
 
 // ─── Main handler ───

@@ -129,7 +129,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
 
   let query = supabase
     .from('venues')
-    .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
+    .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
     .gte('lat', bb.latMin)
     .lte('lat', bb.latMax)
     .gte('lng', bb.lngMin)
@@ -166,7 +166,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       const cutoff = new Date(Date.now() - years * 365.25 * 24 * 60 * 60 * 1000).toISOString();
       let newQuery = supabase
         .from('venues')
-        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
+        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
         .gte('lat', bb.latMin)
         .lte('lat', bb.latMax)
         .gte('lng', bb.lngMin)
@@ -213,6 +213,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
         types: v.venue_types || [],
         image_urls: v.photo_urls || [],
         descriptors: v.descriptors || [],
+        photos_complete: v.photos_complete ?? false,
       })),
       isEmpty: newFiltered.length === 0,
     };
@@ -226,7 +227,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
   } else if (tab === 'walkin') {
     let walkinQuery = supabase
       .from('venues')
-      .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, descriptors')
+      .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors')
       .eq('is_chain', false)
       .gte('rating', 3.5)
       .gte('review_count', 50)
@@ -258,6 +259,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
           types: v.venue_types || [],
           image_urls: v.photo_urls || [],
           descriptors: v.descriptors || [],
+          photos_complete: v.photos_complete ?? false,
         };
         return { ...normalised, _walkinScore: computeInlineWalkinScore(normalised) };
       })
@@ -299,7 +301,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       // No real trending scores yet — proxy fallback: top-rated with review_count >= 50
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('venues')
-        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
+        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
         .gte('lat', bb.latMin)
         .lte('lat', Math.min(bb.latMax, 43.773))
         .gte('lng', bb.lngMin)
@@ -334,6 +336,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
     types: v.venue_types || [],
     image_urls: v.photo_urls || [],
     descriptors: v.descriptors || [],
+    photos_complete: v.photos_complete ?? false,
   }));
 
   return { venues: normalised, isEmpty: false };
