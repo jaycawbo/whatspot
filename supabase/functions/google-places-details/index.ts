@@ -24,11 +24,7 @@ Deno.serve(async (req) => {
       'location',
       'rating',
       'userRatingCount',
-      'websiteUri',
-      'nationalPhoneNumber',
-      'currentOpeningHours',
       'priceLevel',
-      'reviews',
     ];
 
     const apiKey = Deno.env.get('GOOGLE_PLACES_API_KEY');

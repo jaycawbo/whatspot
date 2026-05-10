@@ -81,10 +81,10 @@ export default function VenueDetails() {
         if (error) throw error;
         if (data?.success) {
           setDetails(data.data);
-          // If we had no photos, try fetching them
-          if (photoUrls.length === 0) {
-            fetchPhotos();
-          }
+          // TEMPORARILY DISABLED — get-place-photos triggers Enterprise photo SKU
+          // if (photoUrls.length === 0) {
+          //   fetchPhotos();
+          // }
         }
       } catch (err) {
         console.error('Failed to fetch venue details:', err);
@@ -94,18 +94,19 @@ export default function VenueDetails() {
       }
     };
 
-    const fetchPhotos = async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke('get-place-photos', {
-          body: { place_id: placeId },
-        });
-        if (!error && data?.photo_urls?.length) {
-          setPhotoUrls(data.photo_urls);
-        }
-      } catch (err) {
-        console.error('Failed to fetch photos:', err);
-      }
-    };
+    // TEMPORARILY DISABLED — get-place-photos triggers Enterprise photo SKU
+    // const fetchPhotos = async () => {
+    //   try {
+    //     const { data, error } = await supabase.functions.invoke('get-place-photos', {
+    //       body: { place_id: placeId },
+    //     });
+    //     if (!error && data?.photo_urls?.length) {
+    //       setPhotoUrls(data.photo_urls);
+    //     }
+    //   } catch (err) {
+    //     console.error('Failed to fetch photos:', err);
+    //   }
+    // };
 
     fetchDetails();
   }, [placeId]);

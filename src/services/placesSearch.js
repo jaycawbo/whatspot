@@ -58,20 +58,13 @@ if (import.meta.env.DEV) {
 
 // ─── Edge function helpers ────────────────────────────────────────────────────
 
-const FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/places-autocomplete`;
-const FN_HEADERS = {
-  'Content-Type': 'application/json',
-  'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-};
-
 async function callEdgeFn(body) {
-  const resp = await fetch(FN_URL, { method: 'POST', headers: FN_HEADERS, body: JSON.stringify(body) });
-  if (!resp.ok) {
-    const text = await resp.text();
-    console.error('[placesSearch] edge fn error:', resp.status, text);
+  const { data, error } = await supabase.functions.invoke('places-autocomplete', { body });
+  if (error) {
+    console.error('[placesSearch] edge fn error:', error.message);
     return null;
   }
-  return resp.json();
+  return data;
 }
 
 // ─── In-memory place ID cache ─────────────────────────────────────────────────
