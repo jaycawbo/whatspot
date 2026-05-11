@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.census-sweep]
 verify_jwt = false
+
+[functions.places-autocomplete]
+verify_jwt = false
