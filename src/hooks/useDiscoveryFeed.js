@@ -15,6 +15,20 @@ const TORONTO_ANCHORS = [
   { lat: 43.6586, lon: -79.3925 }, // northwest
 ];
 
+// Relative offsets (~1km spacing) applied to user's actual location for broad-area rotation.
+// Keeps variety without hardcoding Toronto as the center of the world.
+const ANCHOR_OFFSETS = [
+  { dlat: 0,       dlon: 0 },
+  { dlat: 0.009,   dlon: 0 },
+  { dlat: -0.009,  dlon: 0 },
+  { dlat: 0,       dlon: 0.0129 },
+  { dlat: 0,       dlon: -0.0129 },
+  { dlat: 0.0054,  dlon: 0.0093 },
+  { dlat: -0.0054, dlon: 0.0093 },
+  { dlat: -0.0054, dlon: -0.0093 },
+  { dlat: 0.0054,  dlon: -0.0093 },
+];
+
 const RADIUS_RINGS = [2, 4, 6, 8, 10, 12];
 const MAX_CRITERIA_PASS = 7;
 
@@ -412,9 +426,14 @@ export function useDiscoveryFeed() {
         .single();
 
       const anchorIndex = profile?.discovery_anchor_index ?? 0;
-      const nextIndex = (anchorIndex + 1) % TORONTO_ANCHORS.length;
+      const nextIndex = (anchorIndex + 1) % ANCHOR_OFFSETS.length;
 
-      if (!anchorPointRef.current) anchorPointRef.current = TORONTO_ANCHORS[anchorIndex];
+      if (!anchorPointRef.current) {
+        const baseLat = loc?.lat ?? TORONTO_ANCHORS[0].lat;
+        const baseLon = loc?.lon ?? TORONTO_ANCHORS[0].lon;
+        const off = ANCHOR_OFFSETS[anchorIndex] ?? ANCHOR_OFFSETS[0];
+        anchorPointRef.current = { lat: baseLat + off.dlat, lon: baseLon + off.dlon };
+      }
       radiusRingIndexRef.current = 0;
       criteriaPassRef.current = profile?.discovery_last_criteria_pass ?? 1;
 
@@ -434,17 +453,21 @@ export function useDiscoveryFeed() {
 
     // Guest: random anchor from sessionStorage
     isGuestRef.current = true;
+    const guestBaseLat = loc?.lat ?? TORONTO_ANCHORS[0].lat;
+    const guestBaseLon = loc?.lon ?? TORONTO_ANCHORS[0].lon;
     try {
       const stored = sessionStorage.getItem('whatspot_anchor_index');
       if (stored !== null) {
-        anchorPointRef.current = TORONTO_ANCHORS[parseInt(stored)];
+        const off = ANCHOR_OFFSETS[parseInt(stored)] ?? ANCHOR_OFFSETS[0];
+        anchorPointRef.current = { lat: guestBaseLat + off.dlat, lon: guestBaseLon + off.dlon };
       } else {
-        const randomIndex = Math.floor(Math.random() * TORONTO_ANCHORS.length);
+        const randomIndex = Math.floor(Math.random() * ANCHOR_OFFSETS.length);
         sessionStorage.setItem('whatspot_anchor_index', String(randomIndex));
-        anchorPointRef.current = TORONTO_ANCHORS[randomIndex];
+        const off = ANCHOR_OFFSETS[randomIndex];
+        anchorPointRef.current = { lat: guestBaseLat + off.dlat, lon: guestBaseLon + off.dlon };
       }
     } catch {
-      anchorPointRef.current = TORONTO_ANCHORS[0];
+      anchorPointRef.current = { lat: guestBaseLat, lon: guestBaseLon };
     }
     // Seed allServedIdsRef with previously seen venue IDs for cross-session freshness
     try {

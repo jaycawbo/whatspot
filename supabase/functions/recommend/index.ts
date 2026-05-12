@@ -62,7 +62,7 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
     .from('venues')
     .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address, regular_opening_hours')
     .gte('lat', lat - latBuf)
-    .lte('lat', Math.min(lat + latBuf, 43.773))
+    .lte('lat', lat + latBuf)
     .gte('lng', lon - lngBuf)
     .lte('lng', lon + lngBuf)
     .or('business_status.eq.OPERATIONAL,business_status.is.null')
@@ -768,8 +768,12 @@ async function getGoogleVenues(params: {
     );
     console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationBias 3km)`);
   } else if (isDiscoveryMode) {
-    // Tiling disabled — extracted to supabase/functions/tile-search/index.ts
-    googleResults = [];
+    googleResults = await googlePlacesBroadSearch(
+      GOOGLE_KEY,
+      'restaurant OR bar OR cafe',
+      lat, lon, Math.min(admission.maxRadius, 12), open_now, googlePriceLevels,
+    );
+    console.log(`📊 Discovery Google fallback: ${googleResults.length} venues from Places API`);
   } else {
     googleResults = await googlePlacesBroadSearch(
       GOOGLE_KEY,
@@ -830,8 +834,7 @@ async function getGoogleVenues(params: {
       };
     })
     .filter((v: any) => v !== null)
-    .filter((v: any) => !isDiscoveryMode || hasFoodDrinkType(v._rawTypes))
-    .filter((v: any) => !isDiscoveryMode || !v.lat || v.lat <= 43.7730);
+    .filter((v: any) => !isDiscoveryMode || hasFoodDrinkType(v._rawTypes));
 
   // Fire-and-forget: persist Google venues as skeleton rows so future Supabase searches find them.
   // ignoreDuplicates=true means existing rows are never overwritten — only net-new venues are inserted.
