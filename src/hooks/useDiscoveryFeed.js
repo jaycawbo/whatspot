@@ -245,6 +245,10 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       .eq('is_chain', false)
       .gte('rating', 3.5)
       .gte('review_count', 50)
+      .gte('lat', bb.latMin)
+      .lte('lat', bb.latMax)
+      .gte('lng', bb.lngMin)
+      .lte('lng', bb.lngMax)
       .order('review_count', { ascending: false })
       .limit(60);
     if (filters?.priceLevels?.length) {
@@ -317,7 +321,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
         .from('venues')
         .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
         .gte('lat', bb.latMin)
-        .lte('lat', Math.min(bb.latMax, 43.773))
+        .lte('lat', bb.latMax)
         .gte('lng', bb.lngMin)
         .lte('lng', bb.lngMax)
         .gte('review_count', 50)
@@ -587,6 +591,7 @@ export function useDiscoveryFeed() {
       const overflow = res?.nearby_overflow || [];
       const reserve = res?.reserve_venues || [];
       const staged = res?.staged_venues || [];
+      const wasGoogleFallback = res?.was_google_fallback === true;
 
       // Filter out skipped venues
       let skippedIds = [];
@@ -654,6 +659,8 @@ export function useDiscoveryFeed() {
           sessionStorage.setItem('whatspot_seen_venues', JSON.stringify(merged));
         } catch {}
       }
+
+      return { wasGoogleFallback };
     } catch (err) {
       let errDetail = err?.message || 'unknown';
       if (err?.context) {
@@ -689,8 +696,11 @@ export function useDiscoveryFeed() {
     try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
     // Init anchor FIRST so fetchFeed uses the correct coordinates
     initAnchorPoint().then(() => {
-      fetchFeed().then(() => {
-        prefetchNextBatch();
+      fetchFeed().then((result) => {
+        // Delay prefetch when Google fallback fired — gives the fire-and-forget
+        // DB upsert time to complete so the prefetch hits Supabase, not Google.
+        const delay = result?.wasGoogleFallback ? 3000 : 0;
+        setTimeout(() => prefetchNextBatch(), delay);
       });
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

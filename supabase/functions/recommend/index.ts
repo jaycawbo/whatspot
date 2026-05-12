@@ -526,7 +526,7 @@ async function getSupabaseVenues(params: {
   const { lat, lon, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY, isDiscoveryMode } = params;
 
   const RIPPLE_RINGS = [2, 4, 6, 8, 10, 12];
-  const THRESHOLD = 22; // 12 primary + 10 reserve
+  const THRESHOLD = 10; // minimum raw venue pool before Google fallback fires
 
   // ─── Ripple ring expansion: find smallest radius with >= 22 pass-1 quality venues ───
   let rawPool: any[] = [];
@@ -1562,12 +1562,32 @@ Deno.serve(async (req) => {
       }
     }
 
+    let wasGoogleFallback = false;
+
     if (!servedFromSupabase) {
       if (!GOOGLE_KEY) {
         console.warn('⚠️ Google Places API key not configured — no fallback available, returning empty results');
         throw new Error('GOOGLE_PLACES_API_KEY not configured');
       }
-      if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
+      if (!isDiscoveryMode && !GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
+
+      // Spend guard — tracks all Google fallback calls against monthly cap
+      const { checkAndLog } = await import('../_shared/apiCallLog.ts');
+      const sbGuard = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      const locationKey = `disc_${Math.round(lat * 10) / 10}_${Math.round(lon * 10) / 10}`;
+      const allowed = await checkAndLog(sbGuard, 'discovery_fallback', locationKey);
+      if (!allowed) {
+        return new Response(
+          JSON.stringify({
+            results: [], suggested_chips: [], search_summary: null,
+            pagination: { has_more: false },
+            relaxation_applied: relaxation_level > 0, relaxation_level,
+            gated: false, nearby_overflow: [], reserve_venues: [], staged_venues: [],
+            was_google_fallback: false,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
 
       const googleVenues = await getGoogleVenues({
         GOOGLE_KEY, refinedSearchTerm, location_name, lat, lon, admission,
@@ -1583,11 +1603,13 @@ Deno.serve(async (req) => {
             pagination: { has_more: false },
             relaxation_applied: relaxation_level > 0, relaxation_level,
             gated: false, nearby_overflow: [], reserve_venues: [], staged_venues: [],
+            was_google_fallback: false,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
       }
       filteredVenues = googleVenues;
+      wasGoogleFallback = true;
     }
     console.log(`✅ ${filteredVenues.length} passed filters`);
 
@@ -2080,6 +2102,7 @@ Deno.serve(async (req) => {
         nearby_overflow: overflowVenues || [],
         reserve_venues: reserveVenues,
         staged_venues: stagedVenues || [],
+        was_google_fallback: wasGoogleFallback,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
