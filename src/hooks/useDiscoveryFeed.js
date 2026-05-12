@@ -397,6 +397,8 @@ export function useDiscoveryFeed() {
   const pendingPrefetchRef = useRef(false);
   // True when current session is a guest (no authenticated user)
   const isGuestRef = useRef(false);
+  // Previous location snapshot for material-change detection
+  const prevLocationRef = useRef(null);
 
   const initAnchorPoint = useCallback(async () => {
     if (anchorPointRef.current) return;
@@ -427,7 +429,7 @@ export function useDiscoveryFeed() {
         .from('user_profiles')
         .select('discovery_anchor_index, discovery_last_radius_km, discovery_last_criteria_pass')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
       const anchorIndex = profile?.discovery_anchor_index ?? 0;
       const nextIndex = (anchorIndex + 1) % ANCHOR_OFFSETS.length;
@@ -500,6 +502,46 @@ export function useDiscoveryFeed() {
       fetchFeed({ query: currentQueryRef.current });
     }
   }, [state.filters]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Location-change refresh — resets feed when user moves materially (>5 km) or sets an explicit pin/GPS
+  useEffect(() => {
+    const newLoc = state.userLocation;
+    if (!newLoc?.lat || !newLoc?.lon) return;
+
+    const prev = prevLocationRef.current;
+    prevLocationRef.current = newLoc;
+
+    if (!prev) return; // initial mount — [] effect handles first load
+
+    const anchor = anchorPointRef.current;
+    if (!anchor) return; // anchor not set yet; initial load still in progress
+
+    const isExplicit = newLoc.isPinDrop || newLoc.isGPS;
+    const dLat = (newLoc.lat - anchor.lat) * 111;
+    const dLon = (newLoc.lon - anchor.lon) * 111 * Math.cos(newLoc.lat * Math.PI / 180);
+    const distKm = Math.sqrt(dLat * dLat + dLon * dLon);
+
+    if (!isExplicit && distKm < 5) return;
+
+    anchorPointRef.current = null;
+    allServedIdsRef.current.clear();
+    reserveIdsRef.current.clear();
+    reserveVenuesRef.current = [];
+    prefetchedVenuesRef.current = [];
+    fullScoredPoolRef.current = [];
+    radiusRingIndexRef.current = 0;
+    criteriaPassRef.current = 1;
+    setVenues([]);
+    try { sessionStorage.removeItem(FEED_CACHE_KEY); } catch {}
+    try { sessionStorage.removeItem('whatspot_seen_venues'); } catch {}
+
+    initAnchorPoint().then(() => {
+      fetchFeed().then((result) => {
+        const delay = result?.wasGoogleFallback ? 3000 : 0;
+        setTimeout(() => prefetchNextBatch(), delay);
+      });
+    });
+  }, [state.userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tab feed — fires when feedTab or filters change (for DB-driven tabs: new/trending)
   // For You and Popular use the existing recommend pipeline.
