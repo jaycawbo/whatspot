@@ -49,7 +49,7 @@ function getInitialState() {
     userLocation: location,
     locationName,
     filters,
-    feedTab: 'for_you',
+    feedTab: 'walkin',
     anonymousId,
     searchHistory: history,
     results: [],
