@@ -15,6 +15,20 @@ const TORONTO_ANCHORS = [
   { lat: 43.6586, lon: -79.3925 }, // northwest
 ];
 
+// Relative offsets (~1km spacing) applied to user's actual location for broad-area rotation.
+// Keeps variety without hardcoding Toronto as the center of the world.
+const ANCHOR_OFFSETS = [
+  { dlat: 0,       dlon: 0 },
+  { dlat: 0.009,   dlon: 0 },
+  { dlat: -0.009,  dlon: 0 },
+  { dlat: 0,       dlon: 0.0129 },
+  { dlat: 0,       dlon: -0.0129 },
+  { dlat: 0.0054,  dlon: 0.0093 },
+  { dlat: -0.0054, dlon: 0.0093 },
+  { dlat: -0.0054, dlon: -0.0093 },
+  { dlat: 0.0054,  dlon: -0.0093 },
+];
+
 const RADIUS_RINGS = [2, 4, 6, 8, 10, 12];
 const MAX_CRITERIA_PASS = 7;
 
@@ -231,6 +245,10 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       .eq('is_chain', false)
       .gte('rating', 3.5)
       .gte('review_count', 50)
+      .gte('lat', bb.latMin)
+      .lte('lat', bb.latMax)
+      .gte('lng', bb.lngMin)
+      .lte('lng', bb.lngMax)
       .order('review_count', { ascending: false })
       .limit(60);
     if (filters?.priceLevels?.length) {
@@ -303,7 +321,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
         .from('venues')
         .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
         .gte('lat', bb.latMin)
-        .lte('lat', Math.min(bb.latMax, 43.773))
+        .lte('lat', bb.latMax)
         .gte('lng', bb.lngMin)
         .lte('lng', bb.lngMax)
         .gte('review_count', 50)
@@ -379,6 +397,8 @@ export function useDiscoveryFeed() {
   const pendingPrefetchRef = useRef(false);
   // True when current session is a guest (no authenticated user)
   const isGuestRef = useRef(false);
+  // Previous location snapshot for material-change detection
+  const prevLocationRef = useRef(null);
 
   const initAnchorPoint = useCallback(async () => {
     if (anchorPointRef.current) return;
@@ -397,11 +417,18 @@ export function useDiscoveryFeed() {
     if (loc?.locationType && !BROAD_TYPES.includes(loc.locationType)) {
       anchorPointRef.current = { lat: loc.lat, lon: loc.lon };
       console.log('[Anchor] Using exact coords (specific location type:', loc.locationType, ')');
+      return;
     }
 
     // Priority 3: Broad area (city-level or no locationType) — apply rotation
     // Authenticated user: sequential anchor index from DB
-    const { data: { user } } = await supabase.auth.getUser();
+    let user = null;
+    try {
+      const authResponse = await supabase.auth.getUser();
+      user = authResponse?.data?.user ?? null;
+    } catch {
+      // auth unavailable — treat as guest so anchor is always set below
+    }
     if (user) {
       // Clear guest cross-session seen IDs when user authenticates
       try { localStorage.removeItem('whatspot_guest_seen_ids'); } catch {}
@@ -409,12 +436,17 @@ export function useDiscoveryFeed() {
         .from('user_profiles')
         .select('discovery_anchor_index, discovery_last_radius_km, discovery_last_criteria_pass')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
       const anchorIndex = profile?.discovery_anchor_index ?? 0;
-      const nextIndex = (anchorIndex + 1) % TORONTO_ANCHORS.length;
+      const nextIndex = (anchorIndex + 1) % ANCHOR_OFFSETS.length;
 
-      if (!anchorPointRef.current) anchorPointRef.current = TORONTO_ANCHORS[anchorIndex];
+      if (!anchorPointRef.current) {
+        const baseLat = loc?.lat ?? TORONTO_ANCHORS[0].lat;
+        const baseLon = loc?.lon ?? TORONTO_ANCHORS[0].lon;
+        const off = ANCHOR_OFFSETS[anchorIndex] ?? ANCHOR_OFFSETS[0];
+        anchorPointRef.current = { lat: baseLat + off.dlat, lon: baseLon + off.dlon };
+      }
       radiusRingIndexRef.current = 0;
       criteriaPassRef.current = profile?.discovery_last_criteria_pass ?? 1;
 
@@ -434,17 +466,21 @@ export function useDiscoveryFeed() {
 
     // Guest: random anchor from sessionStorage
     isGuestRef.current = true;
+    const guestBaseLat = loc?.lat ?? TORONTO_ANCHORS[0].lat;
+    const guestBaseLon = loc?.lon ?? TORONTO_ANCHORS[0].lon;
     try {
       const stored = sessionStorage.getItem('whatspot_anchor_index');
       if (stored !== null) {
-        anchorPointRef.current = TORONTO_ANCHORS[parseInt(stored)];
+        const off = ANCHOR_OFFSETS[parseInt(stored)] ?? ANCHOR_OFFSETS[0];
+        anchorPointRef.current = { lat: guestBaseLat + off.dlat, lon: guestBaseLon + off.dlon };
       } else {
-        const randomIndex = Math.floor(Math.random() * TORONTO_ANCHORS.length);
+        const randomIndex = Math.floor(Math.random() * ANCHOR_OFFSETS.length);
         sessionStorage.setItem('whatspot_anchor_index', String(randomIndex));
-        anchorPointRef.current = TORONTO_ANCHORS[randomIndex];
+        const off = ANCHOR_OFFSETS[randomIndex];
+        anchorPointRef.current = { lat: guestBaseLat + off.dlat, lon: guestBaseLon + off.dlon };
       }
     } catch {
-      anchorPointRef.current = TORONTO_ANCHORS[0];
+      anchorPointRef.current = { lat: guestBaseLat, lon: guestBaseLon };
     }
     // Seed allServedIdsRef with previously seen venue IDs for cross-session freshness
     try {
@@ -473,6 +509,48 @@ export function useDiscoveryFeed() {
       fetchFeed({ query: currentQueryRef.current });
     }
   }, [state.filters]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Location-change refresh — resets feed when user moves materially (>5 km) or sets an explicit pin/GPS
+  useEffect(() => {
+    const newLoc = state.userLocation;
+    if (!newLoc?.lat || !newLoc?.lon) return;
+
+    const prev = prevLocationRef.current;
+    prevLocationRef.current = newLoc;
+
+    if (!prev) return; // initial mount — [] effect handles first load
+
+    const anchor = anchorPointRef.current;
+    if (!anchor) return; // anchor not set yet; initial load still in progress
+
+    const isExplicit = newLoc.isPinDrop || newLoc.isGPS;
+    const dLat = (newLoc.lat - anchor.lat) * 111;
+    const dLon = (newLoc.lon - anchor.lon) * 111 * Math.cos(newLoc.lat * Math.PI / 180);
+    const distKm = Math.sqrt(dLat * dLat + dLon * dLon);
+
+    if (!isExplicit && distKm < 5) return;
+
+    anchorPointRef.current = null;
+    allServedIdsRef.current.clear();
+    reserveIdsRef.current.clear();
+    reserveVenuesRef.current = [];
+    prefetchedVenuesRef.current = [];
+    fullScoredPoolRef.current = [];
+    radiusRingIndexRef.current = 0;
+    criteriaPassRef.current = 1;
+    setVenues([]);
+    try { sessionStorage.removeItem(FEED_CACHE_KEY); } catch {}
+    try { sessionStorage.removeItem('whatspot_seen_venues'); } catch {}
+
+    initAnchorPoint()
+      .catch(err => console.error('[Discovery] initAnchorPoint (location change) failed:', err))
+      .then(() => {
+        fetchFeed().then((result) => {
+          const delay = result?.wasGoogleFallback ? 3000 : 0;
+          setTimeout(() => prefetchNextBatch(), delay);
+        });
+      });
+  }, [state.userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tab feed — fires when feedTab or filters change (for DB-driven tabs: new/trending)
   // For You and Popular use the existing recommend pipeline.
@@ -564,6 +642,7 @@ export function useDiscoveryFeed() {
       const overflow = res?.nearby_overflow || [];
       const reserve = res?.reserve_venues || [];
       const staged = res?.staged_venues || [];
+      const wasGoogleFallback = res?.was_google_fallback === true;
 
       // Filter out skipped venues
       let skippedIds = [];
@@ -631,6 +710,8 @@ export function useDiscoveryFeed() {
           sessionStorage.setItem('whatspot_seen_venues', JSON.stringify(merged));
         } catch {}
       }
+
+      return { wasGoogleFallback };
     } catch (err) {
       let errDetail = err?.message || 'unknown';
       if (err?.context) {
@@ -665,11 +746,16 @@ export function useDiscoveryFeed() {
     // Clear skipped venues from previous sessions so the feed starts fresh
     try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
     // Init anchor FIRST so fetchFeed uses the correct coordinates
-    initAnchorPoint().then(() => {
-      fetchFeed().then(() => {
-        prefetchNextBatch();
+    initAnchorPoint()
+      .catch(err => console.error('[Discovery] initAnchorPoint failed:', err))
+      .then(() => {
+        fetchFeed().then((result) => {
+          // Delay prefetch when Google fallback fired — gives the fire-and-forget
+          // DB upsert time to complete so the prefetch hits Supabase, not Google.
+          const delay = result?.wasGoogleFallback ? 3000 : 0;
+          setTimeout(() => prefetchNextBatch(), delay);
+        });
       });
-    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Search-driven refresh
