@@ -417,12 +417,18 @@ export function useDiscoveryFeed() {
     if (loc?.locationType && !BROAD_TYPES.includes(loc.locationType)) {
       anchorPointRef.current = { lat: loc.lat, lon: loc.lon };
       console.log('[Anchor] Using exact coords (specific location type:', loc.locationType, ')');
+      return;
     }
 
     // Priority 3: Broad area (city-level or no locationType) — apply rotation
     // Authenticated user: sequential anchor index from DB
-    const authResponse = await supabase.auth.getUser();
-    const user = authResponse?.data?.user ?? null;
+    let user = null;
+    try {
+      const authResponse = await supabase.auth.getUser();
+      user = authResponse?.data?.user ?? null;
+    } catch {
+      // auth unavailable — treat as guest so anchor is always set below
+    }
     if (user) {
       // Clear guest cross-session seen IDs when user authenticates
       try { localStorage.removeItem('whatspot_guest_seen_ids'); } catch {}
