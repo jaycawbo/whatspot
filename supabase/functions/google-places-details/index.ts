@@ -185,15 +185,19 @@ Deno.serve(async (req) => {
 
     // ── 4. Write-back to venues ────────────────────────────────────────────────
     const venueUpdate: Record<string, any> = {
-      phone:                d.nationalPhoneNumber     ?? null,
-      website:              d.websiteUri              ?? null,
-      price_level:          d.priceLevel              ?? null,
-      editorial_summary:    d.editorialSummary?.text  ?? null,
-      dining_attributes:    diningAttrs,
-      enriched:             true,
-      reviews_last_updated: now,
+      phone:                   d.nationalPhoneNumber    ?? null,
+      website:                 d.websiteUri             ?? null,
+      price_level:             d.priceLevel             ?? null,
+      editorial_summary:       d.editorialSummary?.text ?? null,
+      dining_attributes:       diningAttrs,
+      enriched:                true,
+      reviews_last_updated:    now,
+      business_status:         d.businessStatus         ?? null,
+      current_hours_cached_at: now,
     };
     if (regularPeriods.length > 0) venueUpdate.regular_opening_hours = regularPeriods;
+    const currentPeriods = parsePeriods(d.currentOpeningHours?.periods || []);
+    if (currentPeriods.length > 0) venueUpdate.current_opening_hours = currentPeriods;
 
     await sb.from('venues').update(venueUpdate).eq('google_place_id', cleanId);
 

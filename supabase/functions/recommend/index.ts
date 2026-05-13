@@ -60,7 +60,7 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
 
   const { data, error } = await sb
     .from('venues')
-    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address, regular_opening_hours')
+    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address, regular_opening_hours, current_hours_cached_at')
     .gte('lat', lat - latBuf)
     .lte('lat', Math.min(lat + latBuf, 43.773))
     .gte('lng', lon - lngBuf)
@@ -93,7 +93,7 @@ async function getSupabaseVenuesByType(expandedTypes: string[], lat: number, lon
 
   const { data, error } = await sb
     .from('venues')
-    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address, regular_opening_hours')
+    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address, regular_opening_hours, current_hours_cached_at')
     .or(typeFilter)
     .or('business_status.eq.OPERATIONAL,business_status.is.null')
     .order('rating', { ascending: false })
@@ -657,9 +657,10 @@ async function getSupabaseVenues(params: {
     const missingHours = rawPool
       .filter((v: any) => hasFoodDrinkType(v.venue_types))
       .filter((v: any) => !v.regular_opening_hours || (v.regular_opening_hours as any[]).length === 0)
+      .filter((v: any) => !v.current_hours_cached_at || (Date.now() - new Date(v.current_hours_cached_at).getTime()) >= 12 * 60 * 60 * 1000)
       .filter((v: any) => !includedIds.has(`places/${v.google_place_id}`))
       .filter((v: any) => (v.rating ?? 0) >= DISCOVERY_CRITERIA[passIndex].minRating && (v.review_count ?? 0) >= DISCOVERY_CRITERIA[passIndex].minReviewCount)
-      .slice(0, 5);
+      .slice(0, 3);
     if (missingHours.length > 0) {
       const recovered = await Promise.all(missingHours.map(async (v: any) => {
         const hours = await fetchVenueHoursFromPlaces(v.google_place_id, GOOGLE_KEY);
@@ -827,6 +828,7 @@ async function getGoogleVenues(params: {
         category: place.types?.find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
         cuisine_type: place.types?.find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
         isRelaxedAdmission, unknownPrice, _rawTypes: place.types,
+        business_status: place.business_status ?? null,
       };
     })
     .filter((v: any) => v !== null)
@@ -849,7 +851,7 @@ async function getGoogleVenues(params: {
       review_count:    v.review_count,
       price_level:     v.price_level ? (priceToInt[v.price_level] ?? null) : null,
       venue_types:     v._rawTypes || [],
-      business_status: null,
+      business_status: v.business_status ?? null,
       address:         v.address,
       enriched:        false,
       is_chain:        false,
