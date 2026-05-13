@@ -39,7 +39,7 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-export const DATA_SOURCE = import.meta.env.VITE_VENUE_DATA_SOURCE || 'db_only';
+export const DATA_SOURCE = import.meta.env.VITE_VENUE_DATA_SOURCE || 'live_fallback';
 export const isDbOnly = () => DATA_SOURCE === 'db_only';
 
 const WEEKLY_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -189,7 +189,7 @@ export async function queryVenuesFromDb({ query, keywords, venueTypes, priceLeve
     const lngBuf = (radiusKm * 1.5) / (111 * Math.cos(lat * Math.PI / 180));
     qb = qb
       .gte('lat', lat - latBuf)
-      .lte('lat', Math.min(lat + latBuf, 43.773))
+      .lte('lat', lat + latBuf)
       .gte('lng', lon - lngBuf)
       .lte('lng', lon + lngBuf);
   }
