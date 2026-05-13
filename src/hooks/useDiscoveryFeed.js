@@ -421,7 +421,8 @@ export function useDiscoveryFeed() {
 
     // Priority 3: Broad area (city-level or no locationType) — apply rotation
     // Authenticated user: sequential anchor index from DB
-    const { data: { user } } = await supabase.auth.getUser();
+    const authResponse = await supabase.auth.getUser();
+    const user = authResponse?.data?.user ?? null;
     if (user) {
       // Clear guest cross-session seen IDs when user authenticates
       try { localStorage.removeItem('whatspot_guest_seen_ids'); } catch {}
@@ -535,12 +536,14 @@ export function useDiscoveryFeed() {
     try { sessionStorage.removeItem(FEED_CACHE_KEY); } catch {}
     try { sessionStorage.removeItem('whatspot_seen_venues'); } catch {}
 
-    initAnchorPoint().then(() => {
-      fetchFeed().then((result) => {
-        const delay = result?.wasGoogleFallback ? 3000 : 0;
-        setTimeout(() => prefetchNextBatch(), delay);
+    initAnchorPoint()
+      .catch(err => console.error('[Discovery] initAnchorPoint (location change) failed:', err))
+      .then(() => {
+        fetchFeed().then((result) => {
+          const delay = result?.wasGoogleFallback ? 3000 : 0;
+          setTimeout(() => prefetchNextBatch(), delay);
+        });
       });
-    });
   }, [state.userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tab feed — fires when feedTab or filters change (for DB-driven tabs: new/trending)
@@ -737,14 +740,16 @@ export function useDiscoveryFeed() {
     // Clear skipped venues from previous sessions so the feed starts fresh
     try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
     // Init anchor FIRST so fetchFeed uses the correct coordinates
-    initAnchorPoint().then(() => {
-      fetchFeed().then((result) => {
-        // Delay prefetch when Google fallback fired — gives the fire-and-forget
-        // DB upsert time to complete so the prefetch hits Supabase, not Google.
-        const delay = result?.wasGoogleFallback ? 3000 : 0;
-        setTimeout(() => prefetchNextBatch(), delay);
+    initAnchorPoint()
+      .catch(err => console.error('[Discovery] initAnchorPoint failed:', err))
+      .then(() => {
+        fetchFeed().then((result) => {
+          // Delay prefetch when Google fallback fired — gives the fire-and-forget
+          // DB upsert time to complete so the prefetch hits Supabase, not Google.
+          const delay = result?.wasGoogleFallback ? 3000 : 0;
+          setTimeout(() => prefetchNextBatch(), delay);
+        });
       });
-    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Search-driven refresh
