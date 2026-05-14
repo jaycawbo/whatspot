@@ -318,17 +318,24 @@ export default function Home() {
     const f = state.filters;
     let count = 0;
     if (f.openNow) count++;
+    if (f.walkInOnly) count++;
     if (f.priceLevels?.length) count += f.priceLevels.length;
     if (f.cuisines?.length) count += f.cuisines.length;
     if (f.radius && f.radius !== 5) count++;
     return count;
   }, [state.filters]);
 
+  const handleWalkInToggle = useCallback(() => {
+    dispatch({ type: 'SET_FILTERS', payload: { walkInOnly: !state.filters.walkInOnly } });
+  }, [dispatch, state.filters.walkInOnly]);
+
   // Venues valid for map rendering — sourced from orchestrator in search mode
-  const mappableVenues = useMemo(
-    () => convResults.filter(v => v.lat != null && (v.lon ?? v.lng) != null),
-    [convResults]
-  );
+  // When walkInOnly is active, restrict to venues explicitly flagged as available
+  const mappableVenues = useMemo(() => {
+    const base = convResults.filter(v => v.lat != null && (v.lon ?? v.lng) != null);
+    if (!state.filters.walkInOnly) return base;
+    return base.filter(v => v.is_available === true);
+  }, [convResults, state.filters.walkInOnly]);
 
   const isMobilePostSearch = isMobile && !!state.query;
   const isDesktopPostSearch = !isMobile && !!state.query;
@@ -423,9 +430,10 @@ export default function Home() {
             currentQuery={convQuery}
             conversationalResponse={convResponse}
             refinementChips={convChips}
-
             isLimitReached={conversation.isLimitReached}
             onChipTap={handleChipTap}
+            walkInOnly={state.filters.walkInOnly}
+            onWalkInToggle={handleWalkInToggle}
             open
           />
         </>
@@ -446,9 +454,10 @@ export default function Home() {
               skeletonCount={Math.max(2, Math.floor((window.innerHeight - 186) / 132))}
               conversationalResponse={convResponse}
               refinementChips={convChips}
-  
               isLimitReached={conversation.isLimitReached}
               onChipTap={handleChipTap}
+              walkInOnly={state.filters.walkInOnly}
+              onWalkInToggle={handleWalkInToggle}
             />
           </div>
           {/* `isolate` contains Leaflet's z-indexes within this stacking context */}

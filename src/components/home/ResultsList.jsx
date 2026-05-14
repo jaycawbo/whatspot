@@ -4,6 +4,7 @@ import VenueCard from './VenueCard';
 import CorrectionBanner from '@/components/search/CorrectionBanner';
 import SearchSummary from './SearchSummary';
 import { useCorrectionInfo } from '@/hooks/useCorrectionInfo';
+import { cn } from '@/lib/utils';
 
 export default function ResultsList({
   results,
@@ -15,6 +16,8 @@ export default function ResultsList({
   refinementChips,
   isLimitReached,
   onChipTap,
+  walkInOnly = false,
+  onWalkInToggle,
 }) {
   const { correctionInfo, dismiss } = useCorrectionInfo(currentQuery, results);
   const [convExpanded, setConvExpanded] = useState(false);
@@ -63,9 +66,23 @@ export default function ResultsList({
       {isLimitReached && (
         <p className="text-xs text-muted-foreground text-center">Start a new search to keep exploring</p>
       )}
-      {refinementChips?.length > 0 && (
+      {(onWalkInToggle || refinementChips?.length > 0) && (
         <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
-          {refinementChips.map((chip) => (
+          {onWalkInToggle && (
+            <button
+              onClick={onWalkInToggle}
+              className={cn(
+                'shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors flex items-center gap-1.5',
+                walkInOnly
+                  ? 'bg-[#22c55e] text-white border-[#22c55e]'
+                  : 'border-border bg-card text-foreground hover:bg-accent'
+              )}
+            >
+              <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', walkInOnly ? 'bg-white' : 'bg-[#22c55e]')} />
+              Walk-In Now
+            </button>
+          )}
+          {refinementChips?.map((chip) => (
             <button
               key={chip}
               onClick={() => onChipTap?.(chip)}

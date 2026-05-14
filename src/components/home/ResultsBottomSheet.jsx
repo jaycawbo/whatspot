@@ -49,6 +49,8 @@ export default function ResultsBottomSheet({
   refinementChips,
   isLimitReached,
   onChipTap,
+  walkInOnly = false,
+  onWalkInToggle,
 }) {
   const [snapIdx, setSnapIdx] = useState(DEFAULT_SNAP);
   const [liveHeight, setLiveHeight] = useState(null); // px while dragging; null at rest
@@ -171,6 +173,8 @@ export default function ResultsBottomSheet({
           refinementChips={refinementChips}
           isLimitReached={isLimitReached}
           onChipTap={onChipTap}
+          walkInOnly={walkInOnly}
+          onWalkInToggle={onWalkInToggle}
         />
       </div>
     </div>

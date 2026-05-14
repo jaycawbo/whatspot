@@ -38,6 +38,7 @@ const DEFAULT_FILTERS = {
   priceLevels: [],
   cuisines: [],
   radius: 5,
+  walkInOnly: false,
 };
 
 export default function FilterDialog({ filters, onFilterChange, open, onOpenChange }) {

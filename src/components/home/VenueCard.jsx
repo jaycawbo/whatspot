@@ -73,6 +73,15 @@ export default function VenueCard({ venue, index, currentQuery }) {
   };
 
   const imgUrl = venue.image_urls?.[0] || '/placeholder.svg';
+  const isAvailable = venue.is_available === true;
+  const avgResponseMin = venue.avg_response_sec != null
+    ? Math.max(1, Math.round(venue.avg_response_sec / 60))
+    : null;
+
+  const handleRequestWalkIn = (e) => {
+    e.stopPropagation();
+    // Phase 1 B-2: will open Request Modal
+  };
 
   return (
     <div ref={cardRef} onClick={handleClick} className="relative flex gap-3 rounded-xl border border-border bg-card p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
@@ -95,6 +104,19 @@ export default function VenueCard({ venue, index, currentQuery }) {
           <h3 className="font-semibold text-sm text-foreground truncate">{(venue.name || '').split('|')[0].trim()}</h3>
           {venue.why_recommended && (
             <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{venue.why_recommended}</p>
+          )}
+          {isAvailable && (
+            <div className="mt-1 space-y-0.5">
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-[#22c55e] shrink-0" />
+                <span className="text-xs font-medium text-[#16a34a]">Accepting walk-in requests now</span>
+              </div>
+              {avgResponseMin !== null && (
+                <p className="text-[11px] text-muted-foreground pl-3.5">
+                  Usually responds in ~{avgResponseMin} min
+                </p>
+              )}
+            </div>
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap mt-1.5">
@@ -126,6 +148,14 @@ export default function VenueCard({ venue, index, currentQuery }) {
             </span>
           ))}
         </div>
+        {isAvailable && (
+          <button
+            onClick={handleRequestWalkIn}
+            className="mt-2 self-start rounded-full bg-[#22c55e] px-3 py-1 text-xs font-semibold text-white hover:bg-[#16a34a] transition-colors"
+          >
+            Request Walk-In
+          </button>
+        )}
       </div>
       <RatingDialog
         open={ratingSheetOpen}
