@@ -40,6 +40,7 @@ export default function SearchDialog({
 }) {
   const navigate = useNavigate();
   const inputRef = useRef(null);
+  const searchInitiatedRef = useRef(false);
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localQuery, setLocalQuery] = useState(query);
@@ -66,7 +67,10 @@ export default function SearchDialog({
   }, [open]); // intentional: only sync draft on open; reset submitting on external close too
 
   useEffect(() => {
-    if (!open) setIsSubmitting(false);
+    if (!open) {
+      setIsSubmitting(false);
+      searchInitiatedRef.current = false;
+    }
   }, [open]);
 
   // Allow CorrectionBanner's undo to trigger a search without Home.jsx needing modification.
@@ -85,7 +89,8 @@ export default function SearchDialog({
 
   // Close dialog once the search triggered by this submit completes
   useEffect(() => {
-    if (isSubmitting && !isSearching) {
+    if (searchInitiatedRef.current && isSubmitting && !isSearching) {
+      searchInitiatedRef.current = false;
       setIsSubmitting(false);
       onClose();
     }
@@ -97,6 +102,7 @@ export default function SearchDialog({
       if (localQuery.trim()) {
         document.activeElement?.blur();
         setIsSubmitting(true);
+        searchInitiatedRef.current = true;
         onQueryChange(localQuery.trim());
         onSearch(localQuery.trim());
       }
