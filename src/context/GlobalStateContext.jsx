@@ -8,6 +8,7 @@ const initialFilters = {
   priceLevels: [],
   cuisines: [],
   radius: 5,
+  walkInOnly: false,
 };
 
 function getInitialState() {

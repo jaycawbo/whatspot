@@ -38,6 +38,7 @@ const DEFAULT_FILTERS = {
   priceLevels: [],
   cuisines: [],
   radius: 5,
+  walkInOnly: false,
 };
 
 export default function FilterDialog({ filters, onFilterChange, open, onOpenChange }) {
@@ -92,6 +93,18 @@ export default function FilterDialog({ filters, onFilterChange, open, onOpenChan
             <Switch
               checked={local.openNow}
               onCheckedChange={(v) => setLocal((p) => ({ ...p, openNow: v }))}
+            />
+          </div>
+
+          {/* Walk-In Only */}
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-sm font-medium text-foreground">Walk-In Only</span>
+              <p className="text-xs text-muted-foreground">Show venues accepting walk-in requests now</p>
+            </div>
+            <Switch
+              checked={local.walkInOnly ?? false}
+              onCheckedChange={(v) => setLocal((p) => ({ ...p, walkInOnly: v }))}
             />
           </div>
 
