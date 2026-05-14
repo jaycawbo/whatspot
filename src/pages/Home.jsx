@@ -67,6 +67,23 @@ export default function Home() {
 
   const hasInitializedReserve = useRef(false);
 
+  // Restore conv results after back-navigation from a venue page.
+  // state.query survives in GlobalStateContext but convResults is local state — re-hydrate from sessionStorage on mount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!state.query) return;
+    try {
+      const saved = sessionStorage.getItem('ws_search_results');
+      if (!saved) return;
+      const { query, venues, response, chips } = JSON.parse(saved);
+      if (query === state.query) {
+        setConvResults(venues || []);
+        setConvResponse(response || '');
+        setConvChips(chips || []);
+        setConvQuery(query);
+      }
+    } catch {}
+  }, []); // mount only — intentional, reads context value that persists across navigation
 
   // Post-save label microinteraction
   useEffect(() => {
@@ -87,6 +104,19 @@ export default function Home() {
       if (combined.length > 0) setReserveVenues(combined);
     }
   }, [feedVenues, getReserveVenues, getPrefetchedVenues]);
+
+  // Persist conv results to sessionStorage so they survive back-navigation
+  useEffect(() => {
+    if (convResults.length === 0) return;
+    try {
+      sessionStorage.setItem('ws_search_results', JSON.stringify({
+        query: convQuery,
+        venues: convResults,
+        response: convResponse,
+        chips: convChips,
+      }));
+    } catch {}
+  }, [convResults, convQuery, convResponse, convChips]);
 
   const activeIds = useMemo(() => {
     const ids = new Set();
@@ -222,6 +252,7 @@ export default function Home() {
     conversation.resetSession();
     try {
       sessionStorage.removeItem('ws_conv_state');
+      sessionStorage.removeItem('ws_search_results');
     } catch {}
     refetchDiscovery();
   }, [dispatch, refetchDiscovery, conversation]);
@@ -230,7 +261,10 @@ export default function Home() {
     dispatch({ type: 'CLEAR_SEARCH' });
     setReserveVenues([]);
     hasInitializedReserve.current = false;
-    try { sessionStorage.removeItem('ws_last_search'); } catch {}
+    try {
+      sessionStorage.removeItem('ws_last_search');
+      sessionStorage.removeItem('ws_search_results');
+    } catch {}
     refetchDiscovery();
   }, [dispatch, refetchDiscovery]);
 
