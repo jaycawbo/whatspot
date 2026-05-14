@@ -325,10 +325,6 @@ export default function Home() {
     return count;
   }, [state.filters]);
 
-  const handleWalkInToggle = useCallback(() => {
-    dispatch({ type: 'SET_FILTERS', payload: { walkInOnly: !state.filters.walkInOnly } });
-  }, [dispatch, state.filters.walkInOnly]);
-
   // Venues valid for map rendering — sourced from orchestrator in search mode
   // When walkInOnly is active, restrict to venues explicitly flagged as available
   const mappableVenues = useMemo(() => {
@@ -432,8 +428,6 @@ export default function Home() {
             refinementChips={convChips}
             isLimitReached={conversation.isLimitReached}
             onChipTap={handleChipTap}
-            walkInOnly={state.filters.walkInOnly}
-            onWalkInToggle={handleWalkInToggle}
             open
           />
         </>
@@ -456,8 +450,6 @@ export default function Home() {
               refinementChips={convChips}
               isLimitReached={conversation.isLimitReached}
               onChipTap={handleChipTap}
-              walkInOnly={state.filters.walkInOnly}
-              onWalkInToggle={handleWalkInToggle}
             />
           </div>
           {/* `isolate` contains Leaflet's z-indexes within this stacking context */}

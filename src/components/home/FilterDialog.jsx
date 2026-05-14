@@ -96,6 +96,18 @@ export default function FilterDialog({ filters, onFilterChange, open, onOpenChan
             />
           </div>
 
+          {/* Walk-In Only */}
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-sm font-medium text-foreground">Walk-In Only</span>
+              <p className="text-xs text-muted-foreground">Show venues accepting walk-in requests now</p>
+            </div>
+            <Switch
+              checked={local.walkInOnly ?? false}
+              onCheckedChange={(v) => setLocal((p) => ({ ...p, walkInOnly: v }))}
+            />
+          </div>
+
           {/* Price Level */}
           <div>
             <span className="text-sm font-medium text-foreground">Price Level</span>
