@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+﻿import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Search, SlidersHorizontal } from 'lucide-react';
+import { ArrowRight, Search, SlidersHorizontal } from 'lucide-react';
 import CategoryTiles from './CategoryTiles';
 import RefinementChips from './RefinementChips';
 import SuggestedChips from './SuggestedChips';
@@ -36,27 +36,40 @@ export default function SearchDialog({
   onFilterClick,
   activeFilterCount = 0,
   userCoordinates = null,
+  isSearching = false,
 }) {
   const navigate = useNavigate();
   const inputRef = useRef(null);
+  const searchInitiatedRef = useRef(false);
   const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localQuery, setLocalQuery] = useState(query);
 
   const { suggestions, onSearchFocus, selectSuggestion } = useVenueAutocomplete(
     query,
     userCoordinates
   );
 
-  // Debounce typed input so RefinementChips only re-fetches after the user pauses
+  // Debounce localQuery so RefinementChips re-fetches after the user pauses
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 500);
+    const t = setTimeout(() => setDebouncedQuery(localQuery), 500);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [localQuery]);
 
-  // Auto-focus the input each time the dialog opens
+  // Auto-focus the input each time the dialog opens; reset submitting state and sync local draft
   useEffect(() => {
     if (open) {
+      setLocalQuery(query); // eslint-disable-line react-hooks/exhaustive-deps
+      setIsSubmitting(false);
       const t = setTimeout(() => inputRef.current?.focus(), 60);
       return () => clearTimeout(t);
+    }
+  }, [open]); // intentional: only sync draft on open; reset submitting on external close too
+
+  useEffect(() => {
+    if (!open) {
+      setIsSubmitting(false);
+      searchInitiatedRef.current = false;
     }
   }, [open]);
 
@@ -74,33 +87,53 @@ export default function SearchDialog({
     return () => document.removeEventListener('whatspot:auto-search', handler);
   }, [onSearch]);
 
+  // Close dialog once the search triggered by this submit completes
+  useEffect(() => {
+    if (searchInitiatedRef.current && isSubmitting && !isSearching) {
+      searchInitiatedRef.current = false;
+      setIsSubmitting(false);
+      onClose();
+    }
+  }, [isSearching, isSubmitting, onClose]);
+
   const handleSubmit = useCallback(
     (e) => {
       e.preventDefault();
-      if (query.trim()) {
+      if (localQuery.trim()) {
         document.activeElement?.blur();
-        onSearch(query.trim());
-        onClose();
+        setIsSubmitting(true);
+        searchInitiatedRef.current = true;
+        onQueryChange(localQuery.trim());
+        onSearch(localQuery.trim());
       }
     },
-    [query, onSearch, onClose]
+    [localQuery, onQueryChange, onSearch]
   );
 
   const handleCategoryTap = useCallback(
     (cat) => {
-      onQueryChange(cat.prompt);
+      setLocalQuery(cat.prompt);
     },
-    [onQueryChange]
+    []
   );
 
   const handleHistoryTap = useCallback(
     (q) => {
       document.activeElement?.blur();
+      setLocalQuery(q);
       onQueryChange(q);
       onSearch(q);
       onClose();
     },
     [onQueryChange, onSearch, onClose]
+  );
+
+  // Appends a refinement chip to the local draft without touching global state
+  const handleAppendChipLocal = useCallback(
+    (chipLabel, connector = ' ') => {
+      setLocalQuery((prev) => `${prev}${connector}${chipLabel}`.trim());
+    },
+    []
   );
 
   const handleFilterTap = useCallback(() => {
@@ -148,20 +181,20 @@ export default function SearchDialog({
                 <input
                   ref={inputRef}
                   type="text"
-                  value={query}
-                  onChange={(e) => onQueryChange(e.target.value)}
+                  value={localQuery}
+                  onChange={(e) => setLocalQuery(e.target.value)}
                   onFocus={onSearchFocus}
                   className="w-full h-10 pl-10 pr-10 rounded-full border border-input bg-card text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ring-offset-background transition-shadow"
                   placeholder="Ask and you shall receive..."
                 />
-                {query && (
+                {localQuery && (
                   <button
-                    type="button"
-                    onClick={() => { onQueryChange(''); inputRef.current?.focus(); }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    aria-label="Clear search"
+                    type="submit"
+                    aria-label="Search"
+                    onPointerDown={() => setIsSubmitting(true)}
+                    className={`absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full flex items-center justify-center ${isSubmitting ? 'bg-black' : 'bg-[#22c55e]'}`}
                   >
-                    <X className="h-4 w-4" />
+                    <ArrowRight className="h-3.5 w-3.5 text-white" />
                   </button>
                 )}
               </form>
@@ -219,7 +252,7 @@ export default function SearchDialog({
 
               {/* Dynamic refinement chips — updates as user types */}
               {debouncedQuery && (
-                <RefinementChips baseQuery={debouncedQuery} onAppendChip={onAppendChip} />
+                <RefinementChips baseQuery={debouncedQuery} onAppendChip={handleAppendChipLocal} />
               )}
 
               {/* Suggested chips */}
