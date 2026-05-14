@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { logEvent } from '@/lib/logEvent';
 import LoadingMessages from '@/components/home/LoadingMessages';
 import { useGlobalState } from '@/context/GlobalStateContext';
@@ -19,6 +19,7 @@ import { useGuestLimits } from '@/hooks/useGuestLimits';
 import { useAuth } from '@/lib/AuthContext';
 import { useVenueListMembership } from '@/hooks/useVenueListMembership';
 import { useSearchConversation } from '@/hooks/useSearchConversation';
+import { reverseGeocode } from '@/lib/reverseGeocode';
 
 const normalizeId = (v) => (v.place_id || v.google_place_id || '').replace(/^places\//, '');
 
@@ -234,6 +235,34 @@ export default function Home() {
     [conversation, dispatch, state.userLocation, state.filters]
   );
 
+  const handleSearchFromHere = useCallback(
+    async (lat, lon) => {
+      if (!state.query || conversation.isSearching || conversation.isLimitReached) return;
+      if (incrementSearch()) return;
+      const newCoords = { lat, lon };
+      dispatch({
+        type: 'SET_LOCATION',
+        payload: { name: state.locationName, coords: { lat, lon, isGPS: false, isPinDrop: false, locationType: null } },
+      });
+      const searchPromise = conversation.search(state.query, newCoords, state.filters);
+      reverseGeocode(lat, lon)
+        .then((name) =>
+          dispatch({
+            type: 'SET_LOCATION',
+            payload: { name, coords: { lat, lon, isGPS: false, isPinDrop: false, locationType: null } },
+          })
+        )
+        .catch(() => {});
+      const result = await searchPromise;
+      if (result) {
+        setConvResults(result.venues || []);
+        setConvResponse(result.conversational_response || '');
+        setConvChips(result.refinement_suggestions || []);
+      }
+    },
+    [conversation, dispatch, incrementSearch, state.query, state.locationName, state.filters]
+  );
+
   const handleTabChange = useCallback(
     (tab) => {
       setReserveVenues([]);
@@ -365,6 +394,7 @@ export default function Home() {
         onFilterClick={() => setFilterOpen(true)}
         activeFilterCount={activeFilterCount}
         userCoordinates={state.userLocation}
+        isSearching={conversation.isSearching}
       />
 
       {/* ── Mobile post-search: fullscreen map + snap bottom sheet ── */}
@@ -374,7 +404,7 @@ export default function Home() {
               `isolate` contains Leaflet's internal z-indexes (400-1000)
               so they cannot bleed above the search dialog (z-[60]). */}
           <div className="fixed inset-0 z-10 isolate">
-            <MapView results={mappableVenues} isLoading={conversation.isSearching} />
+            <MapView results={mappableVenues} isLoading={conversation.isSearching} onSearchFromHere={handleSearchFromHere} />
           </div>
 
           {/* Loading overlay: dims the map and shows cycling messages while results are fetching */}
@@ -423,7 +453,7 @@ export default function Home() {
           </div>
           {/* `isolate` contains Leaflet's z-indexes within this stacking context */}
           <div className="w-[60%] isolate h-full relative">
-            <MapView results={mappableVenues} isLoading={conversation.isSearching} />
+            <MapView results={mappableVenues} isLoading={conversation.isSearching} onSearchFromHere={handleSearchFromHere} />
           </div>
         </div>
       )}
