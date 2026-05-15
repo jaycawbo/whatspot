@@ -16,9 +16,49 @@ git push origin jake/178-p3-a1-native-prep
 
 
 ## YOUR PROMPT
-<!-- Jake: paste your detailed implementation prompt below -->
+You are working on Whatspot, a React + Supabase app. Review the existing PWA structure, routing, component library, and Supabase client setup before beginning.
 
-Audit components for web-only dependencies and document in NATIVE_BLOCKERS.md. Extract all Supabase queries, Edge Function calls, and Realtime subscriptions from components into dedicated hook/service files. Document routing structure and its React Native equivalents. Consolidate environment config into a single module. Output NATIVE_READINESS.md summarising remaining work before Expo can be introduced.
+Prepare the diner app for React Native / Expo without breaking the existing PWA.
+
+---
+
+GOAL
+
+Establish a shared logic layer between the web PWA and a future React Native app.
+
+Do not build the native app yet — build the foundation that makes it achievable without a rewrite.
+
+---
+
+STEPS
+
+1. Audit components
+
+   Identify which components are web-only (use DOM APIs, CSS-only animations, web-specific libraries).
+
+   Document these in a file: NATIVE_BLOCKERS.md
+
+   For each blocker, note the recommended React Native equivalent.
+
+2. Extract business logic
+
+   Move all Supabase queries, Edge Function calls, and Realtime subscriptions out of components and into dedicated hook/service files if not already done.
+
+   Components should call hooks; hooks should call Supabase.
+
+   This is the primary prerequisite for native reuse.
+
+3. Identify navigation
+
+   Document the current routing structure.
+
+   Note which routes map cleanly to React Native screens and which do not.
+
+4. Environment config
+
+   Ensure all environment variables (Supabase URL, anon key) are accessed via a single config module, not scattered imports.
+
+Output: updated hooks/services, NATIVE_BLOCKERS.md, and a brief NATIVE_READINESS.md summarising what remains before Expo can be introduced.
 
 
 ## Note: This is primarily an audit and refactor issue

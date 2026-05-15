@@ -16,9 +16,67 @@ git push origin jake/174-p2-a2-spots
 
 
 ## YOUR PROMPT
-<!-- Jake: paste your detailed implementation prompt below -->
+You are working on Whatspot, a React + Supabase app. Review the existing codebase — specifically the heart/save icon already in the top nav, any existing favouriting logic, and the Supabase client — before building this.
 
-Create spots, spot_lists, and spot_list_items tables with RLS. Wire heart icon on venue cards to save/unsave with optimistic updates. Build Spots screen (accessible from top nav heart icon): flat list of saved venues with availability badges, "New List" creation, and named list organization. Subscribe to Realtime venue changes for live availability badge updates.
+Build the Spots feature: saved venues with named lists.
+
+---
+
+DATA MODEL
+
+Create tables:
+
+spots
+  id: uuid primary key default gen_random_uuid()
+  diner_id: uuid not null references diners(id)
+  venue_id: uuid not null references venues(id)
+  created_at: timestamptz default now()
+  UNIQUE(diner_id, venue_id)
+
+spot_lists
+  id: uuid primary key default gen_random_uuid()
+  diner_id: uuid not null references diners(id)
+  name: text not null            -- e.g. "Date night", "Lunch near work"
+  created_at: timestamptz default now()
+
+spot_list_items
+  list_id: uuid references spot_lists(id) on delete cascade
+  spot_id: uuid references spots(id) on delete cascade
+  PRIMARY KEY (list_id, spot_id)
+
+RLS: all tables — diner can only read/write their own rows.
+
+---
+
+SAVE INTERACTION
+
+The heart icon on venue cards (feed, search results, venue page) saves/unsaves a venue.
+  - Filled heart = saved; outline = unsaved
+  - Optimistic update: toggle immediately, revert on error
+  - On first save: create a spots row
+  - On unsave: delete the spots row (and remove from any lists)
+
+---
+
+SPOTS SCREEN
+
+Accessible via heart icon in top nav.
+
+Layout:
+  - Default view: flat list of all saved venues
+  - Each saved venue shows: thumbnail, name, distance, is_available dot
+  - "Request Walk-In" CTA on each card (same as main venue card)
+  - "New List" button: creates a named list
+  - Named lists shown as sections or tabs
+  - Add a spot to a list: long-press or secondary action on a saved venue card
+
+---
+
+AVAILABILITY BADGE
+
+The is_available status shown on saved venue cards must reflect real-time state.
+
+Subscribe to Realtime changes on venues WHERE id IN (saved venue ids) — update badges live.
 
 
 ## Supabase Migration Required

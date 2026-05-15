@@ -16,9 +16,59 @@ git push origin jake/179-p3-a2-pos-integration
 
 
 ## YOUR PROMPT
-<!-- Jake: paste your detailed implementation prompt below -->
+You are working on Whatspot, a React + Supabase app. Review the venue schema, the is_available field, and the venue portal availability toggle before building this.
 
-Create venue_integrations table (provider, webhook_secret, settings). Build pos-webhook-handler Edge Function to receive webhooks from Toast, Lightspeed, and Square, translate floor state into is_available updates. Manual override wins over webhook if is_available was manually set in the last 5 minutes (tracked via manually_set_at). Add Integrations section to venue portal settings.
+Build an opt-in POS integration layer that can automatically update is_available based on real floor state from Toast, Lightspeed, or Square.
+
+---
+
+ARCHITECTURE
+
+Create a Supabase Edge Function: pos-webhook-handler
+
+This function receives webhooks from POS systems and translates floor state into is_available updates.
+
+---
+
+WEBHOOK HANDLER
+
+Route: POST /functions/v1/pos-webhook-handler
+
+Auth: Validate a shared secret in the Authorization header (venue-specific, stored in a new venue_integrations table)
+
+venue_integrations table:
+  venue_id: uuid references venues(id)
+  provider: text check (provider in ('toast','lightspeed','square'))
+  webhook_secret: text
+  is_active: boolean default true
+  settings: jsonb    -- provider-specific config
+
+Logic:
+  1. Identify venue from webhook_secret
+  2. Parse payload — each provider has a different shape (document expected shapes in comments)
+  3. Derive available: boolean from payload
+     Logic: available = (open_tables > 0) based on provider floor data
+  4. Check manually_set_at on venues — if is_available was manually set in the last 5 minutes, do not override it
+  5. UPDATE venues SET is_available = available WHERE id = venue_id
+  6. Return 200
+
+---
+
+VENUE SCHEMA UPDATE
+
+Add to venues:
+  manually_set_at: timestamptz    -- updated whenever is_available is toggled manually in the portal
+
+Update the availability toggle in the venue portal to also set manually_set_at = now() on change.
+
+---
+
+VENUE PORTAL
+
+Add an "Integrations" section to venue portal settings.
+  - Toggle to enable/disable POS integration
+  - Show connected provider name + last sync time
+  - Manual override note: "Even with POS connected, you can still manually toggle availability — your manual setting takes priority for 5 minutes"
 
 
 ## Supabase Migration Required

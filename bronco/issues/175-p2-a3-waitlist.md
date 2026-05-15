@@ -16,9 +16,51 @@ git push origin jake/175-p2-a3-waitlist
 
 
 ## YOUR PROMPT
-<!-- Jake: paste your detailed implementation prompt below -->
+You are working on Whatspot, a React + Supabase app. Review the existing requests schema, the RequestsOverlay component, and Realtime hooks before building this.
 
-Create waitlist_entries table. When a request transitions to expired via Realtime, replace the expired card state in the Requests Overlay with a "Join their waitlist?" prompt. On join: insert waitlist entry, show confirmation. Add read-only waitlist queue to venue portal.
+When a request expires, offer the diner the option to join a waitlist for that venue.
+
+---
+
+DATA MODEL
+
+Create table: waitlist_entries
+
+  id: uuid primary key default gen_random_uuid()
+  diner_id: uuid not null references diners(id)
+  venue_id: uuid not null references venues(id)
+  party_size: integer not null
+  status: text not null default 'waiting' check (status in ('waiting','notified','cancelled'))
+  created_at: timestamptz default now()
+  notified_at: timestamptz
+
+RLS: diner can read/insert/update their own rows. Venue portal can read all entries for their venue.
+
+---
+
+UX: Expiry prompt
+
+When a request transitions to 'expired' (received via Realtime):
+
+  In the active requests card in the Requests Overlay, replace the expired state with:
+
+  "Didn't hear back from [Venue Name]."
+  "Join their waitlist?"
+
+  Two buttons: "Join Waitlist" | "Dismiss"
+
+  - "Join Waitlist": inserts a waitlist_entries row with the same party_size, shows confirmation "You're on the waitlist"
+  - "Dismiss": collapses back to standard expired state, moves to Past tab on next refresh
+
+---
+
+VENUE PORTAL
+
+In Phase 2, waitlist is display-only for venues — they can see entries in a simple list.
+
+Notification of waitlist diners is a Phase 3 feature.
+
+Add waitlist queue to the venue portal settings screen: read-only list of waiting diners with party size and wait time.
 
 
 ## Supabase Migration Required

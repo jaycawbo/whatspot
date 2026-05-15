@@ -16,9 +16,45 @@ git push origin jake/176-p2-a4-analytics
 
 
 ## YOUR PROMPT
-<!-- Jake: paste your detailed implementation prompt below -->
+You are working on Whatspot, a React + Supabase app. Review the existing venue portal structure before building this.
 
-Create a venue_analytics Supabase view computing: total requests, acceptance rate, redemption rate, avg response time, requests by hour, requests over last 7 days. Build a read-only analytics section in the venue portal with summary stat cards, peak times bar chart, and 7-day trend line chart.
+Add a read-only analytics dashboard to the venue portal.
+
+---
+
+DATA
+
+All analytics are computed from the requests table. No separate analytics tables needed.
+
+Use Supabase views or Edge Functions for aggregation.
+
+Create a Supabase view: venue_analytics
+
+  For a given venue_id, compute:
+    - total_requests: count of all requests
+    - accepted_count: count where status = 'accepted'
+    - declined_count: count where status = 'declined'
+    - expired_count: count where status = 'expired'
+    - redeemed_count: count where status = 'redeemed'
+    - acceptance_rate: accepted_count / total_requests (as percentage)
+    - redemption_rate: redeemed_count / accepted_count (as percentage)
+    - avg_response_sec: already on venues table — surface here too
+    - requests_by_hour: array of { hour: 0-23, count } for peak time chart
+    - requests_last_7_days: array of { date, count }
+
+---
+
+UI
+
+Add an "Analytics" section to the venue portal navigation.
+
+Display:
+  - Summary stat cards: Total Requests, Acceptance Rate, Redemption Rate, Avg Response Time
+  - Bar chart: requests by hour of day (peak times)
+  - Line chart: requests over last 7 days
+  - Use an existing charting library already in the project; if none exists, use recharts
+
+Keep the design clean and minimal — this is a host-stand tablet context, not a business intelligence dashboard.
 
 
 ## Supabase Migration Required

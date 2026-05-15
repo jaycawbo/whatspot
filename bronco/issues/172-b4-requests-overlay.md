@@ -16,9 +16,100 @@ git push origin jake/172-b4-requests-overlay
 
 
 ## YOUR PROMPT
-<!-- Jake: paste your detailed implementation prompt below -->
+You are working on Whatspot, a React + Supabase app. Review the existing codebase — specifically existing sheet/modal patterns, the RequestsContext, and the useDinerRequests hook — before building this.
 
-Build a bottom sheet overlay with Active and Past segmented tabs. Active cards: venue image, name, distance, status badge, server-derived countdown timer, Cancel button with inline confirm. Past cards: status badge, date, party size, chevron to venue page. Powered by useDinerRequests hook with live Realtime updates.
+Build the Requests Overlay: src/components/requests/RequestsOverlay.tsx
+
+---
+
+TRIGGER
+
+Opened by tapping the Active Requests pill. Controlled via RequestsContext (open/closed state).
+
+---
+
+LAYOUT
+
+Bottom sheet that slides up. Feels transactional, not like full-page navigation.
+  - Drag handle at top
+  - Close button (X) top-right
+  - Dismissible by swipe down
+
+This should NOT feel like a dedicated app section. It is a lightweight status overlay.
+
+---
+
+HEADER
+
+Title: "Requests"
+Subtitle: "Track and manage your walk-in requests."
+
+---
+
+TABS
+
+Segmented control with two tabs: Active | Past
+
+Keep implementation simple — no filters, no sorting, no search.
+
+---
+
+ACTIVE TAB
+
+Render one card per active request (status in ['pending', 'accepted']). Cards update in real-time via useDinerRequests.
+
+Card structure:
+
+  Header row:
+    - Venue thumbnail image (small, square)
+    - Venue name (bold)
+    - Neighborhood or distance (secondary text)
+
+  Status row:
+
+    Pending:
+      - Orange dot + "Pending" label
+      - "Usually responds in ~X min" (from venue.avg_response_sec; omit if null)
+      - Progress bar showing time remaining in acceptance window
+      - Time remaining label: "2:37 remaining"
+        Time is derived from request.expires_at - now(), updated every second client-side
+        (expires_at comes from the server — client only counts down, never sets the timer)
+
+    Accepted:
+      - Green dot + "Accepted" label
+      - Holding window countdown: "Table held for X:XX"
+      - Two CTA buttons: "View Venue" | "Directions"
+
+    Declined:
+      - Red dot + "Declined"
+      - Show decline_comment if present
+
+    Expired:
+      - Grey dot + "Expired"
+
+  Action row (Pending only):
+    - "Cancel Request" button — calls cancel-request Edge Function on confirm
+    - Confirm before cancelling: inline confirm state on the button ("Are you sure? Tap to confirm"), not a separate modal
+
+---
+
+PAST TAB
+
+Render requests with status in ['redeemed', 'cancelled', 'declined', 'expired'].
+Fetched on tab switch — not preloaded. Sorted by created_at desc.
+
+Card structure (simpler):
+  - Venue thumbnail, name
+  - Status badge: Accepted (green) / Declined (red) / Expired (grey) / Cancelled (grey)
+  - Date + party size: "Sat, May 11 • 7:30 PM • 2 people"
+  - Chevron → tapping opens venue page
+
+---
+
+EMPTY STATES
+
+Active tab empty: "No active requests. Tap 'Request Walk-In' on any venue to get started."
+Past tab empty: "No past requests yet."
 
 
 ## Completion Steps

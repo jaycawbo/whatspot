@@ -16,9 +16,75 @@ git push origin jake/170-b2-request-modal
 
 
 ## YOUR PROMPT
-<!-- Jake: paste your detailed implementation prompt below -->
+You are working on Whatspot, a React + Supabase app. Review the existing codebase — specifically any existing modal or sheet components, the Supabase client, and auth state — before building this.
 
-Build a half-sheet bottom modal triggered from the venue card CTA. Fields: party size stepper (default 2) and optional note (max 140 chars). Submits to create-request Edge Function. On success: closes modal, activates floating pill, shows confirmation toast. Target interaction time under 10 seconds.
+Build a Request Modal component: src/components/requests/RequestModal.tsx
+
+---
+
+TRIGGER
+
+Opens when user taps "Request Walk-In" on a venue card.
+
+Receives: venue object as a prop.
+
+---
+
+LAYOUT
+
+Half-sheet / bottom sheet modal. Should feel lightweight and fast — not a full-page navigation.
+
+Use the existing modal/sheet pattern in the codebase if one exists; otherwise build a bottom sheet that:
+
+  - Slides up from bottom
+  - Has a drag handle at the top
+  - Dismissible by swipe down or tapping the backdrop
+
+---
+
+CONTENT
+
+Header:
+  - Venue name
+  - "Request a walk-in table" subtitle
+
+Fields:
+  1. Party size selector
+     - Stepper: minus / number / plus
+     - Range: 1–10 (or venue's max party size if available)
+     - Default: 2
+  2. Optional note (single text input, max 140 chars)
+     - Placeholder: "Any requests? (optional)"
+     - Do not make this prominent — it is secondary
+
+Submit button:
+  - Label: "Send Request"
+  - Full width, primary style
+  - Disabled until party size is set (it defaults to 2, so it should be enabled by default)
+  - Shows loading state while the request is submitting
+
+---
+
+SUBMISSION LOGIC
+
+On submit:
+  1. Call POST /functions/v1/create-request (create this Edge Function if it does not exist) with:
+     { venue_id, party_size, note? }
+  2. On success:
+     - Close the modal
+     - Trigger the floating Active Requests pill to appear (via shared state or context)
+     - Show a brief confirmation toast: "Request sent — we'll notify you when they respond"
+  3. On error:
+     - Show inline error message
+     - Do not close the modal
+
+---
+
+STATE
+
+Use the existing auth context to get diner_id.
+
+After successful submission, the new request should appear immediately in the diner's active requests list (handled by the Realtime hook from Track A — this component just needs to trigger the insert).
 
 
 ## Completion Steps

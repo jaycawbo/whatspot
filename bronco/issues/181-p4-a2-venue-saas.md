@@ -16,9 +16,67 @@ git push origin jake/181-p4-a2-venue-saas
 
 
 ## YOUR PROMPT
-<!-- Jake: paste your detailed implementation prompt below -->
+You are working on Whatspot, a React + Supabase app. Review existing venue schema and portal structure before building this.
 
-Add subscription fields to venues. Implement Free (20 requests/month) and Pro (unlimited) tiers enforced via check_venue_request_limit Postgres function called in create-request Edge Function. Build Billing section in venue portal with Stripe Checkout and Customer Portal session Edge Functions. Handle customer.subscription.updated and customer.subscription.deleted webhooks.
+Add a SaaS subscription tier system for venues using Stripe Billing.
+
+---
+
+DATA MODEL
+
+Add to venues:
+  subscription_status: text default 'trialing' check (status in ('trialing','active','past_due','cancelled'))
+  subscription_tier: text default 'free' check (tier in ('free','pro'))
+  trial_ends_at: timestamptz
+  stripe_subscription_id: text
+  stripe_customer_id: text
+
+---
+
+TIERS
+
+Free:
+  - Up to 20 requests/month
+  - No analytics dashboard
+  - No POS integration
+
+Pro:
+  - Unlimited requests
+  - Full analytics
+  - POS integration
+  - Priority support badge in diner app
+
+---
+
+ENFORCEMENT
+
+Create a Postgres function: check_venue_request_limit(venue_id)
+
+  Returns boolean: can this venue receive a new request?
+  Free tier: count requests this calendar month < 20
+  Pro tier: always true
+  Trialing: always true until trial_ends_at
+
+Call this function in the create-request Edge Function before inserting.
+
+Return 402 with message "This venue has reached its monthly request limit" if limit exceeded.
+
+---
+
+BILLING PORTAL
+
+Add a "Billing" section to the venue portal.
+  - Show current tier, status, renewal date
+  - "Upgrade to Pro" CTA (links to Stripe Checkout)
+  - "Manage Billing" link (Stripe Customer Portal)
+
+Stripe Checkout and Customer Portal sessions created via Edge Functions.
+
+Store all Stripe keys in Supabase secrets.
+
+Stripe webhook handler Edge Function:
+  Handle: customer.subscription.updated, customer.subscription.deleted
+  Update venue subscription_status and subscription_tier accordingly.
 
 
 ## Supabase Migration Required

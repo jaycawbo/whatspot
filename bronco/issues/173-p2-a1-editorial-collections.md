@@ -15,9 +15,52 @@ git push origin jake/173-p2-a1-editorial-collections
 
 
 ## YOUR PROMPT
-<!-- Jake: paste your detailed implementation prompt below -->
+You are working on Whatspot, a React + Supabase app. Review the existing feed/home screen implementation before building this.
 
-Create a collections table (title, subtitle, sort order, venue_ids array). Render horizontal scroll rows on the feed screen, one per active collection. Filter joined venues by is_available=true. Compact venue card variant with "Request Walk-In" CTA accessible without navigating to venue page.
+Add editorial collection rows to the feed surface.
+
+---
+
+DATA MODEL
+
+Create a new Supabase table: collections
+
+  id: uuid primary key
+  title: text not null          -- e.g. "Best for right now"
+  subtitle: text
+  sort_order: integer
+  is_active: boolean default true
+  venue_ids: uuid[]             -- ordered list of featured venues
+
+Add RLS: SELECT public, all writes service role only.
+
+---
+
+UI: Horizontal scroll rows
+
+On the feed/home screen, below the category pills and above (or interspersed with) the main venue list:
+
+  Render one horizontal scroll row per active collection.
+
+Each row:
+  - Section title (bold, left-aligned)
+  - Horizontal scroll of venue cards (compact variant — square image, name, availability dot, distance)
+  - Tapping a card opens the venue page
+  - "Request Walk-In" should be accessible from the compact card without navigating to venue page — add a small CTA button on the card
+
+---
+
+QUERIES
+
+Fetch collections on feed mount. Join to venues to get full venue objects for venue_ids.
+
+Filter joined venues by is_available = true so stale unavailable venues don't appear in "Best for right now."
+
+---
+
+ADMIN NOTE
+
+Collections are managed via the Supabase dashboard (no CMS UI needed in Phase 2). Document the table structure in a README comment.
 
 
 ## Supabase Migration Required
