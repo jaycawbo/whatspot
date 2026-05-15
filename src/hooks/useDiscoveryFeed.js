@@ -169,6 +169,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
   if (tab === 'popular') {
     query = query
       .not('review_count', 'is', null)
+      .gte('rating', 4.0)
       .order('review_count', { ascending: false })
       .limit(20);
   } else if (tab === 'new') {
@@ -186,6 +187,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
         .gte('lng', bb.lngMin)
         .lte('lng', bb.lngMax)
         .eq('is_chain', false)
+        .gte('rating', 4.0)
         .not('review_count_at_ingestion', 'is', null)
         .lt('review_count_at_ingestion', 75)
         .gte('created_at', cutoff)
@@ -236,6 +238,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       .not('trending_score', 'is', null)
       .not('review_count_30d_ago', 'is', null)
       .gte('review_count', 50)
+      .gte('rating', 4.0)
       .order('trending_score', { ascending: false })
       .limit(30);
   } else if (tab === 'walkin') {
@@ -243,7 +246,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       .from('venues')
       .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors')
       .eq('is_chain', false)
-      .gte('rating', 3.5)
+      .gte('rating', 4.0)
       .gte('review_count', 50)
       .gte('lat', bb.latMin)
       .lte('lat', bb.latMax)
@@ -325,7 +328,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
         .gte('lng', bb.lngMin)
         .lte('lng', bb.lngMax)
         .gte('review_count', 50)
-        .not('rating', 'is', null)
+        .gte('rating', 4.0)
         .order('rating', { ascending: false })
         .order('review_count', { ascending: false })
         .limit(30);
