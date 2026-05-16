@@ -6,6 +6,7 @@ import { logEvent } from '@/lib/logEvent';
 import BeenHereButton from '@/components/ui/BeenHereButton';
 import RatingDialog from '@/components/discovery/RatingDialog';
 import { useSpots } from '@/hooks/useSpots';
+import { useBronco } from '@/context/BroncoContext';
 
 const RATING_TAP_BLOCK_MS = 500;
 
@@ -20,6 +21,7 @@ function formatPrice(level) {
 export default function VenueCard({ venue, index, currentQuery }) {
   const cardRef = useRef(null);
   const { getBeenHereRating, saveBeenHere, isAuthenticated } = useSpots();
+  const { openRequestModal } = useBronco();
   const [ratingSheetOpen, setRatingSheetOpen] = useState(false);
   const ratingDialogOpenRef = useRef(false);
 
@@ -80,7 +82,7 @@ export default function VenueCard({ venue, index, currentQuery }) {
 
   const handleRequestWalkIn = (e) => {
     e.stopPropagation();
-    // Phase 1 B-2: will open Request Modal
+    openRequestModal(venue);
   };
 
   return (

@@ -11,8 +11,13 @@ git push origin jake/174-p2-a2-spots
 ```
 
 ## Prior Learnings from Upstream Issues
-<!-- Populated by sessions #170 (Request Modal) and #173 (Editorial Collections) -->
-<!-- Check for venue card patterns and CTA interfaces before building the Spots screen -->
+
+From #170 (Request Modal):
+- Walk-In CTA on any venue surface calls `openRequestModal(venue)` from `useBronco()`. No local modal needed — it's mounted globally.
+- Spots venue cards that show walk-in availability should follow the same pattern as VenueCard: show the green dot + "Accepting walk-in requests now" when `venue.is_available === true`, and the "Request Walk-In" button calling `openRequestModal(venue)`.
+- `BroncoProvider` already wraps the full app.
+
+From #173 (Editorial Collections) — to be filled in by that session.
 
 
 ## YOUR PROMPT

@@ -11,7 +11,12 @@ git push origin jake/173-p2-a1-editorial-collections
 ```
 
 ## Prior Learnings from Upstream Issues
-<!-- Populated by session #170 (Request Modal) — compact venue cards share the "Request Walk-In" CTA -->
+
+From #170 (Request Modal):
+- **To trigger the Request Modal from any venue card**, call `openRequestModal(venue)` from `useBronco()` (import from `@/context/BroncoContext`). The modal is mounted globally in App.jsx — no local modal needed.
+- Venue object passed to `openRequestModal` needs: `id` (Bronco UUID), `name`, `image_urls`, `avg_response_sec` (nullable). The `create-request` edge function uses `venue.id` as `venue_id`.
+- Compact venue card variant should call `openRequestModal(venue)` on CTA tap — same pattern as the full VenueCard.
+- **BroncoProvider** already wraps the app in `src/App.jsx`; no additional setup needed.
 
 
 ## YOUR PROMPT
