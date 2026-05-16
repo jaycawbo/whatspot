@@ -20,7 +20,11 @@ From #172 (Requests Overlay):
 - `venuesMap` in the overlay maps `venue_id → { id, name, photo_url, google_place_id, lat, lng }` — join waitlist_entries against this map for the venue name.
 - Cancel button uses `cancel-request` Edge Function. Waitlist join will use a separate Edge Function or direct Supabase insert (with RLS).
 
-From #174 (Spots) — to be filled in by that session.
+From #174 (Spots):
+- **spot_lists** + **spot_list_items** tables created (see PR #174 for migration SQL). RLS: owner-only via `user_id = auth.uid()`.
+- **useBroncoSpotLists** hook (`src/hooks/useBroncoSpotLists.js`): `{ lists, savedIds, isLoading, createList, saveVenue, removeVenue }`.
+- `spot_list_items` columns: `id, list_id (→ spot_lists.id), venue_id (→ venues.id), created_at`. UNIQUE(list_id, venue_id).
+- Waitlist entries should reference `venue_id` (venues.id UUID), same pattern as spot_list_items.
 
 
 ## YOUR PROMPT
