@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { GlobalStateProvider } from '@/context/GlobalStateContext';
 import { BroncoProvider } from '@/context/BroncoContext';
 import RequestModal from '@/components/bronco/RequestModal';
+import FloatingRequestsPill from '@/components/bronco/FloatingRequestsPill';
 import VenueDetails from '@/pages/VenueDetails';
 import EnrichmentDashboard from '@/pages/EnrichmentDashboard';
 import Credits from '@/pages/Credits';
@@ -68,6 +69,7 @@ function App() {
               <AuthenticatedApp />
             </Router>
             <RequestModal />
+            <FloatingRequestsPill />
             <Toaster />
           </QueryClientProvider>
         </BroncoProvider>
