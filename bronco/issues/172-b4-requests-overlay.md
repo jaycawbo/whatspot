@@ -11,8 +11,22 @@ git push origin jake/172-b4-requests-overlay
 ```
 
 ## Prior Learnings from Upstream Issues
-<!-- Populated by sessions #170 (Request Modal) and #171 (Floating Pill) -->
-<!-- Check here before starting for hook names, data shapes, and trigger interfaces -->
+
+From #170 (Request Modal):
+- **BroncoContext** (`src/context/BroncoContext.jsx`) owns `overlayOpen`, `openOverlay()`, `closeOverlay()`. Your overlay reads these.
+- `useDinerRequests(dinerId)` from `@/hooks/useRequestRealtime` returns `{ activeRequests, isLoading }`. This is your data source for active request cards.
+- RequestRow shape: `{ id, diner_id, venue_id, party_size, status, decline_comment, created_at, accepted_at, expires_at, holding_expires_at }`.
+- Requests table has an optional `note text` column (CHECK char_length <= 140). Show it in the active card if present.
+- `create-request` Edge Function returns `{ request }` on success. The request lands in `useDinerRequests` automatically via Realtime INSERT subscription.
+- Cancelling uses the existing `cancel-request` Edge Function: `supabase.functions.invoke('cancel-request', { body: { request_id } })`.
+- **Past requests**: fetch separately — `status IN ('declined','expired','redeemed','cancelled')` ordered by `created_at DESC`. Not in `useDinerRequests` (which only tracks active statuses). You'll need a separate query or extend the hook.
+
+From #171 (Floating Pill):
+- **FloatingRequestsPill** (`src/components/bronco/FloatingRequestsPill.jsx`) opens the overlay by calling `openOverlay()` from `useBronco()`. Your overlay reads `overlayOpen` and calls `closeOverlay()` to dismiss.
+- The pill is mounted globally in `App.jsx` — it renders when `activeRequests.length > 0` and the user is authenticated.
+- **Trigger interface**: the pill calls `openOverlay()` on tap. Your overlay should render when `overlayOpen === true` from `useBronco()`.
+- `useDinerRequests(user.id)` is the source of truth for active requests (pending + accepted). The overlay reuses this same hook — do not duplicate the subscription.
+- BroncoContext also now has `isTrayDragging` and `traySnapHeightPx` — you don't need these in the overlay.
 
 
 ## YOUR PROMPT

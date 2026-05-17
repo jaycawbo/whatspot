@@ -11,8 +11,20 @@ git push origin jake/175-p2-a3-waitlist
 ```
 
 ## Prior Learnings from Upstream Issues
-<!-- Populated by sessions #172 (Requests Overlay) and #174 (Spots) -->
-<!-- Check for overlay card state patterns and table conventions before implementing -->
+
+From #172 (Requests Overlay):
+- **RequestsOverlay** is at `src/components/bronco/RequestsOverlay.jsx`. The expired card state lives in the `ActiveCard` sub-component inside that file.
+- To add the "Join waitlist?" prompt: when `request.status === 'expired'`, replace the card actions section with the waitlist join CTA. Import a new `WaitlistJoinButton` component or add inline.
+- The overlay only shows `activeRequests` (pending + accepted) from `useDinerRequests`. Expired requests are NOT shown in Active tab (they move to Past). You'll need to expose expired requests — either extend `useDinerRequests` to include 'expired' status briefly, or listen for Realtime UPDATE events that flip status to 'expired' and show a prompt before the card disappears.
+- Recommended: on `status === 'expired'` Realtime UPDATE, show a transient "Join their waitlist?" banner at the top of the Active tab for 30 seconds before the card moves to Past.
+- `venuesMap` in the overlay maps `venue_id → { id, name, photo_url, google_place_id, lat, lng }` — join waitlist_entries against this map for the venue name.
+- Cancel button uses `cancel-request` Edge Function. Waitlist join will use a separate Edge Function or direct Supabase insert (with RLS).
+
+From #174 (Spots):
+- **spot_lists** + **spot_list_items** tables created (see PR #174 for migration SQL). RLS: owner-only via `user_id = auth.uid()`.
+- **useBroncoSpotLists** hook (`src/hooks/useBroncoSpotLists.js`): `{ lists, savedIds, isLoading, createList, saveVenue, removeVenue }`.
+- `spot_list_items` columns: `id, list_id (→ spot_lists.id), venue_id (→ venues.id), created_at`. UNIQUE(list_id, venue_id).
+- Waitlist entries should reference `venue_id` (venues.id UUID), same pattern as spot_list_items.
 
 
 ## YOUR PROMPT

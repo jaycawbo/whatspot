@@ -11,8 +11,17 @@ git push origin jake/174-p2-a2-spots
 ```
 
 ## Prior Learnings from Upstream Issues
-<!-- Populated by sessions #170 (Request Modal) and #173 (Editorial Collections) -->
-<!-- Check for venue card patterns and CTA interfaces before building the Spots screen -->
+
+From #170 (Request Modal):
+- Walk-In CTA on any venue surface calls `openRequestModal(venue)` from `useBronco()`. No local modal needed — it's mounted globally.
+- Spots venue cards that show walk-in availability should follow the same pattern as VenueCard: show the green dot + "Accepting walk-in requests now" when `venue.is_available === true`, and the "Request Walk-In" button calling `openRequestModal(venue)`.
+- `BroncoProvider` already wraps the full app.
+
+From #173 (Editorial Collections):
+- **CompactVenueCard** (`src/components/bronco/CollectionsSection.jsx`) is the compact card variant. Reuse this pattern for Spots venue cards (or extract to its own file if needed).
+- CompactVenueCard calls `openRequestModal(venue)` from `useBronco()` for the "Request Walk-In" CTA. Venue object must include: `id, name, photo_url, google_place_id, is_available, avg_response_sec`.
+- **useCollections** hook (`src/hooks/useCollections.js`) fetches active collections from the `collections` table — do not duplicate this pattern for spots; use a dedicated `useSpots` hook instead.
+- Venues table columns relevant for display: `id, name, photo_url, google_place_id, is_available, avg_response_sec, lat, lng`.
 
 
 ## YOUR PROMPT

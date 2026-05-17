@@ -11,8 +11,21 @@ git push origin jake/178-p3-a1-native-prep
 ```
 
 ## Prior Learnings from Upstream Issues
-<!-- Populated by all Phase 1 and Phase 2 sessions -->
-<!-- Check here for a full picture of web-only dependencies introduced across the project -->
+
+From Phase 1 B-series (#170-#172):
+- **BroncoContext** (`src/context/BroncoContext.jsx`): `openRequestModal`, `closeRequestModal`, `overlayOpen`, `openOverlay`, `closeOverlay`, `isTrayDragging`, `traySnapHeightPx`, `setTrayDragging`, `setTraySnapHeight`. Mounted in `App.jsx`.
+- **RequestModal**, **FloatingRequestsPill**, **RequestsOverlay** all mounted globally in `App.jsx`.
+- `ResultsBottomSheet.jsx` now calls `useBronco()` for tray drag state.
+- `useDinerRequests`, `useVenueRequests`, `useRequestUpdates` in `src/hooks/useRequestRealtime.js`.
+- `create-request`, `cancel-request`, `accept-request`, `decline-request`, `redeem-request`, `expire-pending-requests` edge functions in `supabase/functions/`.
+
+From Phase 2 (#173-#174):
+- **useCollections** (`src/hooks/useCollections.js`), **CollectionsSection** (`src/components/bronco/CollectionsSection.jsx`), **CompactVenueCard** (inside CollectionsSection.jsx).
+- **useBroncoSpotLists** (`src/hooks/useBroncoSpotLists.js`), **SpotListsSection** (`src/components/bronco/SpotListsSection.jsx`).
+- All Bronco components are in `src/components/bronco/`. All Bronco hooks in `src/hooks/`.
+- Web-only dependencies added: `supabase.channel()` (Realtime WebSocket), `vaul` (Drawer bottom sheet), PWA features (service worker needed for push notifications in #177).
+
+From Phase 2 (#175-#177) — to be filled in by those sessions.
 
 
 ## YOUR PROMPT
