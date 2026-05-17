@@ -9,6 +9,7 @@ import { GlobalStateProvider } from '@/context/GlobalStateContext';
 import VenueDetails from '@/pages/VenueDetails';
 import EnrichmentDashboard from '@/pages/EnrichmentDashboard';
 import Credits from '@/pages/Credits';
+import VenuePortal from '@/pages/VenuePortal';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -37,6 +38,7 @@ const AuthenticatedApp = () => {
         </LayoutWrapper>
       } />
       <Route path="/venue/:placeId" element={<VenueDetails />} />
+      <Route path="/portal/:venueId" element={<VenuePortal />} />
       <Route path="/enrich" element={<EnrichmentDashboard />} />
       <Route path="/credits" element={<Credits />} />
       {Object.entries(Pages).map(([path, Page]) => (
