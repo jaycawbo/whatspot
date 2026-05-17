@@ -11,8 +11,15 @@ git push origin jake/179-p3-a2-pos-integration
 ```
 
 ## Prior Learnings from Upstream Issues
-<!-- Populated by sessions #175 (Waitlist), #176 (Analytics), #178 (Native Prep) -->
-<!-- Check for venue portal layout patterns and hook extraction conventions before implementing -->
+
+From #175 (Waitlist):
+- **Venue portal scaffold** at `src/pages/VenuePortal.jsx`, route `/portal/:venueId`. Authentication required (redirects to sign-in prompt if unauth'd).
+- Portal currently shows: live requests summary (pending/accepted counts via `useVenueRequests`) and waitlist queue (from `waitlist_entries` table).
+- Add an "Integrations" tab/section to this portal page. Keep the portal layout consistent: `<header>`, `<div className="max-w-xl mx-auto px-6 py-6">`, `<section>` blocks.
+- `waitlist_entries` table: `id, diner_id, venue_id, request_id, created_at, status (waiting|notified|seated|cancelled)`, Realtime channel `waitlist-{venueId}`.
+- `useVenueRequests(venueId)` from `src/hooks/useRequestRealtime.js` — reuse in portal.
+
+From #176 (Analytics) and #178 (Native Prep) — to be filled in by those sessions.
 
 
 ## YOUR PROMPT
