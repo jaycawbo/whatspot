@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useVenueRequests } from '@/hooks/useRequestRealtime';
@@ -8,13 +8,19 @@ import {
   XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip,
 } from 'recharts';
 
-// ── helpers ────────────────────────────────────────────────────────────────
+// ── helpers ──────────────────────────────────────────────────────────────────
 
 function fmtTime(iso) {
   return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
-// ── Waitlist queue ─────────────────────────────────────────────────────────
+function generateSecret(byteLen = 32) {
+  const bytes = new Uint8Array(byteLen);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ── Waitlist queue ────────────────────────────────────────────────────────────
 
 function WaitlistQueue({ venueId }) {
   const [entries, setEntries] = useState([]);
@@ -45,7 +51,7 @@ function WaitlistQueue({ venueId }) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'waitlist_entries', filter: `venue_id=eq.${venueId}` },
-        () => { load(); }
+        () => { load(); },
       )
       .subscribe();
 
@@ -81,7 +87,7 @@ function WaitlistQueue({ venueId }) {
   );
 }
 
-// ── Requests summary ────────────────────────────────────────────────────────
+// ── Requests summary ──────────────────────────────────────────────────────────
 
 function RequestsSummary({ venueId }) {
   const { pendingRequests, acceptedRequests, isLoading } = useVenueRequests(venueId);
@@ -144,7 +150,6 @@ function AnalyticsSection({ venueId }) {
       setStats(statsRow);
 
       if (recentRequests) {
-        // Hourly distribution (hour-of-day buckets, all time within last 7 days)
         const hourCounts = Array.from({ length: 24 }, (_, h) => ({
           hour: `${h}:00`,
           count: 0,
@@ -154,7 +159,6 @@ function AnalyticsSection({ venueId }) {
         });
         setHourlyData(hourCounts);
 
-        // 7-day daily trend
         const days = Array.from({ length: 7 }, (_, i) => {
           const d = new Date(Date.now() - (6 - i) * 24 * 60 * 60 * 1000);
           return {
@@ -241,8 +245,176 @@ function AnalyticsSection({ venueId }) {
   );
 }
 
+// ── POS Integrations ──────────────────────────────────────────────────────────
 
-// ── Main page ───────────────────────────────────────────────────────────────
+const PROVIDERS = [
+  { id: 'toast',      label: 'Toast',      description: 'Toast POS floor management' },
+  { id: 'lightspeed', label: 'Lightspeed', description: 'Lightspeed Restaurant' },
+  { id: 'square',     label: 'Square',     description: 'Square for Restaurants' },
+];
+
+function IntegrationsSection({ venueId }) {
+  const [integrations, setIntegrations] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [adding, setAdding] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(null);
+
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const webhookBase = `${supabaseUrl}/functions/v1/pos-webhook-handler`;
+
+  const load = useCallback(async () => {
+    const { data } = await supabase
+      .from('venue_integrations')
+      .select('id, provider, is_active')
+      .eq('venue_id', venueId);
+    setIntegrations(data ?? []);
+    setIsLoading(false);
+  }, [venueId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const getIntegration = (providerId) => integrations.find((i) => i.provider === providerId) ?? null;
+
+  function handleConnect(providerId) {
+    setAdding({ provider: providerId, secret: generateSecret() });
+  }
+
+  async function handleSave() {
+    if (!adding) return;
+    setSaving(true);
+    await supabase.from('venue_integrations').upsert(
+      { venue_id: venueId, provider: adding.provider, webhook_secret: adding.secret, settings: {}, is_active: true },
+      { onConflict: 'venue_id,provider' },
+    );
+    setSaving(false);
+    setAdding(null);
+    load();
+  }
+
+  async function handleRemove(integrationId) {
+    await supabase.from('venue_integrations').delete().eq('id', integrationId);
+    load();
+  }
+
+  function copy(text, key) {
+    navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  }
+
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading integrations…</p>;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {PROVIDERS.map((p) => {
+        const existing = getIntegration(p.id);
+        const isAdding = adding?.provider === p.id;
+        const webhookUrl = `${webhookBase}?venueId=${venueId}&provider=${p.id}`;
+
+        return (
+          <div key={p.id} className="rounded-xl border border-border bg-card px-4 py-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-semibold text-foreground">{p.label}</p>
+                <p className="text-xs text-muted-foreground">{p.description}</p>
+              </div>
+
+              {existing ? (
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-800">
+                    Connected
+                  </span>
+                  <button
+                    onClick={() => handleRemove(existing.id)}
+                    className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : !isAdding ? (
+                <button
+                  onClick={() => handleConnect(p.id)}
+                  className="text-xs font-medium border border-border rounded-lg px-3 py-1.5 hover:bg-muted transition-colors"
+                >
+                  Connect
+                </button>
+              ) : null}
+            </div>
+
+            {existing && (
+              <div className="mt-3">
+                <p className="text-xs text-muted-foreground font-medium mb-1">Webhook URL</p>
+                <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2">
+                  <code className="text-[10px] flex-1 break-all text-foreground">{webhookUrl}</code>
+                  <button
+                    onClick={() => copy(webhookUrl, `url-${p.id}`)}
+                    className="text-[10px] font-medium text-muted-foreground hover:text-foreground shrink-0"
+                  >
+                    {copied === `url-${p.id}` ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {isAdding && (
+              <div className="mt-4 space-y-3">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium mb-1">Webhook URL</p>
+                  <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2">
+                    <code className="text-[10px] flex-1 break-all text-foreground">{webhookUrl}</code>
+                    <button
+                      onClick={() => copy(webhookUrl, `url-${p.id}`)}
+                      className="text-[10px] font-medium text-muted-foreground hover:text-foreground shrink-0"
+                    >
+                      {copied === `url-${p.id}` ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium mb-1">Webhook Secret</p>
+                  <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2">
+                    <code className="text-[10px] flex-1 break-all font-mono text-foreground">{adding.secret}</code>
+                    <button
+                      onClick={() => copy(adding.secret, `secret-${p.id}`)}
+                      className="text-[10px] font-medium text-muted-foreground hover:text-foreground shrink-0"
+                    >
+                      {copied === `secret-${p.id}` ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Copy this into {p.label} before saving — it won't be shown again.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="flex-1 text-xs font-medium text-background bg-foreground rounded-lg py-2 hover:opacity-90 transition-opacity disabled:opacity-50"
+                  >
+                    {saving ? 'Saving…' : 'Save Integration'}
+                  </button>
+                  <button
+                    onClick={() => setAdding(null)}
+                    className="text-xs font-medium text-muted-foreground border border-border rounded-lg px-3 py-2 hover:bg-muted transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      <p className="text-[10px] text-muted-foreground">
+        POS integrations update walk-in availability from floor state. Manual availability changes override POS data for 5 minutes.
+      </p>
+    </div>
+  );
+}
+
+// ── Main page ────────────────────────────────────────────────────────────────
 
 export default function VenuePortal() {
   const { venueId } = useParams();
@@ -252,7 +424,7 @@ export default function VenuePortal() {
   useEffect(() => {
     if (!venueId) return;
     supabase
-      .from('venues')
+      .from('walkin_venues')
       .select('id, name')
       .eq('id', venueId)
       .single()
@@ -293,9 +465,14 @@ export default function VenuePortal() {
           <WaitlistQueue venueId={venueId} />
         </section>
 
-        <section>
+        <section className="mb-8">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Analytics</h2>
           <AnalyticsSection venueId={venueId} />
+        </section>
+
+        <section>
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">POS Integrations</h2>
+          <IntegrationsSection venueId={venueId} />
         </section>
       </div>
     </div>

@@ -18,7 +18,11 @@ From #170 (Request Modal):
 - The `create-request` edge function is at `supabase/functions/create-request/index.ts`. Add Stripe PaymentIntent creation there — return `client_secret` in the response so the modal can present the payment sheet before confirming the request.
 - Party size is already captured (default 2, range 1–20). Deposit amount should not depend on party size unless the venue's settings specify per-person pricing.
 
-From #179 (POS Integration) — to be filled in by that session.
+From #179 (POS Integration):
+- **walkin_venues** now has a `manually_set_at timestamptz` column. When you add deposit-related columns to this table, use `ALTER TABLE walkin_venues ADD COLUMN IF NOT EXISTS ...` to avoid conflicts.
+- **venue_integrations** table created: `id, venue_id (→ walkin_venues), provider (toast|lightspeed|square), webhook_secret, settings (jsonb), is_active, created_at, updated_at`. UNIQUE on `(venue_id, provider)`. RLS: venue owners only via `venue_users` join.
+- Deposit amount setting belongs in `walkin_venues` (e.g. `deposit_amount_cents integer DEFAULT 0`). A value of 0 means no deposit required — gate the Stripe flow on `deposit_amount_cents > 0`.
+- **Venue portal** at `src/pages/VenuePortal.jsx`, route `/portal/:venueId`. The portal now has four sections: Live Requests, Waitlist, Analytics, POS Integrations. Add a Deposit/Billing section following the same layout pattern: `<section className="mb-8">` inside `<div className="max-w-xl mx-auto px-6 py-6">`.
 
 
 ## YOUR PROMPT
