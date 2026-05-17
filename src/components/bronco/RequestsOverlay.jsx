@@ -217,7 +217,7 @@ export default function RequestsOverlay() {
   const { state } = useGlobalState();
   const userLoc = state?.userLocation;
 
-  const { activeRequests, isLoading: activeLoading } = useDinerRequests(user?.id ?? null);
+  const { activeRequests, recentlyExpiredRequests, dismissExpired, isLoading: activeLoading } = useDinerRequests(user?.id ?? null);
   const [pastRequests, setPastRequests] = useState([]);
   const [pastLoading, setPastLoading] = useState(false);
   const [venuesMap, setVenuesMap] = useState({});
@@ -287,6 +287,20 @@ export default function RequestsOverlay() {
 
   const visibleActive = activeRequests.filter((r) => !cancelledIds.has(r.id));
 
+  const handleJoinWaitlist = async (expiredRequest) => {
+    try {
+      const { error } = await supabase
+        .from('waitlist_entries')
+        .insert({ diner_id: user.id, venue_id: expiredRequest.venue_id, request_id: expiredRequest.id });
+      if (error) throw error;
+      dismissExpired(expiredRequest.id);
+      toast({ title: 'Added to waitlist', description: "We'll notify you if a spot opens up." });
+    } catch (err) {
+      toast({ title: 'Could not join waitlist', description: err?.message, variant: 'destructive' });
+    }
+  };
+
+
   return (
     <Drawer open={overlayOpen} onOpenChange={handleOpenChange}>
       <DrawerContent className="max-h-[85dvh] flex flex-col">
@@ -324,7 +338,38 @@ export default function RequestsOverlay() {
               {activeLoading && (
                 <p className="text-sm text-muted-foreground text-center py-8">Loading…</p>
               )}
-              {!activeLoading && visibleActive.length === 0 && (
+
+              {/* Recently-expired waitlist prompts */}
+              {recentlyExpiredRequests.map((r) => {
+                const venue = venuesMap[r.venue_id];
+                return (
+                  <div key={r.id} className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 p-3 mb-1">
+                    {venue?.photo_url && (
+                      <img src={venue.photo_url} alt={venue?.name} className="h-10 w-10 rounded-lg object-cover shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold">{venue?.name ?? 'Venue'}</p>
+                      <p className="text-xs text-muted-foreground">Request expired — join their waitlist?</p>
+                    </div>
+                    <div className="flex gap-1.5 shrink-0">
+                      <button
+                        onClick={() => handleJoinWaitlist(r)}
+                        className="rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-orange-600"
+                      >
+                        Join
+                      </button>
+                      <button
+                        onClick={() => dismissExpired(r.id)}
+                        className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/80"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {!activeLoading && visibleActive.length === 0 && recentlyExpiredRequests.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-12">
                   No active requests right now.
                 </p>
