@@ -11,8 +11,12 @@ git push origin jake/180-p4-a1-diner-deposit
 ```
 
 ## Prior Learnings from Upstream Issues
-<!-- Populated by sessions #170 (Request Modal) and #179 (POS Integration) -->
-<!-- Check for venues table column additions and request modal prop interface before implementing -->
+
+From #179 (POS Integration):
+- **walkin_venues** now has a `manually_set_at timestamptz` column. When you add deposit-related columns to this table, use `ALTER TABLE walkin_venues ADD COLUMN IF NOT EXISTS ...` to avoid conflicts.
+- **venue_integrations** table created: `id, venue_id (→ walkin_venues), provider (toast|lightspeed|square), webhook_secret, settings (jsonb), is_active, created_at, updated_at`. UNIQUE on `(venue_id, provider)`. RLS: venue owners only via `venue_users` join.
+- Deposit amount setting belongs in `walkin_venues` (e.g. `deposit_amount_cents integer DEFAULT 0`). A value of 0 means no deposit required — gate the Stripe flow on `deposit_amount_cents > 0`.
+- **Venue portal** at `src/pages/VenuePortal.jsx`, route `/portal/:venueId`. The portal now has three sections: Live Requests, Waitlist, POS Integrations. Add a Deposit/Billing section following the same layout pattern: `<section className="mb-8">` inside `<div className="max-w-xl mx-auto px-6 py-6">`.
 
 
 ## YOUR PROMPT

@@ -11,8 +11,14 @@ git push origin jake/181-p4-a2-venue-saas
 ```
 
 ## Prior Learnings from Upstream Issues
-<!-- Populated by session #180 (Diner Deposit) -->
-<!-- Check for existing Stripe setup and env vars before implementing — do not duplicate -->
+
+From #179 (POS Integration):
+- **walkin_venues** has `manually_set_at timestamptz` added in migration `20260519000001_pos_integration.sql`. Any new columns should use `ADD COLUMN IF NOT EXISTS` to avoid conflicts.
+- **Venue portal** at `src/pages/VenuePortal.jsx`, route `/portal/:venueId`. Sections use `<section className="mb-8">` blocks inside `<div className="max-w-xl mx-auto px-6 py-6">`. Add Billing section at the bottom following this pattern.
+- `venue_users` join table controls RLS for all venue-owned tables (e.g. `venue_integrations`). Use the same pattern for subscription data: gate access via `venue_users.venue_id = auth.uid()`.
+
+From #180 (Diner Deposit):
+<!-- Populated by session #180 — fill in after that session runs -->
 
 
 ## YOUR PROMPT
