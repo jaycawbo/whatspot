@@ -21,7 +21,12 @@ From #170 (Request Modal):
 - Cancelling uses the existing `cancel-request` Edge Function: `supabase.functions.invoke('cancel-request', { body: { request_id } })`.
 - **Past requests**: fetch separately — `status IN ('declined','expired','redeemed','cancelled')` ordered by `created_at DESC`. Not in `useDinerRequests` (which only tracks active statuses). You'll need a separate query or extend the hook.
 
-From #171 (Floating Pill) — to be filled in by that session.
+From #171 (Floating Pill):
+- **FloatingRequestsPill** (`src/components/bronco/FloatingRequestsPill.jsx`) opens the overlay by calling `openOverlay()` from `useBronco()`. Your overlay reads `overlayOpen` and calls `closeOverlay()` to dismiss.
+- The pill is mounted globally in `App.jsx` — it renders when `activeRequests.length > 0` and the user is authenticated.
+- **Trigger interface**: the pill calls `openOverlay()` on tap. Your overlay should render when `overlayOpen === true` from `useBronco()`.
+- `useDinerRequests(user.id)` is the source of truth for active requests (pending + accepted). The overlay reuses this same hook — do not duplicate the subscription.
+- BroncoContext also now has `isTrayDragging` and `traySnapHeightPx` — you don't need these in the overlay.
 
 
 ## YOUR PROMPT
