@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Star, MapPin } from 'lucide-react';
+import { Star, MapPin, Bookmark, BookmarkCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { logEvent } from '@/lib/logEvent';
 import BeenHereButton from '@/components/ui/BeenHereButton';
 import RatingDialog from '@/components/discovery/RatingDialog';
 import { useSpots } from '@/hooks/useSpots';
 import { useBronco } from '@/context/BroncoContext';
+import { useBroncoSpotLists } from '@/hooks/useBroncoSpotLists';
 
 const RATING_TAP_BLOCK_MS = 500;
 
@@ -22,6 +23,8 @@ export default function VenueCard({ venue, index, currentQuery }) {
   const cardRef = useRef(null);
   const { getBeenHereRating, saveBeenHere, isAuthenticated } = useSpots();
   const { openRequestModal } = useBronco();
+  const { lists, savedIds, saveVenue, removeVenue } = useBroncoSpotLists();
+  const isSaved = venue.id ? savedIds.has(venue.id) : false;
   const [ratingSheetOpen, setRatingSheetOpen] = useState(false);
   const ratingDialogOpenRef = useRef(false);
 
@@ -85,6 +88,20 @@ export default function VenueCard({ venue, index, currentQuery }) {
     openRequestModal(venue);
   };
 
+  const handleToggleSave = (e) => {
+    e.stopPropagation();
+    if (!venue.id) return;
+    if (isSaved) {
+      const containing = lists.find((l) => l.items.some((i) => i.venue_id === venue.id));
+      if (containing) removeVenue(venue, containing.id);
+    } else {
+      const defaultList = lists[0];
+      if (defaultList) {
+        saveVenue(venue, defaultList.id);
+      }
+    }
+  };
+
   return (
     <div ref={cardRef} onClick={handleClick} className="relative flex gap-3 rounded-xl border border-border bg-card p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
       <div className="relative shrink-0">
@@ -94,11 +111,23 @@ export default function VenueCard({ venue, index, currentQuery }) {
           className="h-24 w-24 rounded-lg object-cover bg-muted"
           loading="lazy"
         />
-        <div className="absolute top-1 right-1">
+        <div className="absolute top-1 right-1 flex flex-col gap-1">
           <BeenHereButton
             rating={beenHereRating}
             onClick={handleBeenHereClick}
           />
+          {venue.id && lists.length > 0 && (
+            <button
+              onClick={handleToggleSave}
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-white/85 shadow-sm backdrop-blur-sm"
+              aria-label={isSaved ? 'Remove from spot list' : 'Save to spot list'}
+            >
+              {isSaved
+                ? <BookmarkCheck className="h-3.5 w-3.5 text-[#22c55e]" />
+                : <Bookmark className="h-3.5 w-3.5 text-muted-foreground" />
+              }
+            </button>
+          )}
         </div>
       </div>
       <div className="flex flex-col min-w-0 flex-1 justify-between py-0.5">
