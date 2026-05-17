@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ResultsList from './ResultsList';
+import { useBronco } from '@/context/BroncoContext';
 
 /**
  * Mobile-only post-search bottom sheet with drag-to-snap.
@@ -53,6 +54,7 @@ export default function ResultsBottomSheet({
   const [snapIdx, setSnapIdx] = useState(DEFAULT_SNAP);
   const [liveHeight, setLiveHeight] = useState(null); // px while dragging; null at rest
   const [isDragging, setIsDragging] = useState(false);
+  const { setTrayDragging, setTraySnapHeight } = useBronco();
 
   // Refs keep document-level listeners in sync with current state (no stale closures)
   const snapIdxRef = useRef(snapIdx);
@@ -106,6 +108,7 @@ export default function ResultsBottomSheet({
 
       dragData.current = null;
       setIsDragging(false);
+      setTrayDragging(false);
       setLiveHeight(null);
       setSnapIdx(nextIdx);
     };
@@ -132,7 +135,18 @@ export default function ResultsBottomSheet({
       t0: Date.now(),
     };
     setIsDragging(true);
-  }, []);
+    setTrayDragging(true);
+  }, [setTrayDragging]);
+
+  // Sync tray snap height to BroncoContext whenever the settled snap changes
+  useEffect(() => {
+    if (!open) {
+      setTraySnapHeight(0);
+      setTrayDragging(false);
+      return;
+    }
+    setTraySnapHeight(snapToPx(snapIdx));
+  }, [open, snapIdx, setTraySnapHeight, setTrayDragging]);
 
   if (!open) return null;
 

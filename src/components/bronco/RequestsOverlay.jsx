@@ -163,6 +163,7 @@ function ActiveCard({ request, venue, distanceKm, onCancel }) {
           </button>
         )}
 
+
         {request.status === 'pending' && !confirmCancel && (
           <button
             onClick={() => setConfirmCancel(true)}
@@ -319,6 +320,7 @@ export default function RequestsOverlay() {
       toast({ title: 'Could not join waitlist', description: err?.message, variant: 'destructive' });
     }
   };
+
 
   return (
     <Drawer open={overlayOpen} onOpenChange={handleOpenChange}>
