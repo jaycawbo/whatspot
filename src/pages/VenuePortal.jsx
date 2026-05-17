@@ -241,6 +241,7 @@ function AnalyticsSection({ venueId }) {
   );
 }
 
+
 // ── Main page ───────────────────────────────────────────────────────────────
 
 export default function VenuePortal() {
