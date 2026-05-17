@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/types.ts';
 
 Deno.serve(async (req) => {
@@ -36,7 +37,7 @@ Deno.serve(async (req) => {
   try {
     const { data: request, error: fetchError } = await serviceClient
       .from('requests')
-      .select('id, status, expires_at, venue_id')
+      .select('id, status, expires_at, venue_id, stripe_payment_intent_id, deposit_status')
       .eq('id', request_id)
       .single();
 
@@ -54,9 +55,25 @@ Deno.serve(async (req) => {
     if (request.status !== 'pending') return errorResponse('Request is not pending', 409);
     if (new Date(request.expires_at) <= new Date()) return errorResponse('Request has expired', 409);
 
+    // Capture the Stripe deposit when the venue accepts
+    let newDepositStatus = request.deposit_status as string | null;
+    if (request.stripe_payment_intent_id && request.deposit_status === 'authorized') {
+      const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+      if (stripeKey) {
+        const stripe = new Stripe(stripeKey, { apiVersion: '2024-06-20' });
+        await stripe.paymentIntents.capture(request.stripe_payment_intent_id);
+        newDepositStatus = 'captured';
+      }
+    }
+
+    const updateFields: Record<string, unknown> = { status: 'accepted' };
+    if (newDepositStatus !== request.deposit_status) {
+      updateFields.deposit_status = newDepositStatus;
+    }
+
     const { error: updateError } = await serviceClient
       .from('requests')
-      .update({ status: 'accepted' })
+      .update(updateFields)
       .eq('id', request_id);
 
     if (updateError) throw updateError;

@@ -6,9 +6,12 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { GlobalStateProvider } from '@/context/GlobalStateContext';
+import { BroncoProvider } from '@/context/BroncoContext';
 import VenueDetails from '@/pages/VenueDetails';
 import EnrichmentDashboard from '@/pages/EnrichmentDashboard';
 import Credits from '@/pages/Credits';
+import VenuePortal from '@/pages/VenuePortal';
+import RequestModal from '@/components/bronco/RequestModal';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -37,6 +40,7 @@ const AuthenticatedApp = () => {
         </LayoutWrapper>
       } />
       <Route path="/venue/:placeId" element={<VenueDetails />} />
+      <Route path="/portal/:venueId" element={<VenuePortal />} />
       <Route path="/enrich" element={<EnrichmentDashboard />} />
       <Route path="/credits" element={<Credits />} />
       {Object.entries(Pages).map(([path, Page]) => (
@@ -60,12 +64,15 @@ function App() {
   return (
     <AuthProvider>
       <GlobalStateProvider>
-        <QueryClientProvider client={queryClientInstance}>
-          <Router>
-            <AuthenticatedApp />
-          </Router>
-          <Toaster />
-        </QueryClientProvider>
+        <BroncoProvider>
+          <QueryClientProvider client={queryClientInstance}>
+            <Router>
+              <AuthenticatedApp />
+              <RequestModal />
+            </Router>
+            <Toaster />
+          </QueryClientProvider>
+        </BroncoProvider>
       </GlobalStateProvider>
     </AuthProvider>
   )

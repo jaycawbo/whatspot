@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/types.ts';
 
 Deno.serve(async (req) => {
@@ -36,7 +37,7 @@ Deno.serve(async (req) => {
   try {
     const { data: request, error: fetchError } = await serviceClient
       .from('requests')
-      .select('id, status, holding_expires_at, venue_id')
+      .select('id, status, holding_expires_at, venue_id, stripe_payment_intent_id, deposit_status')
       .eq('id', request_id)
       .single();
 
@@ -56,9 +57,25 @@ Deno.serve(async (req) => {
       return errorResponse('Holding window has expired', 409);
     }
 
+    // Refund the deposit when the diner is marked as arrived
+    let newDepositStatus = request.deposit_status as string | null;
+    if (request.stripe_payment_intent_id && request.deposit_status === 'captured') {
+      const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+      if (stripeKey) {
+        const stripe = new Stripe(stripeKey, { apiVersion: '2024-06-20' });
+        await stripe.refunds.create({ payment_intent: request.stripe_payment_intent_id });
+        newDepositStatus = 'refunded';
+      }
+    }
+
+    const updateFields: Record<string, unknown> = { status: 'redeemed' };
+    if (newDepositStatus !== request.deposit_status) {
+      updateFields.deposit_status = newDepositStatus;
+    }
+
     const { error: updateError } = await serviceClient
       .from('requests')
-      .update({ status: 'redeemed' })
+      .update(updateFields)
       .eq('id', request_id);
 
     if (updateError) throw updateError;
