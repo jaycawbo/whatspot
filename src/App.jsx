@@ -6,6 +6,8 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { GlobalStateProvider } from '@/context/GlobalStateContext';
+import { BroncoProvider } from '@/context/BroncoContext';
+import RequestModal from '@/components/bronco/RequestModal';
 import VenueDetails from '@/pages/VenueDetails';
 import EnrichmentDashboard from '@/pages/EnrichmentDashboard';
 import Credits from '@/pages/Credits';
@@ -60,12 +62,15 @@ function App() {
   return (
     <AuthProvider>
       <GlobalStateProvider>
-        <QueryClientProvider client={queryClientInstance}>
-          <Router>
-            <AuthenticatedApp />
-          </Router>
-          <Toaster />
-        </QueryClientProvider>
+        <BroncoProvider>
+          <QueryClientProvider client={queryClientInstance}>
+            <Router>
+              <AuthenticatedApp />
+            </Router>
+            <RequestModal />
+            <Toaster />
+          </QueryClientProvider>
+        </BroncoProvider>
       </GlobalStateProvider>
     </AuthProvider>
   )
