@@ -9,6 +9,7 @@ import { GlobalStateProvider } from '@/context/GlobalStateContext';
 import { BroncoProvider } from '@/context/BroncoContext';
 import RequestModal from '@/components/bronco/RequestModal';
 import FloatingRequestsPill from '@/components/bronco/FloatingRequestsPill';
+import RequestsOverlay from '@/components/bronco/RequestsOverlay';
 import VenueDetails from '@/pages/VenueDetails';
 import EnrichmentDashboard from '@/pages/EnrichmentDashboard';
 import Credits from '@/pages/Credits';
@@ -70,6 +71,7 @@ function App() {
             </Router>
             <RequestModal />
             <FloatingRequestsPill />
+            <RequestsOverlay />
             <Toaster />
           </QueryClientProvider>
         </BroncoProvider>
