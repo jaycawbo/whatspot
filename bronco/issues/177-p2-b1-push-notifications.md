@@ -11,8 +11,13 @@ git push origin jake/177-p2-b1-push-notifications
 ```
 
 ## Prior Learnings from Upstream Issues
-<!-- Populated by session #172 (Requests Overlay) -->
-<!-- Check for request status values and overlay card state structure before implementing -->
+
+From #172 (Requests Overlay):
+- Request statuses: `pending | accepted | declined | expired | redeemed | cancelled`. Push notifications should fire on transitions to `accepted`, `declined`, `expired`.
+- Holding window expiry (5 min warning) is derived from `holding_expires_at` on accepted requests — trigger push when `holding_expires_at - now < 5 min`.
+- The overlay uses `useDinerRequests` for Realtime status updates. The push notification Edge Function is triggered by Database Webhooks (not client Realtime) so it fires even when the app is backgrounded.
+- `requests` table has `diner_id`, `venue_id`, `status`, `decline_comment`, `expires_at`, `holding_expires_at`. The webhook payload includes all these fields.
+- For the "On Our Way" state: it should be an additional UI state in `ActiveCard` (inside `RequestsOverlay.jsx`) for `status === 'accepted'`. Add a button that calls a new `on-our-way` action (or simply a local flag — no new edge function needed if this is just UI state).
 
 
 ## YOUR PROMPT
