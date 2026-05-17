@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, X } from 'lucide-react';
+import { Bell, BellOff, ChevronRight, X } from 'lucide-react';
 import {
   Drawer,
   DrawerContent,
@@ -13,6 +13,7 @@ import { useDinerRequests } from '@/hooks/useRequestRealtime';
 import { useAuth } from '@/lib/AuthContext';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { toast } from '@/hooks/use-toast';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -83,6 +84,7 @@ function useCountdown(isoDate) {
 function ActiveCard({ request, venue, distanceKm, onCancel }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [onOurWay, setOnOurWay] = useState(false);
 
   const countdownTarget = request.status === 'pending'
     ? request.expires_at
@@ -142,6 +144,23 @@ function ActiveCard({ request, venue, distanceKm, onCancel }) {
           <p className="text-xs font-medium text-orange-600">
             {request.status === 'pending' ? 'Expires in' : 'Hold expires in'} {countdown}
           </p>
+        )}
+
+        {request.status === 'accepted' && (
+          <button
+            onClick={() => {
+              setOnOurWay(true);
+              toast({ title: onOurWay ? 'Already on your way!' : "Great! We'll let the venue know." });
+            }}
+            disabled={onOurWay}
+            className={`mt-1 self-start rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
+              onOurWay
+                ? 'bg-green-100 text-green-700 cursor-default'
+                : 'bg-green-500 text-white hover:bg-green-600'
+            }`}
+          >
+            {onOurWay ? 'On Our Way' : "On Our Way"}
+          </button>
         )}
 
         {request.status === 'pending' && !confirmCancel && (
@@ -218,6 +237,7 @@ export default function RequestsOverlay() {
   const userLoc = state?.userLocation;
 
   const { activeRequests, recentlyExpiredRequests, dismissExpired, isLoading: activeLoading } = useDinerRequests(user?.id ?? null);
+  const { isSupported: pushSupported, isSubscribed, isLoading: pushLoading, subscribe, unsubscribe } = usePushNotifications();
   const [pastRequests, setPastRequests] = useState([]);
   const [pastLoading, setPastLoading] = useState(false);
   const [venuesMap, setVenuesMap] = useState({});
@@ -305,12 +325,24 @@ export default function RequestsOverlay() {
       <DrawerContent className="max-h-[85dvh] flex flex-col">
         <DrawerHeader className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
           <DrawerTitle className="text-base font-semibold">Your Requests</DrawerTitle>
-          <button
-            onClick={closeOverlay}
-            className="rounded-full p-1 text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {pushSupported && (
+              <button
+                onClick={isSubscribed ? unsubscribe : subscribe}
+                disabled={pushLoading}
+                title={isSubscribed ? 'Disable notifications' : 'Enable notifications'}
+                className="rounded-full p-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                {isSubscribed ? <Bell className="h-4 w-4 text-green-500" /> : <BellOff className="h-4 w-4" />}
+              </button>
+            )}
+            <button
+              onClick={closeOverlay}
+              className="rounded-full p-1 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </DrawerHeader>
 
         {/* Tab bar */}
