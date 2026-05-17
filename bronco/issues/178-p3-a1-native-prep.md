@@ -27,6 +27,15 @@ From Phase 2 (#173-#174):
 
 From Phase 2 (#175-#177) — to be filled in by those sessions.
 
+From #177 (Push Notifications):
+- **Web Push service worker** at `public/sw.js` — handles `push` and `notificationclick` events. Registered via `usePushNotifications.js`. This is a hard web-only dependency; Capacitor Push Notifications plugin replaces it entirely for native.
+- **usePushNotifications** hook at `src/hooks/usePushNotifications.js`: uses `navigator.serviceWorker`, `PushManager`, `Notification`, and `window` — all web-only APIs. Guard with `'serviceWorker' in navigator && 'PushManager' in window` (already done). Replace with `@capacitor/push-notifications` on native.
+- **push_subscriptions** Supabase table: stores Web Push endpoint + VAPID keys per user. For native, store FCM/APNs device tokens instead, in a separate column or table.
+- **send-push-notification** Edge Function: triggered by Supabase Database Webhook on `requests` UPDATE. Uses `npm:web-push@3.6.7`. Needs VAPID env vars: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_CONTACT_EMAIL`.
+- **Twilio SMS**: stubs in `send-push-notification/index.ts`. Reads `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` — silently skips if unset. Opt-in flag is `diners.sms_opt_in` (boolean). Triggers on: `accepted` status only (holding 5-min warning handled separately).
+- **VITE_VAPID_PUBLIC_KEY** env var required on the frontend (in `.env.local` and Vercel). Generate VAPID keys with `npx web-push generate-vapid-keys`.
+- **"On Our Way" state**: client-side toggle on accepted request cards in `RequestsOverlay.jsx`. No DB column yet — currently optimistic UI only. If native needs to notify the venue, add `on_our_way_at timestamptz` to `requests` and update via direct upsert (diner owns their own request rows via RLS).
+
 
 ## YOUR PROMPT
 <!-- Jake: paste your detailed implementation prompt below -->
