@@ -19,7 +19,14 @@ From #175 (Waitlist):
 - `waitlist_entries` table: `id, diner_id, venue_id, request_id, created_at, status (waiting|notified|seated|cancelled)`, Realtime channel `waitlist-{venueId}`.
 - `useVenueRequests(venueId)` from `src/hooks/useRequestRealtime.js` — reuse in portal.
 
-From #176 (Analytics) and #178 (Native Prep) — to be filled in by those sessions.
+From #176 (Analytics):
+- **venue_analytics** Supabase view must be created before the portal analytics section works. SQL: `CREATE OR REPLACE VIEW venue_analytics AS SELECT v.id AS venue_id, COUNT(r.id) AS total_requests, ROUND(COUNT(r.id) FILTER (WHERE r.status IN ('accepted','redeemed'))::numeric / NULLIF(COUNT(r.id),0)*100,1) AS acceptance_rate_pct, ROUND(COUNT(r.id) FILTER (WHERE r.status='redeemed')::numeric / NULLIF(COUNT(r.id) FILTER (WHERE r.status IN ('accepted','redeemed')),0)*100,1) AS redemption_rate_pct, v.avg_response_sec FROM venues v LEFT JOIN requests r ON r.venue_id=v.id GROUP BY v.id, v.avg_response_sec;` + `GRANT SELECT ON venue_analytics TO authenticated;`
+- `avg_response_sec` is read from the `venues` table via the view's GROUP BY. If you add columns to `venues`, verify the GROUP BY in `venue_analytics` stays valid (add new venue columns to GROUP BY if needed).
+- Chart data (7-day trend, hourly distribution) is computed client-side from a `requests` fetch — no extra views required.
+- Recharts is installed (`recharts ^2.15.4`). Use `BarChart/Bar` for hourly peaks, `LineChart/Line` for daily trend. `ResponsiveContainer height={120}` fits the portal column width cleanly.
+- Portal page layout as of #176: sections in order — Live Requests, Waitlist, Analytics. Add new sections (e.g. Integrations) as additional `<section className="mb-8">` blocks inside `<div className="max-w-xl mx-auto px-6 py-6">`.
+
+From #178 (Native Prep) — to be filled in by that session.
 
 
 ## YOUR PROMPT
