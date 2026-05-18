@@ -12,6 +12,11 @@ git push origin jake/181-p4-a2-venue-saas
 
 ## Prior Learnings from Upstream Issues
 
+From #179 (POS Integration):
+- **walkin_venues** has `manually_set_at timestamptz` added in migration `20260519000001_pos_integration.sql`. Any new columns should use `ADD COLUMN IF NOT EXISTS` to avoid conflicts.
+- **Venue portal** at `src/pages/VenuePortal.jsx`, route `/portal/:venueId`. Sections use `<section className="mb-8">` blocks inside `<div className="max-w-xl mx-auto px-6 py-6">`. Add Billing section at the bottom following this pattern.
+- `venue_users` join table controls RLS for all venue-owned tables (e.g. `venue_integrations`). Use the same pattern for subscription data: gate access via `venue_users.venue_id = auth.uid()`.
+
 From #180 (Diner Deposit):
 - **Stripe is fully wired** into three edge functions. Same `stripe@14` import via `https://esm.sh/stripe@14?target=deno` pattern.
 - **Env vars needed**: `STRIPE_SECRET_KEY` (server-side, Supabase Edge Function secret), `STRIPE_WEBHOOK_SECRET` (for webhook verification), `VITE_STRIPE_PUBLISHABLE_KEY` (client-side, Vercel env var).
@@ -20,7 +25,7 @@ From #180 (Diner Deposit):
 - **`accept-request`** captures the PaymentIntent (`stripe.paymentIntents.capture`) on venue accept and sets `deposit_status = 'captured'`.
 - **`redeem-request`** refunds the PaymentIntent (`stripe.refunds.create`) on diner arrival and sets `deposit_status = 'refunded'`.
 - **`forfeit-deposit`** is a new scheduled Edge Function that cancels accepted requests whose holding window expired, marks captured deposits as `'forfeited'`, and releases authorized-but-not-captured intents.
-- **VenuePortal** is at `src/pages/VenuePortal.jsx` (route `/portal/:venueId`). It now has four sections: Live Requests, Waitlist, Deposit / Billing, POS Integrations. Add the SaaS Billing section following the same `<section className="mb-8">` pattern inside `<div className="max-w-xl mx-auto px-6 py-6">`.
+- **VenuePortal** is at `src/pages/VenuePortal.jsx` (route `/portal/:venueId`). It now has five sections: Live Requests, Waitlist, Analytics, Deposit / Billing, POS Integrations. Add the SaaS Billing section following the same `<section className="mb-8">` pattern inside `<div className="max-w-xl mx-auto px-6 py-6">`.
 - **`walkin_venues`** now has `deposit_amount_cents integer NOT NULL DEFAULT 0` and `manually_set_at timestamptz`.
 - **`requests`** now has `stripe_payment_intent_id text`, `deposit_status text` (authorized|captured|refunded|forfeited), `deposit_amount_cents integer`, and `note text`.
 - **`venue_integrations`** table exists with RLS (owner-only via venue_users join).
