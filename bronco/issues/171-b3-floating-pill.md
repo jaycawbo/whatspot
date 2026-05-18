@@ -11,8 +11,17 @@ git push origin jake/171-b3-floating-pill
 ```
 
 ## Prior Learnings from Upstream Issues
-<!-- Populated by session #170 (Request Modal) -->
-<!-- Check here before starting for component names, hook names, and data shapes from B-2 -->
+
+From #170 (Request Modal):
+- **BroncoContext** (`src/context/BroncoContext.jsx`) is the shared state layer for all Bronco UI.
+  - `openRequestModal(venue)` / `closeRequestModal()` — modal state
+  - `openOverlay()` / `closeOverlay()` / `overlayOpen` — overlay state (already wired; your pill should call `openOverlay()` on tap)
+  - `useBronco()` hook — import from `@/context/BroncoContext`
+- **RequestModal** (`src/components/bronco/RequestModal.jsx`) calls `openOverlay()` on successful request submission. Your floating pill appears when the diner has active requests (use `useDinerRequests` from `@/hooks/useRequestRealtime`); it does NOT need to track modal success directly.
+- **RequestModal** submits to the `create-request` Edge Function via `supabase.functions.invoke('create-request', { body: { venue_id, party_size, note } })`.
+- Venue card "Request Walk-In" button calls `openRequestModal(venue)` from `useBronco()`.
+- The floating pill should tap `openOverlay()` from `useBronco()` — the overlay open state already lives in BroncoContext.
+- **Note column migration**: if Phase 1A schema did not include `note text` on the `requests` table, run: `ALTER TABLE requests ADD COLUMN IF NOT EXISTS note text CHECK (char_length(note) <= 140);`
 
 
 ## YOUR PROMPT

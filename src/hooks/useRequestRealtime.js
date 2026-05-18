@@ -61,9 +61,11 @@ export function useRequestUpdates(requestId, onUpdate) {
  */
 export function useDinerRequests(dinerId) {
   const [activeRequests, setActiveRequests] = useState([]);
+  const [recentlyExpiredRequests, setRecentlyExpiredRequests] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const hasSubscribedRef = useRef(false);
+  const expiredTimersRef = useRef({});
 
   const fetchActive = useCallback(async () => {
     const { data, error: fetchError } = await supabase
@@ -109,6 +111,20 @@ export function useDinerRequests(dinerId) {
             if (ACTIVE_STATUSES.includes(updated.status)) {
               return prev.map((r) => (r.id === updated.id ? updated : r));
             }
+            // Track expired requests briefly so the overlay can show a waitlist prompt
+            if (updated.status === 'expired') {
+              setRecentlyExpiredRequests((prev2) => {
+                if (prev2.some((r) => r.id === updated.id)) return prev2;
+                return [...prev2, updated];
+              });
+              // Auto-clear after 30 seconds
+              const timer = setTimeout(() => {
+                setRecentlyExpiredRequests((prev2) => prev2.filter((r) => r.id !== updated.id));
+                delete expiredTimersRef.current[updated.id];
+              }, 30000);
+              if (expiredTimersRef.current[updated.id]) clearTimeout(expiredTimersRef.current[updated.id]);
+              expiredTimersRef.current[updated.id] = timer;
+            }
             return prev.filter((r) => r.id !== updated.id);
           });
         },
@@ -122,10 +138,23 @@ export function useDinerRequests(dinerId) {
         }
       });
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+      // Clear any pending expire timers
+      Object.values(expiredTimersRef.current).forEach(clearTimeout);
+      expiredTimersRef.current = {};
+    };
   }, [dinerId, fetchActive]);
 
-  return { activeRequests, isLoading, error };
+  const dismissExpired = useCallback((requestId) => {
+    setRecentlyExpiredRequests((prev) => prev.filter((r) => r.id !== requestId));
+    if (expiredTimersRef.current[requestId]) {
+      clearTimeout(expiredTimersRef.current[requestId]);
+      delete expiredTimersRef.current[requestId];
+    }
+  }, []);
+
+  return { activeRequests, recentlyExpiredRequests, dismissExpired, isLoading, error };
 }
 
 // ---------------------------------------------------------------------------
