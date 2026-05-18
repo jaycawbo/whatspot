@@ -72,6 +72,7 @@ export default function VenueDetails() {
   // Fetch detailed info from google-places-details
   useEffect(() => {
     if (!placeId) return;
+
     const fetchDetails = async () => {
       setDetailsLoading(true);
       try {
@@ -81,10 +82,6 @@ export default function VenueDetails() {
         if (error) throw error;
         if (data?.success) {
           setDetails(data.data);
-          // Fetch photos if none loaded yet, or if only a partial set was fetched (feed shows 1 photo)
-          if (photoUrls.length === 0 || !venue.photos_complete) {
-            fetchPhotos();
-          }
         }
       } catch (err) {
         console.error('Failed to fetch venue details:', err);
@@ -94,12 +91,14 @@ export default function VenueDetails() {
       }
     };
 
+    // Fetch full photo set in parallel — edge fn returns cached immediately if photos_complete.
+    // Only update state if we receive more photos than the initial nav-state provided.
     const fetchPhotos = async () => {
       try {
         const { data, error } = await supabase.functions.invoke('get-place-photos', {
           body: { place_id: placeId },
         });
-        if (!error && data?.photo_urls?.length) {
+        if (!error && data?.photo_urls?.length > photoUrls.length) {
           setPhotoUrls(data.photo_urls);
         }
       } catch (err) {
@@ -108,6 +107,7 @@ export default function VenueDetails() {
     };
 
     fetchDetails();
+    fetchPhotos();
   }, [placeId]);
 
   // Walk-in score fetch + already-reported check
