@@ -3,12 +3,16 @@ export interface RequestRow {
   diner_id: string;
   venue_id: string;
   party_size: number;
+  note: string | null;
   status: 'pending' | 'accepted' | 'declined' | 'expired' | 'redeemed' | 'cancelled';
   decline_comment: string | null;
   created_at: string;
   accepted_at: string | null;
   expires_at: string;
   holding_expires_at: string | null;
+  stripe_payment_intent_id: string | null;
+  deposit_status: 'authorized' | 'captured' | 'refunded' | 'forfeited' | null;
+  deposit_amount_cents: number | null;
 }
 
 export const corsHeaders = {

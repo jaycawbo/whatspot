@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/types.ts';
 
 Deno.serve(async (req) => {
@@ -41,8 +42,8 @@ Deno.serve(async (req) => {
 
   try {
     const { data: venue, error: venueError } = await serviceClient
-      .from('venues')
-      .select('id, is_available, acceptance_window_sec')
+      .from('walkin_venues')
+      .select('id, is_available, acceptance_window_sec, deposit_amount_cents')
       .eq('id', venue_id)
       .single();
 
@@ -61,6 +62,26 @@ Deno.serve(async (req) => {
 
     const acceptanceWindowSec = (venue.acceptance_window_sec as number | null) ?? 120;
     const expiresAt = new Date(Date.now() + acceptanceWindowSec * 1000).toISOString();
+    const depositAmountCents: number = venue.deposit_amount_cents ?? 0;
+
+    let stripe_payment_intent_id: string | null = null;
+    let client_secret: string | null = null;
+
+    if (depositAmountCents > 0) {
+      const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+      if (!stripeKey) return errorResponse('Stripe is not configured', 503);
+
+      const stripe = new Stripe(stripeKey, { apiVersion: '2024-06-20' });
+      const intent = await stripe.paymentIntents.create({
+        amount: depositAmountCents,
+        currency: 'cad',
+        capture_method: 'manual',
+        metadata: { venue_id, diner_id: user.id },
+      });
+
+      stripe_payment_intent_id = intent.id;
+      client_secret = intent.client_secret;
+    }
 
     const { data: request, error: insertError } = await serviceClient
       .from('requests')
@@ -71,13 +92,16 @@ Deno.serve(async (req) => {
         note: note?.trim() || null,
         status: 'pending',
         expires_at: expiresAt,
+        stripe_payment_intent_id,
+        deposit_status: depositAmountCents > 0 ? 'authorized' : null,
+        deposit_amount_cents: depositAmountCents > 0 ? depositAmountCents : null,
       })
       .select('*')
       .single();
 
     if (insertError) throw insertError;
 
-    return jsonResponse({ request });
+    return jsonResponse({ request, client_secret });
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';

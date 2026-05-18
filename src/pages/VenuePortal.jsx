@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { useVenueRequests } from '@/hooks/useRequestRealtime';
 import { useAuth } from '@/lib/AuthContext';
 import {
   BarChart, Bar, LineChart, Line,
@@ -18,6 +17,71 @@ function generateSecret(byteLen = 32) {
   const bytes = new Uint8Array(byteLen);
   crypto.getRandomValues(bytes);
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function useVenueRequests(venueId) {
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [acceptedRequests, setAcceptedRequests] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!venueId) return;
+    let cancelled = false;
+
+    async function load() {
+      const { data } = await supabase
+        .from('requests')
+        .select('id, status, party_size, created_at, deposit_status, deposit_amount_cents')
+        .eq('venue_id', venueId)
+        .in('status', ['pending', 'accepted'])
+        .order('created_at', { ascending: true });
+      if (!cancelled) {
+        const rows = data ?? [];
+        setPendingRequests(rows.filter((r) => r.status === 'pending'));
+        setAcceptedRequests(rows.filter((r) => r.status === 'accepted'));
+        setIsLoading(false);
+      }
+    }
+
+    load();
+
+    const channel = supabase
+      .channel(`venue-requests-${venueId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'requests', filter: `venue_id=eq.${venueId}` },
+        () => { load(); },
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [venueId]);
+
+  return { pendingRequests, acceptedRequests, isLoading };
+}
+
+// ── Requests summary ──────────────────────────────────────────────────────────
+
+function RequestsSummary({ venueId }) {
+  const { pendingRequests, acceptedRequests, isLoading } = useVenueRequests(venueId);
+
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading requests…</p>;
+
+  return (
+    <div className="grid grid-cols-2 gap-3 mb-6">
+      <div className="rounded-xl border border-border bg-card p-4 text-center">
+        <p className="text-3xl font-bold text-foreground">{pendingRequests.length}</p>
+        <p className="text-xs text-muted-foreground mt-1">Pending</p>
+      </div>
+      <div className="rounded-xl border border-border bg-card p-4 text-center">
+        <p className="text-3xl font-bold text-[#22c55e]">{acceptedRequests.length}</p>
+        <p className="text-xs text-muted-foreground mt-1">Accepted</p>
+      </div>
+    </div>
+  );
 }
 
 // ── Waitlist queue ────────────────────────────────────────────────────────────
@@ -87,28 +151,7 @@ function WaitlistQueue({ venueId }) {
   );
 }
 
-// ── Requests summary ──────────────────────────────────────────────────────────
-
-function RequestsSummary({ venueId }) {
-  const { pendingRequests, acceptedRequests, isLoading } = useVenueRequests(venueId);
-
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading requests…</p>;
-
-  return (
-    <div className="grid grid-cols-2 gap-3 mb-6">
-      <div className="rounded-xl border border-border bg-card p-4 text-center">
-        <p className="text-3xl font-bold text-foreground">{pendingRequests.length}</p>
-        <p className="text-xs text-muted-foreground mt-1">Pending</p>
-      </div>
-      <div className="rounded-xl border border-border bg-card p-4 text-center">
-        <p className="text-3xl font-bold text-[#22c55e]">{acceptedRequests.length}</p>
-        <p className="text-xs text-muted-foreground mt-1">Accepted</p>
-      </div>
-    </div>
-  );
-}
-
-// ── Analytics ─────────────────────────────────────────────────────────────
+// ── Analytics ─────────────────────────────────────────────────────────────────
 
 function StatCard({ label, value }) {
   return (
@@ -211,10 +254,7 @@ function AnalyticsSection({ venueId }) {
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis dataKey="date" tick={{ fontSize: 10 }} />
             <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-            <Tooltip
-              contentStyle={{ fontSize: 11, borderRadius: 8 }}
-              labelStyle={{ fontWeight: 600 }}
-            />
+            <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ fontWeight: 600 }} />
             <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
@@ -233,10 +273,7 @@ function AnalyticsSection({ venueId }) {
               tickFormatter={h => (parseInt(h) % 6 === 0 ? h : '')}
             />
             <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-            <Tooltip
-              contentStyle={{ fontSize: 11, borderRadius: 8 }}
-              labelStyle={{ fontWeight: 600 }}
-            />
+            <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} labelStyle={{ fontWeight: 600 }} />
             <Bar dataKey="count" fill="#6366f1" radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
@@ -414,6 +451,92 @@ function IntegrationsSection({ venueId }) {
   );
 }
 
+// ── Deposit / Billing ─────────────────────────────────────────────────────────
+
+function DepositSection({ venueId }) {
+  const [depositCents, setDepositCents] = useState(null);
+  const [inputDollars, setInputDollars] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (!venueId) return;
+    supabase
+      .from('walkin_venues')
+      .select('deposit_amount_cents')
+      .eq('id', venueId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setDepositCents(data.deposit_amount_cents);
+          setInputDollars(data.deposit_amount_cents > 0 ? (data.deposit_amount_cents / 100).toFixed(2) : '');
+        }
+      });
+  }, [venueId]);
+
+  const handleSave = async () => {
+    const dollars = parseFloat(inputDollars);
+    const cents = isNaN(dollars) || dollars < 0 ? 0 : Math.round(dollars * 100);
+    setSaving(true);
+    const { error } = await supabase
+      .from('walkin_venues')
+      .update({ deposit_amount_cents: cents })
+      .eq('id', venueId);
+    setSaving(false);
+    if (!error) {
+      setDepositCents(cents);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
+  };
+
+  const isDirty = depositCents !== null &&
+    Math.round((parseFloat(inputDollars) || 0) * 100) !== depositCents;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-xl border border-border bg-card px-4 py-4">
+        <p className="text-sm font-semibold text-foreground mb-1">Deposit amount</p>
+        <p className="text-xs text-muted-foreground mb-3">
+          Set to $0 to disable deposits. When set, diners must authorize this amount before their
+          request is sent. Charged on acceptance, refunded on arrival, forfeited on no-show.
+        </p>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center rounded-lg border border-border bg-background px-3 py-2 gap-1.5">
+            <span className="text-sm text-muted-foreground">$</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={inputDollars}
+              onChange={(e) => { setInputDollars(e.target.value); setSaved(false); }}
+              placeholder="0.00"
+              className="w-20 text-sm bg-transparent focus:outline-none tabular-nums"
+            />
+          </div>
+          <button
+            onClick={handleSave}
+            disabled={saving || !isDirty}
+            className="text-xs font-medium text-background bg-foreground rounded-lg px-4 py-2 hover:opacity-90 transition-opacity disabled:opacity-40"
+          >
+            {saving ? 'Saving…' : saved ? 'Saved!' : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      {depositCents !== null && depositCents > 0 && (
+        <div className="rounded-xl border border-border bg-muted/40 px-4 py-3">
+          <p className="text-xs text-muted-foreground">
+            Stripe handles payment collection. Wire up{' '}
+            <code className="font-mono">STRIPE_SECRET_KEY</code> and{' '}
+            <code className="font-mono">STRIPE_WEBHOOK_SECRET</code> in Supabase Edge Function secrets to activate.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function VenuePortal() {
@@ -468,6 +591,11 @@ export default function VenuePortal() {
         <section className="mb-8">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Analytics</h2>
           <AnalyticsSection venueId={venueId} />
+        </section>
+
+        <section className="mb-8">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Deposit / Billing</h2>
+          <DepositSection venueId={venueId} />
         </section>
 
         <section>
