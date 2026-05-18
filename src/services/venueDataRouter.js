@@ -177,8 +177,11 @@ export async function queryVenuesFromDb({ query, keywords, venueTypes, priceLeve
       searchTerms = splitKeywords.length > 0 ? splitKeywords : [searchQuery];
     }
 
+    // Name-only: address matching causes false positives when cuisine keywords
+    // (e.g. "italian") match neighbourhood names (e.g. "Little Italy, Toronto").
+    // Location-scoped searches use areaOverride, not this keyword path.
     const conditions = searchTerms
-      .flatMap((kw) => [`name.ilike.%${kw}%`, `address.ilike.%${kw}%`])
+      .flatMap((kw) => [`name.ilike.%${kw}%`])
       .join(',');
     qb = qb.or(conditions);
   }

@@ -59,6 +59,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const blockCardTapUntilRef = useRef(0);
   const ratingWasSubmittedRef = useRef(false);
   const ratingSheetOpenRef = useRef(false);
+  const [venuePhotoOverrides, setVenuePhotoOverrides] = useState({});
+  const fetchedPlaceIdsRef = useRef(new Set());
 
   const {
     handleInterested,
@@ -85,10 +87,15 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     }
     if (currentVenue && !currentVenue.photos_complete) {
       const rawId = (currentVenue.place_id || currentVenue.google_place_id || '').replace(/^places\//, '');
-      if (rawId) {
-        supabase.functions.invoke('get-place-photos', {
-          body: { place_id: rawId }
-        }).catch(() => {});  // fire and forget — never blocks card rendering
+      if (rawId && !fetchedPlaceIdsRef.current.has(rawId)) {
+        fetchedPlaceIdsRef.current.add(rawId);
+        supabase.functions.invoke('get-place-photos', { body: { place_id: rawId, max_photos: 1 } })
+          .then(({ data }) => {
+            if (data?.photo_urls?.length > 0) {
+              setVenuePhotoOverrides((prev) => ({ ...prev, [rawId]: data.photo_urls }));
+            }
+          })
+          .catch(() => {});
       }
     }
   }, [currentVenue, writePassiveSkip]);
@@ -171,15 +178,32 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     }
   }, [currentIndex, venues.length, overflowVenues, overflowAppended, currentQuery]);
 
-  // Preload next card's images
+  // Preload next card's images (including any override photos already fetched)
   const nextVenue = venues[currentIndex + 1] ?? null;
   useEffect(() => {
     if (!nextVenue) return;
-    const photos = nextVenue?.image_urls?.slice(0, 3) || [];
+    const nextRawId = (nextVenue.place_id || nextVenue.google_place_id || '').replace(/^places\//, '');
+    const overrideUrls = nextRawId ? venuePhotoOverrides[nextRawId] : undefined;
+    const photos = (overrideUrls || nextVenue?.image_urls)?.slice(0, 3) || [];
     photos.forEach((src) => {
       const img = new Image();
       img.src = src;
     });
+  }, [nextVenue, venuePhotoOverrides]);
+
+  // Prefetch 1 photo for the next card while the user is still on the current one
+  useEffect(() => {
+    if (!nextVenue || nextVenue.photos_complete) return;
+    const rawId = (nextVenue.place_id || nextVenue.google_place_id || '').replace(/^places\//, '');
+    if (!rawId || fetchedPlaceIdsRef.current.has(rawId)) return;
+    fetchedPlaceIdsRef.current.add(rawId);
+    supabase.functions.invoke('get-place-photos', { body: { place_id: rawId, max_photos: 1 } })
+      .then(({ data }) => {
+        if (data?.photo_urls?.length > 0) {
+          setVenuePhotoOverrides((prev) => ({ ...prev, [rawId]: data.photo_urls }));
+        }
+      })
+      .catch(() => {});
   }, [nextVenue]);
 
   // Advance to next card — clamped to venues.length
@@ -381,6 +405,14 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   // Whether to show post-search instructional copy
   const showSearchCopy = !!currentQuery;
 
+  // Merge session-fetched photo URLs into a venue object without mutating it
+  const enrichVenue = (venue) => {
+    if (!venue) return venue;
+    const rawId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
+    const override = rawId ? venuePhotoOverrides[rawId] : undefined;
+    return override ? { ...venue, image_urls: override } : venue;
+  };
+
   // Empty state
   if (!hasMore || venues.length === 0) {
     return (
@@ -431,7 +463,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
           <DiscoveryCard venue={venues[currentIndex + 2]} index={currentIndex + 2} isGhost ghostLevel={2} />
         )}
         {venues[currentIndex + 1] && (
-          <DiscoveryCard venue={venues[currentIndex + 1]} index={currentIndex + 1} isGhost ghostLevel={1} />
+          <DiscoveryCard venue={enrichVenue(venues[currentIndex + 1])} index={currentIndex + 1} isGhost ghostLevel={1} />
         )}
 
         {/* Active card */}
@@ -486,7 +518,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
             </motion.div>
 
             <DiscoveryCard
-              venue={currentVenue}
+              venue={enrichVenue(currentVenue)}
               index={currentIndex}
               onDescriptorTap={onDescriptorTap}
               onCardBodyTap={handleCardBodyTap}

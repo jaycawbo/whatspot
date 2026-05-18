@@ -112,9 +112,9 @@ const SCORING = {
   RATING_FLOOR: 4.0,
   RATING_CEILING: 5.0,
   REVIEW_FLOOR: 25,
-  REVIEW_CAP: 500,
-  RATING_WEIGHT: 0.75,
-  TRUST_WEIGHT: 0.25,
+  REVIEW_CAP: 2000,
+  RATING_WEIGHT: 0.60,
+  REVIEW_WEIGHT: 0.40,
 };
 
 // ─── Food/drink venue type allowlist (discovery mode only) ───
@@ -339,13 +339,15 @@ function isOpenNow(regularOpeningHours: any): boolean {
 
 function calculateVenueScore(rating: number, reviewCount: number, isRelaxedAdmission = false): number {
   if (!rating || !reviewCount) return 0;
-  const normalizedRating =
-    ((rating - SCORING.RATING_FLOOR) / (SCORING.RATING_CEILING - SCORING.RATING_FLOOR)) * 10;
-  const trustFactor = Math.max(
+  const normalizedRating = Math.max(
+    0,
+    ((rating - SCORING.RATING_FLOOR) / (SCORING.RATING_CEILING - SCORING.RATING_FLOOR)) * 10,
+  );
+  const normalizedReviews = Math.max(
     0,
     Math.min((reviewCount - SCORING.REVIEW_FLOOR) / (SCORING.REVIEW_CAP - SCORING.REVIEW_FLOOR), 1.0),
-  );
-  const rawScore = normalizedRating * (SCORING.RATING_WEIGHT + SCORING.TRUST_WEIGHT * trustFactor);
+  ) * 10;
+  const rawScore = normalizedRating * SCORING.RATING_WEIGHT + normalizedReviews * SCORING.REVIEW_WEIGHT;
   return isRelaxedAdmission ? rawScore * 0.85 : rawScore;
 }
 

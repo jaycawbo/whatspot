@@ -81,8 +81,8 @@ export default function VenueDetails() {
         if (error) throw error;
         if (data?.success) {
           setDetails(data.data);
-          // If we had no photos, try fetching them
-          if (photoUrls.length === 0) {
+          // Fetch photos if none loaded yet, or if only a partial set was fetched (feed shows 1 photo)
+          if (photoUrls.length === 0 || !venue.photos_complete) {
             fetchPhotos();
           }
         }
