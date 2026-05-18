@@ -43,12 +43,16 @@ Deno.serve(async (req) => {
   try {
     const { data: venue, error: venueError } = await serviceClient
       .from('walkin_venues')
-      .select('id, is_available, acceptance_window_sec, deposit_amount_cents')
+      .select('id, is_available, acceptance_window_sec, deposit_amount_cents, monthly_request_count')
       .eq('id', venue_id)
       .single();
 
     if (venueError || !venue) return errorResponse('Venue not found', 404);
     if (!venue.is_available) return errorResponse('This venue is not accepting walk-in requests right now', 409);
+
+    const { data: limitOk, error: limitError } = await serviceClient.rpc('check_venue_request_limit', { p_venue_id: venue_id });
+    if (limitError) throw limitError;
+    if (!limitOk) return errorResponse('This venue has reached its monthly request limit', 429);
 
     const { data: existing } = await serviceClient
       .from('requests')
@@ -100,6 +104,11 @@ Deno.serve(async (req) => {
       .single();
 
     if (insertError) throw insertError;
+
+    await serviceClient
+      .from('walkin_venues')
+      .update({ monthly_request_count: (venue as any).monthly_request_count + 1 })
+      .eq('id', venue_id);
 
     return jsonResponse({ request, client_secret });
 

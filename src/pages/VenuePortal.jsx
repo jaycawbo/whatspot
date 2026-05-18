@@ -537,6 +537,163 @@ function DepositSection({ venueId }) {
   );
 }
 
+// ── SaaS Billing ──────────────────────────────────────────────────────────────
+
+const FREE_LIMIT = 20;
+
+function SaasBillingSection({ venueId }) {
+  const [venue, setVenue] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [redirecting, setRedirecting] = useState(false);
+  const [error, setError] = useState(null);
+
+  const portalUrl = window.location.href;
+
+  useEffect(() => {
+    if (!venueId) return;
+    supabase
+      .from('walkin_venues')
+      .select('subscription_tier, subscription_status, monthly_request_count, stripe_customer_id')
+      .eq('id', venueId)
+      .single()
+      .then(({ data }) => {
+        setVenue(data);
+        setIsLoading(false);
+      });
+  }, [venueId]);
+
+  const isPro = venue?.subscription_tier === 'pro';
+  const requestCount = venue?.monthly_request_count ?? 0;
+  const hasStripeCustomer = !!venue?.stripe_customer_id;
+
+  async function handleUpgrade() {
+    setError(null);
+    setRedirecting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout-session`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            venue_id: venueId,
+            success_url: portalUrl,
+            cancel_url: portalUrl,
+          }),
+        },
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Failed to create checkout session');
+      window.location.href = json.url;
+    } catch (err) {
+      setError(err.message);
+      setRedirecting(false);
+    }
+  }
+
+  async function handleManage() {
+    setError(null);
+    setRedirecting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-portal-session`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ venue_id: venueId, return_url: portalUrl }),
+        },
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Failed to create portal session');
+      window.location.href = json.url;
+    } catch (err) {
+      setError(err.message);
+      setRedirecting(false);
+    }
+  }
+
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading billing…</p>;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-xl border border-border bg-card px-4 py-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              {isPro ? 'Pro plan' : 'Free plan'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {isPro
+                ? 'Unlimited requests per month'
+                : `${requestCount} / ${FREE_LIMIT} requests this month`}
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+              isPro
+                ? 'bg-violet-100 text-violet-800'
+                : 'bg-muted text-muted-foreground'
+            }`}
+          >
+            {isPro ? 'Pro' : 'Free'}
+          </span>
+        </div>
+
+        {!isPro && (
+          <div className="mb-3">
+            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full bg-foreground transition-all"
+                style={{ width: `${Math.min((requestCount / FREE_LIMIT) * 100, 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {isPro ? (
+          hasStripeCustomer && (
+            <button
+              onClick={handleManage}
+              disabled={redirecting}
+              className="w-full text-xs font-medium border border-border rounded-lg py-2 hover:bg-muted transition-colors disabled:opacity-50"
+            >
+              {redirecting ? 'Redirecting…' : 'Manage subscription'}
+            </button>
+          )
+        ) : (
+          <button
+            onClick={handleUpgrade}
+            disabled={redirecting}
+            className="w-full text-xs font-medium text-background bg-foreground rounded-lg py-2 hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {redirecting ? 'Redirecting…' : 'Upgrade to Pro — unlimited requests'}
+          </button>
+        )}
+      </div>
+
+      {!isPro && (
+        <div className="rounded-xl border border-border bg-muted/40 px-4 py-3">
+          <p className="text-xs text-muted-foreground">
+            Free plan: up to {FREE_LIMIT} diner requests per calendar month. Upgrade to Pro for unlimited requests, priority support, and advanced analytics.
+          </p>
+        </div>
+      )}
+
+      {error && (
+        <p className="text-xs text-destructive">{error}</p>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function VenuePortal() {
@@ -596,6 +753,11 @@ export default function VenuePortal() {
         <section className="mb-8">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Deposit / Billing</h2>
           <DepositSection venueId={venueId} />
+        </section>
+
+        <section className="mb-8">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Subscription</h2>
+          <SaasBillingSection venueId={venueId} />
         </section>
 
         <section>
