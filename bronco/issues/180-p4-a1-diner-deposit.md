@@ -11,8 +11,14 @@ git push origin jake/180-p4-a1-diner-deposit
 ```
 
 ## Prior Learnings from Upstream Issues
-<!-- Populated by sessions #170 (Request Modal) and #179 (POS Integration) -->
-<!-- Check for venues table column additions and request modal prop interface before implementing -->
+
+From #170 (Request Modal):
+- **RequestModal** is at `src/components/bronco/RequestModal.jsx`. The Stripe payment sheet should be conditionally rendered inside this same Drawer (not a separate modal) when the venue requires a deposit.
+- The modal receives the venue object via `useBronco().requestModalVenue`. Add `requires_deposit` and `deposit_amount_cents` fields to the venue object once those columns exist.
+- The `create-request` edge function is at `supabase/functions/create-request/index.ts`. Add Stripe PaymentIntent creation there — return `client_secret` in the response so the modal can present the payment sheet before confirming the request.
+- Party size is already captured (default 2, range 1–20). Deposit amount should not depend on party size unless the venue's settings specify per-person pricing.
+
+From #179 (POS Integration) — to be filled in by that session.
 
 
 ## YOUR PROMPT

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Header from '@/components/home/Header';
+import SpotListsSection from '@/components/bronco/SpotListsSection';
 import { useSpots } from '@/hooks/useSpots';
 import { useUserLabels } from '@/hooks/useUserLabels';
 import { useGlobalState } from '@/context/GlobalStateContext';
@@ -303,6 +304,9 @@ export default function Spots() {
       <Header />
 
       <div className="pt-14 px-4 md:px-8 lg:px-12 py-6 max-w-4xl mx-auto space-y-4">
+
+        {/* Bronco: custom named spot lists with live availability */}
+        <SpotListsSection />
 
         {/* Page header */}
         <div className="flex items-center justify-between">

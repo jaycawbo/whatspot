@@ -7,11 +7,13 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { GlobalStateProvider } from '@/context/GlobalStateContext';
 import { BroncoProvider } from '@/context/BroncoContext';
+import RequestModal from '@/components/bronco/RequestModal';
+import FloatingRequestsPill from '@/components/bronco/FloatingRequestsPill';
+import RequestsOverlay from '@/components/bronco/RequestsOverlay';
 import VenueDetails from '@/pages/VenueDetails';
+import VenuePortal from '@/pages/VenuePortal';
 import EnrichmentDashboard from '@/pages/EnrichmentDashboard';
 import Credits from '@/pages/Credits';
-import VenuePortal from '@/pages/VenuePortal';
-import RequestModal from '@/components/bronco/RequestModal';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -68,8 +70,10 @@ function App() {
           <QueryClientProvider client={queryClientInstance}>
             <Router>
               <AuthenticatedApp />
-              <RequestModal />
             </Router>
+            <RequestModal />
+            <FloatingRequestsPill />
+            <RequestsOverlay />
             <Toaster />
           </QueryClientProvider>
         </BroncoProvider>
