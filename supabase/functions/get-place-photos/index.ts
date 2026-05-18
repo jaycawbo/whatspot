@@ -91,6 +91,7 @@ Deno.serve(async (req) => {
     }
 
     const data = await detailsResp.json();
+    const totalAvailable = (data.photos || []).length;
     const photoResources = ((data.photos || []) as any[]).slice(0, max_photos);
 
     if (photoResources.length === 0) {
@@ -142,7 +143,7 @@ Deno.serve(async (req) => {
     // ── Step 4: Write permanent URLs to DB (fire-and-forget) ──────────────
     if (validUrls.length > 0) {
       sb.from('venues')
-        .update({ photo_urls: validUrls, photos_complete: true, enriched: true })
+        .update({ photo_urls: validUrls, photos_complete: validUrls.length >= totalAvailable, enriched: true })
         .eq('google_place_id', cleanId)
         .then(() => {})
         .catch(() => {});

@@ -14,7 +14,6 @@ import VenueDetails from '@/pages/VenueDetails';
 import VenuePortal from '@/pages/VenuePortal';
 import EnrichmentDashboard from '@/pages/EnrichmentDashboard';
 import Credits from '@/pages/Credits';
-import VenuePortal from '@/pages/VenuePortal';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
