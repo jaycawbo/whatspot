@@ -8,6 +8,7 @@ import RatingDialog from '@/components/discovery/RatingDialog';
 import { useSpots } from '@/hooks/useSpots';
 import { useBronco } from '@/context/BroncoContext';
 import { useBroncoSpotLists } from '@/hooks/useBroncoSpotLists';
+import { supabase } from '@/integrations/supabase/client';
 
 const RATING_TAP_BLOCK_MS = 500;
 
@@ -30,6 +31,7 @@ export default function VenueCard({ venue, index, currentQuery }) {
 
   const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
   const beenHereRating = getBeenHereRating(placeId);
+  const [livePhotoUrl, setLivePhotoUrl] = useState(null);
 
   useEffect(() => {
     const el = cardRef.current;
@@ -77,7 +79,23 @@ export default function VenueCard({ venue, index, currentQuery }) {
     }
   };
 
-  const imgUrl = venue.image_urls?.[0] || '/placeholder.svg';
+  const rawPhotoUrl = venue.image_urls?.[0] || venue._photoUrls?.[0] || venue.photo_urls?.[0] || null;
+  const imgUrl = livePhotoUrl || rawPhotoUrl || '/placeholder.svg';
+
+  // When no photo is available (e.g. back-nav after detail page stored one), re-check DB once.
+  useEffect(() => {
+    if (rawPhotoUrl || livePhotoUrl || !placeId) return;
+    supabase
+      .from('venues')
+      .select('photo_urls')
+      .eq('google_place_id', placeId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.photo_urls?.[0]) setLivePhotoUrl(data.photo_urls[0]);
+      })
+      .catch(() => {});
+  }, [placeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const isAvailable = venue.is_available === true;
   const avgResponseMin = venue.avg_response_sec != null
     ? Math.max(1, Math.round(venue.avg_response_sec / 60))

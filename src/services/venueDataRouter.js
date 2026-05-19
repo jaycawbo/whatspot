@@ -61,7 +61,7 @@ export function rowToVenue(row) {
     rating:                row.rating,
     review_count:          row.review_count,
     price_level:           row.price_level,
-    photo_url:             row.photo_url || null,
+    image_urls:            row.photo_urls || [],
     types:                 row.venue_types || row.types || [],
     neighbourhood:         row.neighbourhood || null,
     phone:                 row.phone || null,

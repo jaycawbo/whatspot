@@ -37,7 +37,11 @@ export default function DiscoveryCard({
   beenHereRating = null,
 }) {
   const navigate = useNavigate();
-  const photos = venue?.image_urls?.length > 0 ? venue.image_urls : ['/placeholder.svg'];
+  const photos = venue?.image_urls?.length > 0
+    ? venue.image_urls
+    : venue?._photoUrls?.length > 0
+      ? venue._photoUrls
+      : ['/placeholder.svg'];
   const [currentPhoto, setCurrentPhoto] = useState(0);
   const [nextPhoto, setNextPhoto] = useState(null);
   const [isFading, setIsFading] = useState(false);
