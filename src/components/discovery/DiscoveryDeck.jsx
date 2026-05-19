@@ -146,9 +146,19 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         moreRequestedRef.current = false;
         return;
       }
+      // Prior state exists but current card not in new batch (background expansion).
+      // Preserve position rather than resetting to 0.
+      setVenues(initialVenues);
+      setOverflowAppended(false);
+      setCurrentIndex((prev) => Math.min(prev, Math.max(0, initialVenues.length - 1)));
+      moreRequestedRef.current = false;
+      x.set(0);
+      y.set(0);
+      opacity.set(1);
+      return;
     }
 
-    // Full reset — new search
+    // Full reset — genuinely new search (no prior session state)
     setVenues(initialVenues);
     setOverflowAppended(false);
     setCurrentIndex(0);
@@ -352,8 +362,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     if (ratingSheetOpenRef.current) return;
     if (Date.now() < blockCardTapUntilRef.current) return;
     const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
+    try { sessionStorage.setItem('whatspot_deck_index', String(currentIndex)); } catch {}
     navigate(`/venue/${placeId}`, { state: { venue } });
-  }, [navigate]);
+  }, [navigate, currentIndex]);
 
   // Keyboard shortcuts
   useEffect(() => {
