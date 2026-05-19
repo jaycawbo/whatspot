@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
     if (!ownership) return errorResponse('Forbidden', 403);
 
     const { data: venue, error: venueError } = await serviceClient
-      .from('walkin_venues')
+      .from('venues')
       .select('stripe_customer_id')
       .eq('id', venue_id)
       .single();

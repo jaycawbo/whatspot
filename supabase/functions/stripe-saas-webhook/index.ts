@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
 
       const isActive = subscription.status === 'active' || subscription.status === 'trialing';
       await serviceClient
-        .from('walkin_venues')
+        .from('venues')
         .update({
           subscription_tier: isActive ? 'pro' : 'free',
           subscription_status: subscription.status,
@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
       if (!venueId) return jsonResponse({ received: true });
 
       await serviceClient
-        .from('walkin_venues')
+        .from('venues')
         .update({
           subscription_tier: 'free',
           subscription_status: 'canceled',

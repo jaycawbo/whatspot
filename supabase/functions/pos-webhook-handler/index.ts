@@ -165,7 +165,7 @@ serve(async (req: Request) => {
 
   // Manual override: if is_available was set manually within the last 5 minutes, skip
   const { data: venue } = await supabase
-    .from('walkin_venues')
+    .from('venues')
     .select('manually_set_at')
     .eq('id', venueId)
     .single();
@@ -181,7 +181,7 @@ serve(async (req: Request) => {
   }
 
   const { error: updateErr } = await supabase
-    .from('walkin_venues')
+    .from('venues')
     .update({ is_available: isAvailable })
     .eq('id', venueId);
 
