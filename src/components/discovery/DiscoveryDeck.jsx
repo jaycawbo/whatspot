@@ -130,6 +130,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
     const prevIds = initialVenueIdsRef.current;
     initialVenueIdsRef.current = newIds;
+    try { sessionStorage.setItem('whatspot_deck_venue_ids', newIds); } catch {}
 
     // If this is an append (new list contains current card), maintain position
     if (prevIds !== '' && currentVenue) {
@@ -413,12 +414,18 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   // Whether to show post-search instructional copy
   const showSearchCopy = !!currentQuery;
 
-  // Merge session-fetched photo URLs into a venue object without mutating it
+  // Merge session-fetched photo URLs into a venue object without mutating it.
+  // Only apply override when the venue has no real photos — never downgrade a
+  // multi-photo image_urls to a single-photo override (max_photos:1 fetch).
   const enrichVenue = (venue) => {
     if (!venue) return venue;
     const rawId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
     const override = rawId ? venuePhotoOverrides[rawId] : undefined;
-    return override ? { ...venue, image_urls: override } : venue;
+    if (!override) return venue;
+    const existing = venue.image_urls || [];
+    const hasRealPhotos = existing.length > 0 && existing[0] !== '/placeholder.svg';
+    if (hasRealPhotos) return venue;
+    return { ...venue, image_urls: override };
   };
 
   // Empty state

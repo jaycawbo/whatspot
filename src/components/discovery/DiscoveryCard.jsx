@@ -89,6 +89,15 @@ export default function DiscoveryCard({
     return () => clearInterval(intervalRef.current);
   }, [photos.length, isGhost, startTimer, isInViewport]);
 
+  // Clamp currentPhoto if photos array shrinks so the index never goes out of bounds
+  useEffect(() => {
+    if (photos.length > 0 && currentPhoto >= photos.length) {
+      setCurrentPhoto(0);
+      setNextPhoto(null);
+      setIsFading(false);
+    }
+  }, [photos.length, currentPhoto]);
+
   // Complete the crossfade transition — no opacity animation on new current photo
   useEffect(() => {
     if (!isFading || nextPhoto === null) return;
