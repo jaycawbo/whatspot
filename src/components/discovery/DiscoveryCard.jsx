@@ -46,7 +46,7 @@ export default function DiscoveryCard({
   const [nextPhoto, setNextPhoto] = useState(null);
   const [isFading, setIsFading] = useState(false);
   const cardRef = useRef(null);
-  const [isInViewport, setIsInViewport] = useState(false);
+  const [isInViewport, setIsInViewport] = useState(true);
   const intervalRef = useRef(null);
   const isPausedRef = useRef(false);
   const remainingTimeRef = useRef(CROSSFADE_INTERVAL);

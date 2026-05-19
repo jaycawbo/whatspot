@@ -40,7 +40,6 @@ export default function SearchDialog({
 }) {
   const navigate = useNavigate();
   const inputRef = useRef(null);
-  const searchInitiatedRef = useRef(false);
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localQuery, setLocalQuery] = useState(query);
@@ -69,7 +68,6 @@ export default function SearchDialog({
   useEffect(() => {
     if (!open) {
       setIsSubmitting(false);
-      searchInitiatedRef.current = false;
     }
   }, [open]);
 
@@ -87,27 +85,18 @@ export default function SearchDialog({
     return () => document.removeEventListener('whatspot:auto-search', handler);
   }, [onSearch]);
 
-  // Close dialog once the search triggered by this submit completes
-  useEffect(() => {
-    if (searchInitiatedRef.current && isSubmitting && !isSearching) {
-      searchInitiatedRef.current = false;
-      setIsSubmitting(false);
-      onClose();
-    }
-  }, [isSearching, isSubmitting, onClose]);
-
   const handleSubmit = useCallback(
     (e) => {
       e.preventDefault();
       if (localQuery.trim()) {
         document.activeElement?.blur();
         setIsSubmitting(true);
-        searchInitiatedRef.current = true;
         onQueryChange(localQuery.trim());
         onSearch(localQuery.trim());
+        onClose();
       }
     },
-    [localQuery, onQueryChange, onSearch]
+    [localQuery, onQueryChange, onSearch, onClose]
   );
 
   const handleCategoryTap = useCallback(

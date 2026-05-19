@@ -12,6 +12,9 @@ import { supabase } from '@/integrations/supabase/client';
 
 const RATING_TAP_BLOCK_MS = 500;
 
+// Module-level tracker so all VenueCard instances share a per-search photo-fetch cap
+const _photoFetchTracker = { key: null, count: 0 };
+
 function formatPrice(level) {
   if (!level) return null;
   if (typeof level === 'string' && level.startsWith('$')) return level;
@@ -82,14 +85,19 @@ export default function VenueCard({ venue, index, currentQuery }) {
   const rawPhotoUrl = venue.image_urls?.[0] || venue._photoUrls?.[0] || venue.photo_urls?.[0] || null;
   const imgUrl = livePhotoUrl || rawPhotoUrl || '/placeholder.svg';
 
-  // When no photo is available (e.g. back-nav after detail page stored one), re-check DB once.
+  // When no photo is available, call get-place-photos (cache-first — covers back-nav and
+  // first-time fetch for search results). Capped at 10 calls per search to control API cost.
   useEffect(() => {
     if (rawPhotoUrl || livePhotoUrl || !placeId) return;
-    supabase
-      .from('venues')
-      .select('photo_urls')
-      .eq('google_place_id', placeId)
-      .maybeSingle()
+    const key = currentQuery || '';
+    if (key !== _photoFetchTracker.key) {
+      _photoFetchTracker.key = key;
+      _photoFetchTracker.count = 0;
+    }
+    if (_photoFetchTracker.count >= 10) return;
+    _photoFetchTracker.count++;
+    supabase.functions
+      .invoke('get-place-photos', { body: { place_id: placeId, max_photos: 1 } })
       .then(({ data }) => {
         if (data?.photo_urls?.[0]) setLivePhotoUrl(data.photo_urls[0]);
       })

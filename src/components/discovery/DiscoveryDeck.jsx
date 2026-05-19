@@ -92,7 +92,11 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         supabase.functions.invoke('get-place-photos', { body: { place_id: rawId, max_photos: 1 } })
           .then(({ data }) => {
             if (data?.photo_urls?.length > 0) {
-              setVenuePhotoOverrides((prev) => ({ ...prev, [rawId]: data.photo_urls }));
+              const img = new Image();
+              img.onload = img.onerror = () => {
+                setVenuePhotoOverrides((prev) => ({ ...prev, [rawId]: data.photo_urls }));
+              };
+              img.src = data.photo_urls[0];
             }
           })
           .catch(() => {});
@@ -184,7 +188,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     if (!nextVenue) return;
     const nextRawId = (nextVenue.place_id || nextVenue.google_place_id || '').replace(/^places\//, '');
     const overrideUrls = nextRawId ? venuePhotoOverrides[nextRawId] : undefined;
-    const photos = (overrideUrls || nextVenue?.image_urls)?.slice(0, 3) || [];
+    const photos = (overrideUrls || nextVenue?.image_urls || nextVenue?._photoUrls)?.slice(0, 3) || [];
     photos.forEach((src) => {
       const img = new Image();
       img.src = src;
@@ -200,7 +204,11 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     supabase.functions.invoke('get-place-photos', { body: { place_id: rawId, max_photos: 1 } })
       .then(({ data }) => {
         if (data?.photo_urls?.length > 0) {
-          setVenuePhotoOverrides((prev) => ({ ...prev, [rawId]: data.photo_urls }));
+          const img = new Image();
+          img.onload = img.onerror = () => {
+            setVenuePhotoOverrides((prev) => ({ ...prev, [rawId]: data.photo_urls }));
+          };
+          img.src = data.photo_urls[0];
         }
       })
       .catch(() => {});
