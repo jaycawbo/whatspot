@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
 
   try {
     const { data: venue, error: venueError } = await serviceClient
-      .from('walkin_venues')
+      .from('venues')
       .select('id, is_available, acceptance_window_sec, deposit_amount_cents, monthly_request_count')
       .eq('id', venue_id)
       .single();
@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
     if (insertError) throw insertError;
 
     await serviceClient
-      .from('walkin_venues')
+      .from('venues')
       .update({ monthly_request_count: (venue as any).monthly_request_count + 1 })
       .eq('id', venue_id);
 

@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
     if (!ownership) return errorResponse('Forbidden', 403);
 
     const { data: venue, error: venueError } = await serviceClient
-      .from('walkin_venues')
+      .from('venues')
       .select('id, name, stripe_customer_id, subscription_tier')
       .eq('id', venue_id)
       .single();
@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
       customerId = customer.id;
 
       await serviceClient
-        .from('walkin_venues')
+        .from('venues')
         .update({ stripe_customer_id: customerId })
         .eq('id', venue_id);
     }
