@@ -439,14 +439,19 @@ export function useDiscoveryFeed() {
   // allServedIdsRef is seeded from cache and must not be used to block staged venues.
   const fetchedFreshRef = useRef(false);
 
+  // One-time mount guard — prevents the sync block from re-running on every re-render.
+  const backNavDetectedRef = useRef(false);
   // Synchronous back-nav detection — must run before any useEffect so the tab feed
   // effect and prefetchNextBatch see _isBackNav = true on their first render.
   // useEffect runs after render; these flags need to be true on the same render cycle.
-  if (hasFetchedRef.current || _sessionFetchedAt > 0) {
-    _isBackNav = true;
-    _suppressPrefetchUntilInteraction = true;
-    // Restore anchor synchronously so every effect gets consistent coordinates
-    if (_sessionAnchor && !anchorPointRef.current) anchorPointRef.current = _sessionAnchor;
+  if (!backNavDetectedRef.current) {
+    backNavDetectedRef.current = true;
+    if (hasFetchedRef.current || _sessionFetchedAt > 0) {
+      _isBackNav = true;
+      _suppressPrefetchUntilInteraction = true;
+      // Restore anchor synchronously so every effect gets consistent coordinates
+      if (_sessionAnchor && !anchorPointRef.current) anchorPointRef.current = _sessionAnchor;
+    }
   }
 
   const initAnchorPoint = useCallback(async () => {
