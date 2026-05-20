@@ -442,7 +442,7 @@ export function useDiscoveryFeed() {
   // Synchronous back-nav detection — must run before any useEffect so the tab feed
   // effect and prefetchNextBatch see _isBackNav = true on their first render.
   // useEffect runs after render; these flags need to be true on the same render cycle.
-  if (hasFetchedRef.current || isSessionFresh()) {
+  if (hasFetchedRef.current || _sessionFetchedAt > 0) {
     _isBackNav = true;
     _suppressPrefetchUntilInteraction = true;
     // Restore anchor synchronously so every effect gets consistent coordinates
@@ -795,7 +795,7 @@ export function useDiscoveryFeed() {
 
   // Initial load — discovery mode + immediate prefetch
   useEffect(() => {
-    if (hasFetchedRef.current || isSessionFresh()) {
+    if (hasFetchedRef.current || _sessionFetchedAt > 0) {
       // Restore session anchor (belt-and-suspenders — also set synchronously above)
       if (_sessionAnchor && !anchorPointRef.current) anchorPointRef.current = _sessionAnchor;
       // If sessionStorage cache failed but in-memory venues are available, restore them
