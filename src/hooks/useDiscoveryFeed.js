@@ -426,8 +426,8 @@ export function useDiscoveryFeed() {
 
   const initAnchorPoint = useCallback(async () => {
     if (anchorPointRef.current) return;
-    // Reuse session anchor on back-nav — no DB round-trip, no anchor counter advance
-    if (_sessionAnchor && isSessionFresh()) {
+    // Reuse session anchor for the lifetime of the tab — no DB round-trip, no rotation
+    if (_sessionAnchor) {
       anchorPointRef.current = _sessionAnchor;
       return;
     }
