@@ -97,7 +97,7 @@ export default function VenueCard({ venue, index, currentQuery }) {
     if (_photoFetchTracker.count >= 10) return;
     _photoFetchTracker.count++;
     supabase.functions
-      .invoke('get-place-photos', { body: { place_id: placeId, max_photos: 1 } })
+      .invoke('get-place-photos', { body: { place_id: placeId, max_photos: 4 } })
       .then(({ data }) => {
         if (data?.photo_urls?.[0]) setLivePhotoUrl(data.photo_urls[0]);
       })

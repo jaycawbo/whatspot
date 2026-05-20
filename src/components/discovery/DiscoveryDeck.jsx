@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { signalUserInteraction } from '@/hooks/useDiscoveryFeed';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ThumbsUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -93,7 +94,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       const rawId = (currentVenue.place_id || currentVenue.google_place_id || '').replace(/^places\//, '');
       if (rawId && !fetchedPlaceIdsRef.current.has(rawId)) {
         fetchedPlaceIdsRef.current.add(rawId);
-        supabase.functions.invoke('get-place-photos', { body: { place_id: rawId, max_photos: 1 } })
+        supabase.functions.invoke('get-place-photos', { body: { place_id: rawId, max_photos: 4 } })
           .then(({ data }) => {
             if (data?.photo_urls?.length > 0) {
               const img = new Image();
@@ -221,7 +222,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     const rawId = (nextVenue.place_id || nextVenue.google_place_id || '').replace(/^places\//, '');
     if (!rawId || fetchedPlaceIdsRef.current.has(rawId)) return;
     fetchedPlaceIdsRef.current.add(rawId);
-    supabase.functions.invoke('get-place-photos', { body: { place_id: rawId, max_photos: 1 } })
+    supabase.functions.invoke('get-place-photos', { body: { place_id: rawId, max_photos: 4 } })
       .then(({ data }) => {
         if (data?.photo_urls?.length > 0) {
           const img = new Image();
@@ -237,6 +238,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   // Advance to next card — clamped to venues.length
   const advanceCard = useCallback(() => {
     suppressProactiveLoadRef.current = false; // first swipe clears back-nav suppression
+    signalUserInteraction(); // clears module-level prefetch suppression in useDiscoveryFeed
     x.stop();
     y.stop();
     opacity.stop();
