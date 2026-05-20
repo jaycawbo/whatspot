@@ -65,6 +65,12 @@ function loadFeedCache() {
   } catch { return null; }
 }
 
+// Module-level session state — survives component unmount/remount (SPA back-navigation).
+// Using module scope (not sessionStorage) guarantees reliability regardless of storage quota.
+let _sessionAnchor = null;       // anchor point, avoids DB round-trip on back-nav remount
+let _sessionFeedFetched = false; // true after the first successful fetchFeed this session
+let _sessionVenues = null;       // in-memory venue fallback when sessionStorage cache fails
+
 // ─── Tab feed helpers ──────────────────────────────────────────────────────────
 
 /**
@@ -402,9 +408,17 @@ export function useDiscoveryFeed() {
   const isGuestRef = useRef(false);
   // Previous location snapshot for material-change detection
   const prevLocationRef = useRef(null);
+  // Tracks whether the tab feed effect has fired at least once this mount — prevents
+  // fetchTabVenues from overwriting restored venues on back-nav remount
+  const tabInitializedRef = useRef(false);
 
   const initAnchorPoint = useCallback(async () => {
     if (anchorPointRef.current) return;
+    // Reuse session anchor on back-nav — no DB round-trip, no anchor counter advance
+    if (_sessionAnchor) {
+      anchorPointRef.current = _sessionAnchor;
+      return;
+    }
 
     const loc = state.userLocation;
 
@@ -534,6 +548,9 @@ export function useDiscoveryFeed() {
     if (!isExplicit && distKm < 5) return;
 
     anchorPointRef.current = null;
+    _sessionAnchor = null;
+    _sessionFeedFetched = false;
+    _sessionVenues = null;
     allServedIdsRef.current.clear();
     reserveIdsRef.current.clear();
     reserveVenuesRef.current = [];
@@ -563,6 +580,13 @@ export function useDiscoveryFeed() {
       setTabEmpty(false);
       return;
     }
+    // On back-nav remount, skip the first tab fetch so cached/restored venues display.
+    // Subsequent tab changes (user clicking a tab) are not skipped because tabInitializedRef is true.
+    if (_sessionFeedFetched && !tabInitializedRef.current) {
+      tabInitializedRef.current = true;
+      return;
+    }
+    tabInitializedRef.current = true;
     const anchor = anchorPointRef.current ?? state.userLocation;
     if (!anchor) return; // wait until anchor is initialised
 
@@ -700,6 +724,10 @@ export function useDiscoveryFeed() {
         currentQuery: query,
         reserveVenues: reserveVenuesRef.current,
       });
+      // Module-level cache — reliable even if sessionStorage quota is exceeded
+      _sessionFeedFetched = true;
+      _sessionVenues = filtered;
+      if (anchorPointRef.current) _sessionAnchor = anchorPointRef.current;
 
       // Track seen venue IDs for discovery mode (cap at 100 to prevent exhaustion)
       if (effectiveMode === 'discovery') {
@@ -730,16 +758,22 @@ export function useDiscoveryFeed() {
 
   // Initial load — discovery mode + immediate prefetch
   useEffect(() => {
-    if (hasFetchedRef.current) {
-      // Seed allServedIdsRef from cached venues so exclude_ids is non-empty on first post-remount prefetch
-      if (cached?.venues?.length) {
-        cached.venues.forEach(v => {
-          const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-          if (id) allServedIdsRef.current.add(id);
-        });
+    if (hasFetchedRef.current || _sessionFeedFetched) {
+      // Restore session anchor so prefetch / tab-switch use the correct coordinates
+      if (_sessionAnchor && !anchorPointRef.current) anchorPointRef.current = _sessionAnchor;
+      // If sessionStorage cache failed but in-memory venues are available, restore them
+      const seedVenues = cached?.venues?.length ? cached.venues : (_sessionVenues || []);
+      if (!cached?.venues?.length && _sessionVenues?.length) {
+        setVenues(_sessionVenues);
+        saveFeedCache({ venues: _sessionVenues, overflowVenues: [], currentQuery: currentQueryRef.current || '' });
       }
+      // Seed allServedIdsRef so exclude_ids is non-empty on the first post-remount prefetch
+      seedVenues.forEach(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        if (id) allServedIdsRef.current.add(id);
+      });
       // Write whatspot_deck_venue_ids so DiscoveryDeck can restore position on back-nav
-      const venueIdStr = (cached?.venues || [])
+      const venueIdStr = seedVenues
         .map(v => (v.place_id || v.google_place_id || '').replace(/^places\//, ''))
         .join(',');
       try { sessionStorage.setItem('whatspot_deck_venue_ids', venueIdStr); } catch {}
