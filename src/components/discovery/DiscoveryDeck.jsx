@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { signalUserInteraction } from '@/hooks/useDiscoveryFeed';
+import { signalUserInteraction, addClientSkippedId } from '@/hooks/useDiscoveryFeed';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ThumbsUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -284,6 +284,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       success = await handleNotInterested(venue);
     } else if (direction === 'down') {
       success = handleSkip(venue);
+      const skipId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
+      addClientSkippedId(skipId);
     }
 
     if (success === false) {

@@ -71,6 +71,9 @@ let _sessionAnchor = null;    // anchor point, avoids DB round-trip on back-nav 
 let _sessionFetchedAt = 0;    // timestamp of last successful fetchFeed; 0 = never fetched
 let _sessionVenues = null;    // in-memory venue fallback when sessionStorage cache fails
 let _suppressPrefetchUntilInteraction = false; // blocks prefetch on back-nav until first swipe
+// Client-initiated skips (down-swipe) — ensures API exclude_ids covers them even if
+// allServedIdsRef is re-seeded from cache (e.g., after back-nav).
+const _clientSkippedIds = new Set();
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
@@ -81,6 +84,12 @@ function isSessionFresh() {
 // Called by DiscoveryDeck on first swipe — clears the back-nav prefetch suppression.
 export function signalUserInteraction() {
   _suppressPrefetchUntilInteraction = false;
+}
+
+// Called by DiscoveryDeck on down-swipe — ensures the ID is excluded from future API
+// calls even after back-nav when allServedIdsRef is re-seeded from cache.
+export function addClientSkippedId(id) {
+  if (id) _clientSkippedIds.add(id);
 }
 
 // ─── Tab feed helpers ──────────────────────────────────────────────────────────
@@ -564,6 +573,7 @@ export function useDiscoveryFeed() {
     _sessionFetchedAt = 0;
     _sessionVenues = null;
     _suppressPrefetchUntilInteraction = false;
+    _clientSkippedIds.clear();
     allServedIdsRef.current.clear();
     reserveIdsRef.current.clear();
     reserveVenuesRef.current = [];
@@ -656,7 +666,7 @@ export function useDiscoveryFeed() {
       if (raw) session_context = JSON.parse(raw);
     } catch {}
 
-    const excludeIds = Array.from(allServedIdsRef.current);
+    const excludeIds = Array.from(new Set([...allServedIdsRef.current, ..._clientSkippedIds]));
 
     try {
       const recommendParams = {
@@ -694,7 +704,7 @@ export function useDiscoveryFeed() {
 
       const filtered = results.filter(v => {
         const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-        return !skippedIds.includes(id);
+        return !skippedIds.includes(id) && !_clientSkippedIds.has(id);
       });
 
       reserveVenuesRef.current = reserve.filter(v => {
@@ -721,7 +731,7 @@ export function useDiscoveryFeed() {
         ));
         const newStaged = staged.filter(v => {
           const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-          return !existingIds.has(id);
+          return !existingIds.has(id) && !allServedIdsRef.current.has(id);
         });
         fullScoredPoolRef.current = [...fullScoredPoolRef.current, ...newStaged];
         console.log('[Feed] Staged pool now has', fullScoredPoolRef.current.length, 'venues');
@@ -906,7 +916,7 @@ export function useDiscoveryFeed() {
     const anchor = anchorPointRef.current ?? { lat: state.userLocation?.lat ?? 43.6532, lon: state.userLocation?.lon ?? -79.3832 };
 
     // Exclude ALL venue IDs ever served to the client (not just skipped)
-    const excludeIds = Array.from(allServedIdsRef.current);
+    const excludeIds = Array.from(new Set([...allServedIdsRef.current, ..._clientSkippedIds]));
 
     // Calculate ring-specific tile radius for annular targeting
     const prevRadius = radiusRingIndexRef.current > 0 ? RADIUS_RINGS[radiusRingIndexRef.current - 1] : 0;
@@ -936,7 +946,7 @@ export function useDiscoveryFeed() {
         ));
         const newStaged = staged.filter(v => {
           const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-          return !existingIds.has(id);
+          return !existingIds.has(id) && !allServedIdsRef.current.has(id);
         });
         fullScoredPoolRef.current = [...fullScoredPoolRef.current, ...newStaged];
         console.log('[Prefetch] Staged pool now has', fullScoredPoolRef.current.length, 'venues');
