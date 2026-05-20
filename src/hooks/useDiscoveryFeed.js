@@ -71,6 +71,7 @@ let _sessionAnchor = null;    // anchor point, avoids DB round-trip on back-nav 
 let _sessionFetchedAt = 0;    // timestamp of last successful fetchFeed; 0 = never fetched
 let _sessionVenues = null;    // in-memory venue fallback when sessionStorage cache fails
 let _suppressPrefetchUntilInteraction = false; // blocks prefetch on back-nav until first swipe
+let _isBackNav = false; // true from mount until first swipe when restoring a session
 // Client-initiated skips (down-swipe) — ensures API exclude_ids covers them even if
 // allServedIdsRef is re-seeded from cache (e.g., after back-nav).
 const _clientSkippedIds = new Set();
@@ -81,9 +82,10 @@ function isSessionFresh() {
   return _sessionFetchedAt > 0 && Date.now() - _sessionFetchedAt < SESSION_TTL_MS;
 }
 
-// Called by DiscoveryDeck on first swipe — clears the back-nav prefetch suppression.
+// Called by DiscoveryDeck on first swipe — clears all back-nav suppression flags.
 export function signalUserInteraction() {
   _suppressPrefetchUntilInteraction = false;
+  _isBackNav = false;
 }
 
 // Called by DiscoveryDeck on down-swipe — ensures the ID is excluded from future API
@@ -607,12 +609,8 @@ export function useDiscoveryFeed() {
       setTabEmpty(false);
       return;
     }
-    // On back-nav remount, skip the first tab fetch so cached/restored venues display.
-    // Subsequent tab changes (user clicking a tab) are not skipped because tabInitializedRef is true.
-    if (isSessionFresh() && !tabInitializedRef.current) {
-      tabInitializedRef.current = true;
-      return;
-    }
+    // Block ALL tab fetches while back-nav restore is active — cleared on first swipe.
+    if (_isBackNav) return;
     tabInitializedRef.current = true;
     const anchor = anchorPointRef.current ?? state.userLocation;
     if (!anchor) return; // wait until anchor is initialised
@@ -790,8 +788,9 @@ export function useDiscoveryFeed() {
     if (hasFetchedRef.current || isSessionFresh()) {
       // Restore session anchor so prefetch / tab-switch use the correct coordinates
       if (_sessionAnchor && !anchorPointRef.current) anchorPointRef.current = _sessionAnchor;
-      // Suppress prefetch until user swipes — prevents aggressive batch loading on back-nav
+      // Suppress ALL feed-fetching until the user swipes after back-nav
       _suppressPrefetchUntilInteraction = true;
+      _isBackNav = true;
       // If sessionStorage cache failed but in-memory venues are available, restore them
       const seedVenues = cached?.venues?.length ? cached.venues : (_sessionVenues || []);
       if (!cached?.venues?.length && _sessionVenues?.length) {
@@ -862,9 +861,8 @@ export function useDiscoveryFeed() {
       console.log('[TestMode] prefetchNextBatch blocked — set VITE_TESTING_MODE=false to enable');
       return;
     }
-    // Suppress all prefetch paths (including direct calls from Home.jsx) until the user
-    // makes their first swipe after back-nav. Cleared by signalUserInteraction().
-    if (_suppressPrefetchUntilInteraction) return;
+    // Suppress all prefetch paths until the user makes their first swipe after back-nav.
+    if (_suppressPrefetchUntilInteraction || _isBackNav) return;
     if (isPrefetchingRef.current && retryCount === 0) {
       pendingPrefetchRef.current = true;
       return 'busy';
