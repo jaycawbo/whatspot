@@ -432,6 +432,10 @@ export function useDiscoveryFeed() {
   // Tracks whether the tab feed effect has fired at least once this mount — prevents
   // fetchTabVenues from overwriting restored venues on back-nav remount
   const tabInitializedRef = useRef(false);
+  // True only when fetchFeed was called in this hook instance (not a back-nav restore).
+  // Used to gate allServedIdsRef checks in staged pool deduplication — on back-nav,
+  // allServedIdsRef is seeded from cache and must not be used to block staged venues.
+  const fetchedFreshRef = useRef(false);
 
   const initAnchorPoint = useCallback(async () => {
     if (anchorPointRef.current) return;
@@ -648,6 +652,7 @@ export function useDiscoveryFeed() {
       return;
     }
     _suppressPrefetchUntilInteraction = false;
+    fetchedFreshRef.current = true;
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
 
@@ -731,7 +736,7 @@ export function useDiscoveryFeed() {
         ));
         const newStaged = staged.filter(v => {
           const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-          return !existingIds.has(id) && !allServedIdsRef.current.has(id);
+          return !existingIds.has(id) && (!fetchedFreshRef.current || !allServedIdsRef.current.has(id));
         });
         fullScoredPoolRef.current = [...fullScoredPoolRef.current, ...newStaged];
         console.log('[Feed] Staged pool now has', fullScoredPoolRef.current.length, 'venues');
@@ -946,7 +951,7 @@ export function useDiscoveryFeed() {
         ));
         const newStaged = staged.filter(v => {
           const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
-          return !existingIds.has(id) && !allServedIdsRef.current.has(id);
+          return !existingIds.has(id) && (!fetchedFreshRef.current || !allServedIdsRef.current.has(id));
         });
         fullScoredPoolRef.current = [...fullScoredPoolRef.current, ...newStaged];
         console.log('[Prefetch] Staged pool now has', fullScoredPoolRef.current.length, 'venues');
