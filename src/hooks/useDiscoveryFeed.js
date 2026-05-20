@@ -439,6 +439,16 @@ export function useDiscoveryFeed() {
   // allServedIdsRef is seeded from cache and must not be used to block staged venues.
   const fetchedFreshRef = useRef(false);
 
+  // Synchronous back-nav detection — must run before any useEffect so the tab feed
+  // effect and prefetchNextBatch see _isBackNav = true on their first render.
+  // useEffect runs after render; these flags need to be true on the same render cycle.
+  if (hasFetchedRef.current || isSessionFresh()) {
+    _isBackNav = true;
+    _suppressPrefetchUntilInteraction = true;
+    // Restore anchor synchronously so every effect gets consistent coordinates
+    if (_sessionAnchor && !anchorPointRef.current) anchorPointRef.current = _sessionAnchor;
+  }
+
   const initAnchorPoint = useCallback(async () => {
     if (anchorPointRef.current) return;
     // Reuse session anchor for the lifetime of the tab — no DB round-trip, no rotation
@@ -786,11 +796,8 @@ export function useDiscoveryFeed() {
   // Initial load — discovery mode + immediate prefetch
   useEffect(() => {
     if (hasFetchedRef.current || isSessionFresh()) {
-      // Restore session anchor so prefetch / tab-switch use the correct coordinates
+      // Restore session anchor (belt-and-suspenders — also set synchronously above)
       if (_sessionAnchor && !anchorPointRef.current) anchorPointRef.current = _sessionAnchor;
-      // Suppress ALL feed-fetching until the user swipes after back-nav
-      _suppressPrefetchUntilInteraction = true;
-      _isBackNav = true;
       // If sessionStorage cache failed but in-memory venues are available, restore them
       const seedVenues = cached?.venues?.length ? cached.venues : (_sessionVenues || []);
       if (!cached?.venues?.length && _sessionVenues?.length) {
