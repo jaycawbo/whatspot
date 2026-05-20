@@ -198,12 +198,9 @@ export default function VenueDetails() {
         <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={handleShare}>
-            <Share2 className="h-4 w-4" />
-          </Button>
-          <HeartButton venue={{ ...venue, place_id: placeId, google_place_id: placeId }} size="md" />
-        </div>
+        <Button variant="ghost" size="icon" onClick={handleShare}>
+          <Share2 className="h-4 w-4" />
+        </Button>
       </div>
 
       {/* Image carousel */}
@@ -211,25 +208,28 @@ export default function VenueDetails() {
 
       {/* Core info */}
       <div className="px-4 pt-4 space-y-3">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">{displayName}</h1>
-          <div className="flex items-center gap-2 mt-1 flex-wrap">
-            {displayRating && (
-              <span className="flex items-center gap-0.5 text-sm font-medium text-foreground">
-                <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
-                {displayRating}
-                {reviewCount && <span className="text-muted-foreground font-normal">({reviewCount})</span>}
-              </span>
-            )}
-            {priceLevel && <span className="text-sm text-muted-foreground">{priceLevel}</span>}
-            {cuisineType && (
-              <Badge variant="secondary" className="text-xs">{cuisineType}</Badge>
-            )}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl font-bold text-foreground">{displayName}</h1>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {displayRating && (
+                <span className="flex items-center gap-0.5 text-sm font-medium text-foreground">
+                  <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
+                  {displayRating}
+                  {reviewCount && <span className="text-muted-foreground font-normal">({reviewCount})</span>}
+                </span>
+              )}
+              {priceLevel && <span className="text-sm text-muted-foreground">{priceLevel}</span>}
+              {cuisineType && (
+                <Badge variant="secondary" className="text-xs">{cuisineType}</Badge>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
+              <MapPin className="h-3.5 w-3.5 shrink-0" />
+              {displayAddress}
+            </p>
           </div>
-          <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-            <MapPin className="h-3.5 w-3.5 shrink-0" />
-            {displayAddress}
-          </p>
+          <HeartButton venue={{ ...venue, place_id: placeId, google_place_id: placeId }} size="md" className="shrink-0 mt-1" />
         </div>
 
         {/* Why this? */}
