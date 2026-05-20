@@ -183,7 +183,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     if (!onRequestMoreVenues || moreRequestedRef.current || venues.length === 0) return;
     if (suppressProactiveLoadRef.current) return;
     const remaining = venues.length - currentIndex;
-    const earlyTrigger = currentIndex >= Math.floor(venues.length / 4);
+    const earlyTrigger = currentIndex > 0 && currentIndex >= Math.floor(venues.length / 4);
     if (remaining <= 8 || earlyTrigger) {
       moreRequestedRef.current = true;
       onRequestMoreVenues();

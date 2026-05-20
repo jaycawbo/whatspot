@@ -642,6 +642,11 @@ export function useDiscoveryFeed() {
       setOverflowVenues([]);
       setCurrentQuery('');
       setTabEmpty(isEmpty);
+      // Ensure back-nav detection fires on remount even when fetchFeed was never called
+      // (e.g. initial load took the restore path and only the tab feed ran this session).
+      if (!_sessionFetchedAt) _sessionFetchedAt = Date.now();
+      if (!_sessionAnchor && anchorPointRef.current) _sessionAnchor = anchorPointRef.current;
+      _sessionVenues = tabVenues;
     }).catch((err) => {
       console.error('[TabFeed] Error:', err);
       setVenues([]);
