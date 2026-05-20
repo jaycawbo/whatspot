@@ -43,6 +43,10 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const [venues, setVenues] = useState(initialVenues);
   const [overflowAppended, setOverflowAppended] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(savedIndex.current());
+  // True when currentIndex was restored from sessionStorage (back-nav). Suppresses the
+  // proactive loading trigger until the user makes their first swipe, preventing expandSearch()
+  // from replacing the venue array immediately after back-navigation.
+  const suppressProactiveLoadRef = useRef(savedIndex.current() > 0);
   const [exitDirection, setExitDirection] = useState(null);
   const [hoveredButton, setHoveredButton] = useState(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -130,7 +134,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
     const prevIds = initialVenueIdsRef.current;
     initialVenueIdsRef.current = newIds;
-    try { sessionStorage.setItem('whatspot_deck_venue_ids', newIds); } catch {}
+    // Do NOT write whatspot_deck_venue_ids here — only saveFeedCache (useDiscoveryFeed)
+    // writes it, and only with the feed-only IDs. Writing combined (feed+reserve) IDs here
+    // causes the next back-nav to fail the early-return check and incorrectly reset.
 
     // If this is an append (new list contains current card), maintain position
     if (prevIds !== '' && currentVenue) {
@@ -169,9 +175,12 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     opacity.set(1);
   }, [initialVenues, x, y, opacity, currentVenue]);
 
-  // Proactive loading — fire when 8 cards remain OR 25% consumed
+  // Proactive loading — fire when 8 cards remain OR 25% consumed.
+  // Suppressed on back-nav restore until the user swipes (avoids triggering expandSearch
+  // immediately, which would replace the restored venue array asynchronously).
   useEffect(() => {
     if (!onRequestMoreVenues || moreRequestedRef.current || venues.length === 0) return;
+    if (suppressProactiveLoadRef.current) return;
     const remaining = venues.length - currentIndex;
     const earlyTrigger = currentIndex >= Math.floor(venues.length / 4);
     if (remaining <= 8 || earlyTrigger) {
@@ -227,6 +236,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
   // Advance to next card — clamped to venues.length
   const advanceCard = useCallback(() => {
+    suppressProactiveLoadRef.current = false; // first swipe clears back-nav suppression
     x.stop();
     y.stop();
     opacity.stop();
