@@ -431,25 +431,19 @@ export function useDiscoveryFeed() {
   const isGuestRef = useRef(false);
   // Previous location snapshot for material-change detection
   const prevLocationRef = useRef(null);
-  // Tracks whether the tab feed effect has fired at least once this mount — prevents
-  // fetchTabVenues from overwriting restored venues on back-nav remount
-  const tabInitializedRef = useRef(false);
   // True only when fetchFeed was called in this hook instance (not a back-nav restore).
   // Used to gate allServedIdsRef checks in staged pool deduplication — on back-nav,
   // allServedIdsRef is seeded from cache and must not be used to block staged venues.
   const fetchedFreshRef = useRef(false);
 
-  // One-time mount guard — prevents the sync block from re-running on every re-render.
+  // Runs once per mount (not on re-renders) — sets suppression flags before any effect fires.
+  // _sessionFetchedAt > 0 means this browser tab has already fetched; this is a back-nav.
   const backNavDetectedRef = useRef(false);
-  // Synchronous back-nav detection — must run before any useEffect so the tab feed
-  // effect and prefetchNextBatch see _isBackNav = true on their first render.
-  // useEffect runs after render; these flags need to be true on the same render cycle.
   if (!backNavDetectedRef.current) {
     backNavDetectedRef.current = true;
-    if (hasFetchedRef.current || _sessionFetchedAt > 0) {
+    if (_sessionFetchedAt > 0) {
       _isBackNav = true;
       _suppressPrefetchUntilInteraction = true;
-      // Restore anchor synchronously so every effect gets consistent coordinates
       if (_sessionAnchor && !anchorPointRef.current) anchorPointRef.current = _sessionAnchor;
     }
   }
@@ -626,7 +620,6 @@ export function useDiscoveryFeed() {
     }
     // Block ALL tab fetches while back-nav restore is active — cleared on first swipe.
     if (_isBackNav) return;
-    tabInitializedRef.current = true;
     const anchor = anchorPointRef.current ?? state.userLocation;
     if (!anchor) return; // wait until anchor is initialised
 
