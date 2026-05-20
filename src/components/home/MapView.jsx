@@ -19,11 +19,22 @@ function formatPrice(level) {
   return '$'.repeat(n);
 }
 
-function MapAutoFit({ results }) {
+function MapAutoFit({ results, userLocation }) {
   const map = useMap();
   useEffect(() => {
     if (results.length === 0) return;
     const points = results.map(v => [v.lat, v.lon ?? v.lng]);
+
+    // Include user location in bounds only if it's within ~50 km of the result cluster
+    if (userLocation?.lat != null && userLocation?.lon != null) {
+      const avgLat = points.reduce((s, p) => s + p[0], 0) / points.length;
+      const avgLon = points.reduce((s, p) => s + p[1], 0) / points.length;
+      const distDeg = Math.abs(userLocation.lat - avgLat) + Math.abs(userLocation.lon - avgLon);
+      if (distDeg < 0.9) {
+        points.push([userLocation.lat, userLocation.lon]);
+      }
+    }
+
     try {
       if (points.length === 1) {
         map.setView(points[0], 15);
@@ -114,11 +125,14 @@ const userLocationIcon = L.divIcon({
   iconAnchor: [7, 7],
 });
 
-function MapContent({ results, spotsIds, favIds }) {
+function MapContent({ results, spotsIds, favIds, userLocation }) {
   const navigate = useNavigate();
   return (
     <>
-      <MapAutoFit results={results} />
+      <MapAutoFit results={results} userLocation={userLocation} />
+      {userLocation?.lat != null && (
+        <Marker position={[userLocation.lat, userLocation.lon]} icon={userLocationIcon} />
+      )}
       {results.map((v, i) => {
         const lat = v.lat;
         const lng = v.lon ?? v.lng;
@@ -207,7 +221,7 @@ export default function MapView({ results, isLoading, onSearchFromHere }) {
             <Marker position={center} icon={userLocationIcon} />
           </>
         ) : (
-          <MapContent results={results} spotsIds={spotsIds} favIds={favIds} />
+          <MapContent results={results} spotsIds={spotsIds} favIds={favIds} userLocation={state.userLocation} />
         )}
         {onSearchFromHere && (
           <MapMoveTracker
