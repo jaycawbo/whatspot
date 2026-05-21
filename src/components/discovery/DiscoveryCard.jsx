@@ -248,28 +248,23 @@ export default function DiscoveryCard({
       >
         {isInViewport ? (
           <>
-            {/* Current photo — no transition, always full opacity when not fading out */}
-            <img
-              src={photos[currentPhoto]}
-              alt={venue?.name || 'Venue photo'}
-              className="absolute inset-0 h-full w-full object-cover"
-              style={{
-                opacity: isFading ? 0 : 1,
-                transition: isFading ? 'opacity 600ms ease' : 'none',
-              }}
-            />
-            {/* Next photo (crossfade in) */}
-            {nextPhoto !== null && (
+            {/* All photos always mounted — opacity-based crossfade prevents src-swap flash.
+                Incoming photo transitions 0→1 on an existing DOM element so CSS fires correctly.
+                Outgoing transitions 1→0. At completion only state changes — no src swap, no unmount. */}
+            {photos.map((src, i) => (
               <img
-                src={photos[nextPhoto]}
-                alt=""
+                key={i}
+                src={src}
+                alt={i === currentPhoto ? (venue?.name || 'Venue photo') : ''}
                 className="absolute inset-0 h-full w-full object-cover"
                 style={{
-                  opacity: isFading ? 1 : 0,
+                  opacity: isFading
+                    ? (i === nextPhoto ? 1 : i === currentPhoto ? 0 : 0)
+                    : (i === currentPhoto ? 1 : 0),
                   transition: isFading ? 'opacity 600ms ease' : 'none',
                 }}
               />
-            )}
+            ))}
 
             {/* Spots list membership badge */}
             {listLabel && (
