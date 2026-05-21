@@ -66,6 +66,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const ratingSheetOpenRef = useRef(false);
   const [venuePhotoOverrides, setVenuePhotoOverrides] = useState({});
   const fetchedPlaceIdsRef = useRef(new Set());
+  const isFadingRef = useRef(false);
+  const pendingOverridesRef = useRef({});
+  const currentVenueIdRef = useRef('');
 
   const {
     handleInterested,
@@ -99,7 +102,11 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
             if (data?.photo_urls?.length > 0) {
               const img = new Image();
               img.onload = img.onerror = () => {
-                setVenuePhotoOverrides((prev) => ({ ...prev, [rawId]: data.photo_urls }));
+                if (rawId === currentVenueIdRef.current && isFadingRef.current) {
+                  pendingOverridesRef.current[rawId] = data.photo_urls;
+                } else {
+                  setVenuePhotoOverrides((prev) => ({ ...prev, [rawId]: data.photo_urls }));
+                }
               };
               img.src = data.photo_urls[0];
             }
@@ -108,6 +115,22 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       }
     }
   }, [currentVenue, writePassiveSkip]);
+
+  // Keep ref in sync so async photo-override callbacks always see the current active venue ID
+  useEffect(() => {
+    currentVenueIdRef.current = (currentVenue?.place_id || currentVenue?.google_place_id || '').replace(/^places\//, '');
+  }, [currentVenue]);
+
+  // Called by DiscoveryCard when its crossfade starts (true) or ends (false).
+  // Flushes any overrides that were deferred during a crossfade once the fade completes.
+  const handleFadingChange = useCallback((fading) => {
+    isFadingRef.current = fading;
+    if (!fading && Object.keys(pendingOverridesRef.current).length > 0) {
+      const pending = pendingOverridesRef.current;
+      pendingOverridesRef.current = {};
+      setVenuePhotoOverrides((prev) => ({ ...prev, ...pending }));
+    }
+  }, []);
 
   const x = useMotionValue(0);
   const y = useMotionValue(0);
@@ -227,7 +250,11 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         if (data?.photo_urls?.length > 0) {
           const img = new Image();
           img.onload = img.onerror = () => {
-            setVenuePhotoOverrides((prev) => ({ ...prev, [rawId]: data.photo_urls }));
+            if (rawId === currentVenueIdRef.current && isFadingRef.current) {
+              pendingOverridesRef.current[rawId] = data.photo_urls;
+            } else {
+              setVenuePhotoOverrides((prev) => ({ ...prev, [rawId]: data.photo_urls }));
+            }
           };
           img.src = data.photo_urls[0];
         }
@@ -564,6 +591,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
               onCardBodyTap={handleCardBodyTap}
               listLabel={listMembershipMap ? listMembershipMap.get((currentVenue?.place_id || currentVenue?.google_place_id || '').replace(/^places\//, '')) ?? null : null}
               onBeenHereClick={() => performAction('up', currentVenue)}
+              onFadingChange={handleFadingChange}
             />
           </motion.div>
         ) : hasMore ? (

@@ -35,6 +35,7 @@ export default function DiscoveryCard({
   listLabel = null,
   onBeenHereClick = null,
   beenHereRating = null,
+  onFadingChange = null,
 }) {
   const navigate = useNavigate();
   const photos = venue?.image_urls?.length > 0
@@ -108,6 +109,11 @@ export default function DiscoveryCard({
     }, 600);
     return () => clearTimeout(timer);
   }, [isFading, nextPhoto]);
+
+  // Tell the parent when a crossfade starts/ends so it can defer photo-override state updates
+  useEffect(() => {
+    onFadingChange?.(isFading);
+  }, [isFading, onFadingChange]);
 
   // Hold-to-pause handlers (Fix 5)
   const handlePressStart = useCallback((clientX, clientY) => {
