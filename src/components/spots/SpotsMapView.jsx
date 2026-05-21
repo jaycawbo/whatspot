@@ -31,7 +31,7 @@ export default function SpotsMapView({ spots: spotsList, center, onRemove }) {
   const mapCenter = center || [spotsList[0]?.lat || 43.65, spotsList[0]?.lng || -79.38];
 
   return (
-    <MapContainer center={mapCenter} zoom={13} className="h-full w-full rounded-xl" scrollWheelZoom>
+    <MapContainer center={mapCenter} zoom={13} className="h-full w-full rounded-xl z-0" scrollWheelZoom>
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"

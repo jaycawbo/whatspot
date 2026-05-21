@@ -122,7 +122,7 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md flex flex-col overflow-hidden max-h-[90dvh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Heart className={cn('h-5 w-5', saved ? 'fill-red-500 text-red-500' : 'text-muted-foreground')} />
@@ -130,7 +130,7 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="overflow-y-auto flex-1 min-h-0 space-y-4 py-2">
           {/* Venue preview */}
           <div className="flex gap-3 items-center rounded-lg border border-border bg-muted/30 p-3">
             {venue.image_urls?.[0] && (
