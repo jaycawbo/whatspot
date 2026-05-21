@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { pagesConfig } from './pages.config'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, useMatch, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { GlobalStateProvider } from '@/context/GlobalStateContext';
@@ -25,6 +25,10 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+  const venueMatch = useMatch('/venue/:placeId');
+  const location = useLocation();
+  // Keep Home mounted on both "/" and "/venue/:placeId" so it never unmounts during venue nav.
+  const isOnHomePath = location.pathname === '/' || !!venueMatch;
 
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
@@ -35,29 +39,42 @@ const AuthenticatedApp = () => {
   }
 
   return (
-    <Routes>
-      <Route path="/" element={
+    <>
+      {/* Home persists across / and /venue/:placeId — never unmounts between the two */}
+      {isOnHomePath && (
         <LayoutWrapper currentPageName={mainPageKey}>
           <MainPage />
         </LayoutWrapper>
-      } />
-      <Route path="/venue/:placeId" element={<VenueDetails />} />
-      <Route path="/portal/:venueId" element={<VenuePortal />} />
-      <Route path="/enrich" element={<EnrichmentDashboard />} />
-      <Route path="/credits" element={<Credits />} />
-      {Object.entries(Pages).map(([path, Page]) => (
-        <Route
-          key={path}
-          path={`/${path}`}
-          element={
-            <LayoutWrapper currentPageName={path}>
-              <Page />
-            </LayoutWrapper>
-          }
-        />
-      ))}
-      <Route path="*" element={<PageNotFound />} />
-    </Routes>
+      )}
+
+      <Routes>
+        {/* On "/", Home is rendered above — nothing extra needed here */}
+        <Route path="/" element={null} />
+
+        {/* VenueDetails as a fixed full-screen overlay; inside Route so useParams() works */}
+        <Route path="/venue/:placeId" element={
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-background">
+            <VenueDetails />
+          </div>
+        } />
+
+        <Route path="/portal/:venueId" element={<VenuePortal />} />
+        <Route path="/enrich" element={<EnrichmentDashboard />} />
+        <Route path="/credits" element={<Credits />} />
+        {Object.entries(Pages).map(([path, Page]) => (
+          <Route
+            key={path}
+            path={`/${path}`}
+            element={
+              <LayoutWrapper currentPageName={path}>
+                <Page />
+              </LayoutWrapper>
+            }
+          />
+        ))}
+        <Route path="*" element={<PageNotFound />} />
+      </Routes>
+    </>
   );
 };
 
