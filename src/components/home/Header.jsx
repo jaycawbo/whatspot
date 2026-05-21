@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MapPin, Heart, ChevronDown, X, LogOut } from 'lucide-react';
+import { MapPin, List, ChevronDown, X, LogOut } from 'lucide-react';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -76,8 +76,8 @@ export default function Header({ onLogoClick, onCloseSearch } = {}) {
           </Button>
         )}
 
-        <Link to="/Spots" className="flex items-center text-muted-foreground hover:text-foreground transition-colors">
-          <Heart className="h-5 w-5" />
+        <Link to="/Spots" aria-label="My Spots" className="flex items-center text-muted-foreground hover:text-foreground transition-colors">
+          <List className="h-5 w-5" />
         </Link>
 
         {isAuthenticated ? (
