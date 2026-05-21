@@ -9,21 +9,22 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Heart, Trash2, X, Check } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
 import { useSpots } from '@/hooks/useSpots';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { logEvent } from '@/lib/logEvent';
 
-// Standard interaction labels from the discovery feed
-const STANDARD_LABELS = [
-  'Favourite',
-  'Want to Go',
-  "I'll Pass",
-  'Viewed',
+// Preset system lists — must match LABEL_TO_INTERACTION keys in useSpots.js
+const SYSTEM_LISTS = [
+  'Favourites',
+  'Interested',
+  'Been To',
+  'Not Interested',
+  "Didn't Like It",
 ];
 
 const SUGGESTED_LABELS = [
-  ...STANDARD_LABELS,
   'Top Spot',
   'Special Occasion',
   'Date Night',
@@ -37,6 +38,8 @@ const SUGGESTED_LABELS = [
   'Would Not Go Back',
 ];
 
+const ALL_PRESET_LABELS = [...SYSTEM_LISTS, ...SUGGESTED_LABELS];
+
 export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
   const { isSaved, getLabels, saveSpot, removeSpot, updateLabels, isSaving, isRemoving } = useSpots();
 
@@ -48,7 +51,7 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
   const [customInput, setCustomInput] = useState('');
 
   const customTypedLabels = selectedLabels.filter(
-    (l) => !SUGGESTED_LABELS.includes(l)
+    (l) => !ALL_PRESET_LABELS.includes(l)
   );
 
   useEffect(() => {
@@ -145,8 +148,31 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
 
           {/* Labels */}
           <div className="space-y-3">
-            <p className="text-sm font-medium text-foreground">Labels <span className="text-muted-foreground font-normal">(select any that apply)</span></p>
+            <p className="text-sm font-medium text-foreground">Lists</p>
+            <div className="flex flex-wrap gap-1.5">
+              {SYSTEM_LISTS.map((label) => {
+                const active = selectedLabels.includes(label);
+                return (
+                  <button
+                    key={label}
+                    onClick={() => toggleLabel(label)}
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition-colors border',
+                      active
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-accent/50 text-accent-foreground border-transparent hover:bg-accent'
+                    )}
+                  >
+                    {active && <Check className="h-3 w-3" />}
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
 
+            <Separator />
+
+            <p className="text-sm font-medium text-foreground">Suggested lists</p>
             <div className="flex flex-wrap gap-1.5">
               {SUGGESTED_LABELS.map((label) => {
                 const active = selectedLabels.includes(label);
