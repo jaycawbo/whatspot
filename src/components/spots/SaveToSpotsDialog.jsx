@@ -119,7 +119,7 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md flex flex-col max-h-[85vh]">
+      <DialogContent className="sm:max-w-md flex flex-col overflow-hidden max-h-[90dvh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Heart className={cn('h-5 w-5', saved ? 'fill-red-500 text-red-500' : 'text-muted-foreground')} />
