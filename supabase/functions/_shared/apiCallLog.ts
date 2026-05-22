@@ -20,10 +20,11 @@ export async function checkAndLog(
   sb: SupabaseClient,
   callType: string,
   venueId?: string,
+  count: number = 1,
 ): Promise<boolean> {
   const monthKey = currentMonthKey();
 
-  const { count, error: countError } = await sb
+  const { count: currentCount, error: countError } = await sb
     .from('api_call_log')
     .select('*', { count: 'exact', head: true })
     .eq('service', 'google_places')
@@ -34,20 +35,22 @@ export async function checkAndLog(
     return true;
   }
 
-  if ((count ?? 0) >= MONTHLY_CAP) {
+  if ((currentCount ?? 0) + count > MONTHLY_CAP) {
     console.warn(
-      `[apiCallLog] Monthly cap reached (${count}/${MONTHLY_CAP}). Blocking call_type="${callType}" venue="${venueId ?? 'n/a'}".`,
+      `[apiCallLog] Monthly cap reached (${currentCount}/${MONTHLY_CAP}). Blocking call_type="${callType}" venue="${venueId ?? 'n/a'}".`,
     );
     return false;
   }
 
-  const { error: insertError } = await sb.from('api_call_log').insert({
+  const rows = Array.from({ length: count }, () => ({
     service:    'google_places',
     call_type:  callType,
     venue_id:   venueId ?? null,
     called_at:  new Date().toISOString(),
     month_key:  monthKey,
-  });
+  }));
+
+  const { error: insertError } = await sb.from('api_call_log').insert(rows);
 
   if (insertError) {
     console.warn('[apiCallLog] Insert failed — call will still proceed:', insertError.message);

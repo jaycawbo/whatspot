@@ -177,7 +177,21 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         return;
       }
       // Prior state exists but current card not in new batch (background expansion).
-      // Preserve position rather than resetting to 0.
+      // Before clamping, check whether the card is in the locally-appended overflow tail.
+      // Overflow venues are added to local state only (line 224) and never appear in
+      // initialVenues, so findIndex above will always miss them.
+      const overflowTail = venues.slice(initialVenues.length);
+      const inOverflow = overflowTail.some(v => {
+        const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+        return id && id === currentId;
+      });
+      if (inOverflow) {
+        // Merge new initialVenues with the overflow tail and hold position.
+        setVenues([...initialVenues, ...overflowTail]);
+        moreRequestedRef.current = false;
+        return;
+      }
+      // Genuinely not found in either — preserve position rather than resetting to 0.
       setVenues(initialVenues);
       setOverflowAppended(false);
       setCurrentIndex((prev) => Math.min(prev, Math.max(0, initialVenues.length - 1)));

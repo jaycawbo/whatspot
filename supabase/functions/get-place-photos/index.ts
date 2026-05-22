@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
   }
 
   // ── Step 2: Fetch photo resource names from Google ─────────────────────────
-  const allowed = await checkAndLog(sb, 'photos', cleanId);
+  const allowed = await checkAndLog(sb, 'photos', cleanId, max_photos + 1);
   if (!allowed) {
     return new Response(JSON.stringify({ success: false, error: 'Monthly API cap reached', photo_urls: [] }), {
       status: 429,
