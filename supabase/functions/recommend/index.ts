@@ -856,6 +856,7 @@ async function handleSearch(params: {
   let location_name = params.location_name;
   const admission = { ...params.admission };
   const isDiscoveryMode = false;
+  let searchGroundingFired = false;
 
   // ─── Session context string ───
   let sessionContextString = '';
@@ -1147,6 +1148,198 @@ async function handleSearch(params: {
       } else {
         console.log(`⚠️ Supabase search returned ${combined.length} combined venues — falling through to Google`);
       }
+    }
+  }
+
+  // ─── Parallel Gemini grounding cross-reference ───
+  if (!isDiscoveryMode && GEMINI_API_KEY && !searchGroundingFired) {
+    searchGroundingFired = true;
+    try {
+      const groundingResp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: `Best ${refinedSearchTerm} in ${location_name}` }] }],
+            tools: [{ googleSearch: {} }],
+            toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+          }),
+        },
+      );
+
+      if (groundingResp.ok) {
+        const groundingData = await groundingResp.json();
+        const chunks: any[] = groundingData.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+        console.log(`🔍 Grounding cross-ref chunks: ${chunks.length}`);
+
+        const extractedIds: Array<{ cid?: string; placeId?: string; title: string }> = [];
+        for (const chunk of chunks) {
+          const uri: string   = chunk.web?.uri   || '';
+          const title: string = chunk.web?.title || '';
+          const cidMatch   = uri.match(/[?&]cid=(\d+)/);
+          const placeMatch = uri.match(/place_id=(ChIJ[^&]+)/);
+          if (cidMatch)   { extractedIds.push({ cid: cidMatch[1], title }); continue; }
+          if (placeMatch) { extractedIds.push({ placeId: placeMatch[1], title }); }
+        }
+
+        if (extractedIds.length > 0 && GOOGLE_KEY) {
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          const sbGround = createClient(supabaseUrl, supabaseKey);
+          const { checkAndLog } = await import('../_shared/apiCallLog.ts');
+          const existingPlaceIds = new Set(filteredVenues.map((v: any) => (v.place_id || '').replace(/^places\//, '')));
+          let groundApiCalls = 0;
+
+          for (const item of extractedIds.slice(0, 10)) {
+            if (groundApiCalls >= 5) break;
+
+            let cleanId: string | null = null;
+            let resolvedDetails: any = null;
+
+            if (item.cid) {
+              const legacyResp = await fetch(
+                `https://maps.googleapis.com/maps/api/place/details/json?cid=${item.cid}&fields=place_id,name,formatted_address,geometry,rating,user_ratings_total,price_level,types,business_status&key=${GOOGLE_KEY}`,
+              );
+              if (!legacyResp.ok) continue;
+              const legacyData = await legacyResp.json();
+              if (!legacyData.result?.place_id) continue;
+              cleanId = legacyData.result.place_id.replace(/^places\//, '');
+              resolvedDetails = legacyData.result;
+            } else if (item.placeId) {
+              cleanId = item.placeId.replace(/^places\//, '');
+            }
+
+            if (!cleanId) continue;
+            if (existingPlaceIds.has(cleanId)) continue;
+
+            // Check Supabase cache first — no API call if found
+            const { data: existingRow } = await sbGround
+              .from('venues')
+              .select('*')
+              .eq('google_place_id', cleanId)
+              .maybeSingle();
+
+            if (existingRow) {
+              if (!hasFoodDrinkType(existingRow.venue_types || [])) continue;
+              const dist = calculateDistance(lat, lon, existingRow.lat, existingRow.lng);
+              if (dist > admission.maxRadius) continue;
+              filteredVenues.push({
+                name:               existingRow.name,
+                address:            existingRow.address || '',
+                lat:                existingRow.lat,
+                lon:                existingRow.lng,
+                distance_km:        dist,
+                rating:             existingRow.rating,
+                review_count:       existingRow.review_count,
+                price_level:        mapIntPriceLevel(existingRow.price_level),
+                place_id:           `places/${cleanId}`,
+                category:           (existingRow.venue_types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+                cuisine_type:       (existingRow.venue_types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+                isRelaxedAdmission: (existingRow.rating || 0) < SCORING.RATING_FLOOR || (existingRow.review_count || 0) < SCORING.REVIEW_FLOOR,
+                unknownPrice:       false,
+                _rawTypes:          existingRow.venue_types || [],
+                _photoUrls:         existingRow.photo_urls || [],
+              });
+              existingPlaceIds.add(cleanId);
+              console.log(`✅ Grounding cross-ref: "${existingRow.name}" from Supabase cache`);
+              continue;
+            }
+
+            // Not in Supabase — spend-guarded Places API call
+            const guardKey = `sg_${cleanId}`;
+            const allowed = await checkAndLog(sbGround, 'search_grounding', guardKey);
+            if (!allowed) continue;
+
+            if (!resolvedDetails) {
+              const newDetailsResp = await fetch(
+                `https://places.googleapis.com/v1/places/${cleanId}`,
+                {
+                  headers: {
+                    'X-Goog-Api-Key': GOOGLE_KEY,
+                    'X-Goog-FieldMask': 'displayName,formattedAddress,location,rating,userRatingCount,priceLevel,types,businessStatus',
+                  },
+                },
+              );
+              if (!newDetailsResp.ok) continue;
+              const nd = await newDetailsResp.json();
+              resolvedDetails = {
+                name:               nd.displayName?.text    || '',
+                formatted_address:  nd.formattedAddress     || '',
+                geometry:           { location: { lat: nd.location?.latitude, lng: nd.location?.longitude } },
+                rating:             nd.rating               ?? null,
+                user_ratings_total: nd.userRatingCount      ?? null,
+                price_level:        nd.priceLevel           ?? null,
+                types:              nd.types                || [],
+                business_status:    nd.businessStatus       || null,
+              };
+            }
+
+            if (!hasFoodDrinkType(resolvedDetails.types || [])) continue;
+
+            const vLat = resolvedDetails.geometry?.location?.lat;
+            const vLon = resolvedDetails.geometry?.location?.lng;
+            if (!vLat || !vLon) continue;
+
+            const sgDist = calculateDistance(lat, lon, vLat, vLon);
+            if (sgDist > admission.maxRadius) continue;
+
+            const sgPLRaw = resolvedDetails.price_level;
+            let sgPLInt: number | null = null;
+            if (sgPLRaw != null) {
+              if (typeof sgPLRaw === 'number') {
+                sgPLInt = sgPLRaw === 0 ? 1 : Math.min(sgPLRaw, 4);
+              } else {
+                const sgPLMap: Record<string, number> = {
+                  PRICE_LEVEL_FREE: 1, PRICE_LEVEL_INEXPENSIVE: 1,
+                  PRICE_LEVEL_MODERATE: 2, PRICE_LEVEL_EXPENSIVE: 3, PRICE_LEVEL_VERY_EXPENSIVE: 4,
+                };
+                sgPLInt = sgPLMap[sgPLRaw] ?? null;
+              }
+            }
+            const sgPLStrs = ['$', '$', '$$', '$$$', '$$$$'];
+            const sgMappedPL = sgPLInt != null ? (sgPLStrs[sgPLInt] || null) : null;
+
+            await sbGround.from('venues').upsert([{
+              google_place_id: cleanId,
+              name:            resolvedDetails.name || item.title || '',
+              lat:             vLat,
+              lng:             vLon,
+              rating:          resolvedDetails.rating,
+              review_count:    resolvedDetails.user_ratings_total,
+              price_level:     sgPLInt,
+              venue_types:     resolvedDetails.types || [],
+              business_status: null,
+              address:         resolvedDetails.formatted_address || '',
+              enriched:        false,
+              is_chain:        false,
+            }], { onConflict: 'google_place_id', ignoreDuplicates: true });
+
+            filteredVenues.push({
+              name:               resolvedDetails.name || item.title || '',
+              address:            resolvedDetails.formatted_address || '',
+              lat:                vLat,
+              lon:                vLon,
+              distance_km:        sgDist,
+              rating:             resolvedDetails.rating,
+              review_count:       resolvedDetails.user_ratings_total,
+              price_level:        sgMappedPL,
+              place_id:           `places/${cleanId}`,
+              category:           (resolvedDetails.types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+              cuisine_type:       (resolvedDetails.types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+              isRelaxedAdmission: (resolvedDetails.rating || 0) < SCORING.RATING_FLOOR || (resolvedDetails.user_ratings_total || 0) < SCORING.REVIEW_FLOOR,
+              unknownPrice:       false,
+              _rawTypes:          resolvedDetails.types || [],
+              _photoUrls:         [],
+            });
+            existingPlaceIds.add(cleanId);
+            groundApiCalls++;
+            console.log(`✅ Grounding cross-ref: "${resolvedDetails.name || item.title}" added via Places API`);
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn('⚠️ Grounding cross-reference failed silently:', e.message);
     }
   }
 
