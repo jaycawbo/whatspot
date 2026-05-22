@@ -1156,34 +1156,42 @@ async function handleSearch(params: {
     searchGroundingFired = true;
     try {
       const groundingResp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: `Best ${refinedSearchTerm} in ${location_name}` }] }],
             tools: [{ googleSearch: {} }],
-            toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
           }),
         },
       );
 
-      if (groundingResp.ok) {
+      if (!groundingResp.ok) {
+        const errText = await groundingResp.text();
+        console.warn(`⚠️ Grounding Gemini call failed: ${groundingResp.status} — ${errText.slice(0, 200)}`);
+      } else {
         const groundingData = await groundingResp.json();
         const chunks: any[] = groundingData.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-        console.log(`🔍 Grounding cross-ref chunks: ${chunks.length}`);
 
-        const extractedIds: Array<{ cid?: string; placeId?: string; title: string }> = [];
+        // Extract venue names from chunk titles, stripping platform suffixes
+        const TITLE_SUFFIX_RE = /\s*[|\-]\s*(Yelp|TripAdvisor|OpenTable|Google Maps|Reserve|Reservations|Menu|Photos|Reviews|Hours|Website|Instagram|Facebook|Order Online|Delivery|DoorDash|Uber Eats|SkipTheDishes).*$/i;
+        const seenNames = new Set<string>();
+        const venueNames: string[] = [];
         for (const chunk of chunks) {
-          const uri: string   = chunk.web?.uri   || '';
-          const title: string = chunk.web?.title || '';
-          const cidMatch   = uri.match(/[?&]cid=(\d+)/);
-          const placeMatch = uri.match(/place_id=(ChIJ[^&]+)/);
-          if (cidMatch)   { extractedIds.push({ cid: cidMatch[1], title }); continue; }
-          if (placeMatch) { extractedIds.push({ placeId: placeMatch[1], title }); }
+          const raw = (chunk.web?.title || '').trim();
+          if (!raw) continue;
+          const cleaned = raw.replace(TITLE_SUFFIX_RE, '').trim();
+          if (!cleaned || cleaned.length < 3) continue;
+          const key = cleaned.toLowerCase();
+          if (seenNames.has(key)) continue;
+          seenNames.add(key);
+          venueNames.push(cleaned);
         }
+        console.log(`🔍 Grounding cross-ref: ${venueNames.length} venue names extracted`);
+        console.log(`🔍 Grounding names: ${venueNames.join(', ')}`);
 
-        if (extractedIds.length > 0 && GOOGLE_KEY) {
+        if (venueNames.length > 0 && GOOGLE_KEY) {
           const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
           const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
           const sbGround = createClient(supabaseUrl, supabaseKey);
@@ -1191,100 +1199,89 @@ async function handleSearch(params: {
           const existingPlaceIds = new Set(filteredVenues.map((v: any) => (v.place_id || '').replace(/^places\//, '')));
           let groundApiCalls = 0;
 
-          for (const item of extractedIds.slice(0, 10)) {
+          for (const venueName of venueNames.slice(0, 10)) {
             if (groundApiCalls >= 5) break;
 
-            let cleanId: string | null = null;
-            let resolvedDetails: any = null;
-
-            if (item.cid) {
-              const legacyResp = await fetch(
-                `https://maps.googleapis.com/maps/api/place/details/json?cid=${item.cid}&fields=place_id,name,formatted_address,geometry,rating,user_ratings_total,price_level,types,business_status&key=${GOOGLE_KEY}`,
-              );
-              if (!legacyResp.ok) continue;
-              const legacyData = await legacyResp.json();
-              if (!legacyData.result?.place_id) continue;
-              cleanId = legacyData.result.place_id.replace(/^places\//, '');
-              resolvedDetails = legacyData.result;
-            } else if (item.placeId) {
-              cleanId = item.placeId.replace(/^places\//, '');
-            }
-
-            if (!cleanId) continue;
-            if (existingPlaceIds.has(cleanId)) continue;
-
-            // Check Supabase cache first — no API call if found
-            const { data: existingRow } = await sbGround
+            // Supabase name-based cache check — serve for free if already in DB
+            const { data: nameMatch } = await sbGround
               .from('venues')
-              .select('*')
-              .eq('google_place_id', cleanId)
+              .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, address')
+              .ilike('name', `%${venueName}%`)
+              .not('google_place_id', 'is', null)
+              .limit(1)
               .maybeSingle();
 
-            if (existingRow) {
-              if (!hasFoodDrinkType(existingRow.venue_types || [])) continue;
-              const dist = calculateDistance(lat, lon, existingRow.lat, existingRow.lng);
-              if (dist > admission.maxRadius) continue;
+            if (nameMatch) {
+              if (!hasFoodDrinkType(nameMatch.venue_types || [])) continue;
+              const existingDist = calculateDistance(lat, lon, nameMatch.lat, nameMatch.lng);
+              if (existingDist > admission.maxRadius) continue;
+              if (existingPlaceIds.has(nameMatch.google_place_id)) continue;
               filteredVenues.push({
-                name:               existingRow.name,
-                address:            existingRow.address || '',
-                lat:                existingRow.lat,
-                lon:                existingRow.lng,
-                distance_km:        dist,
-                rating:             existingRow.rating,
-                review_count:       existingRow.review_count,
-                price_level:        mapIntPriceLevel(existingRow.price_level),
-                place_id:           `places/${cleanId}`,
-                category:           (existingRow.venue_types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
-                cuisine_type:       (existingRow.venue_types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
-                isRelaxedAdmission: (existingRow.rating || 0) < SCORING.RATING_FLOOR || (existingRow.review_count || 0) < SCORING.REVIEW_FLOOR,
+                name:               nameMatch.name,
+                address:            nameMatch.address || '',
+                lat:                nameMatch.lat,
+                lon:                nameMatch.lng,
+                distance_km:        existingDist,
+                rating:             nameMatch.rating,
+                review_count:       nameMatch.review_count,
+                price_level:        mapIntPriceLevel(nameMatch.price_level),
+                place_id:           `places/${nameMatch.google_place_id}`,
+                category:           (nameMatch.venue_types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+                cuisine_type:       (nameMatch.venue_types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+                isRelaxedAdmission: (nameMatch.rating || 0) < SCORING.RATING_FLOOR || (nameMatch.review_count || 0) < SCORING.REVIEW_FLOOR,
                 unknownPrice:       false,
-                _rawTypes:          existingRow.venue_types || [],
-                _photoUrls:         existingRow.photo_urls || [],
+                _rawTypes:          nameMatch.venue_types || [],
+                _photoUrls:         [],
               });
-              existingPlaceIds.add(cleanId);
-              console.log(`✅ Grounding cross-ref: "${existingRow.name}" from Supabase cache`);
+              existingPlaceIds.add(nameMatch.google_place_id);
+              console.log(`✅ Grounding cross-ref: "${nameMatch.name}" served from Supabase cache`);
               continue;
             }
 
-            // Not in Supabase — spend-guarded Places API call
-            const guardKey = `sg_${cleanId}`;
-            const allowed = await checkAndLog(sbGround, 'search_grounding', guardKey);
+            // Not in Supabase — spend-guarded Places Text Search
+            const allowed = await checkAndLog(sbGround, 'search_grounding', venueName);
             if (!allowed) continue;
 
-            if (!resolvedDetails) {
-              const newDetailsResp = await fetch(
-                `https://places.googleapis.com/v1/places/${cleanId}`,
-                {
-                  headers: {
-                    'X-Goog-Api-Key': GOOGLE_KEY,
-                    'X-Goog-FieldMask': 'displayName,formattedAddress,location,rating,userRatingCount,priceLevel,types,businessStatus',
-                  },
+            const textSearchResp = await fetch(
+              'https://places.googleapis.com/v1/places:searchText',
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Goog-Api-Key': GOOGLE_KEY,
+                  'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.businessStatus',
                 },
-              );
-              if (!newDetailsResp.ok) continue;
-              const nd = await newDetailsResp.json();
-              resolvedDetails = {
-                name:               nd.displayName?.text    || '',
-                formatted_address:  nd.formattedAddress     || '',
-                geometry:           { location: { lat: nd.location?.latitude, lng: nd.location?.longitude } },
-                rating:             nd.rating               ?? null,
-                user_ratings_total: nd.userRatingCount      ?? null,
-                price_level:        nd.priceLevel           ?? null,
-                types:              nd.types                || [],
-                business_status:    nd.businessStatus       || null,
-              };
-            }
+                body: JSON.stringify({
+                  textQuery: `${venueName} ${location_name}`,
+                  locationBias: {
+                    circle: {
+                      center: { latitude: lat, longitude: lon },
+                      radius: 1000.0,
+                    },
+                  },
+                  maxResultCount: 1,
+                }),
+              },
+            );
 
-            if (!hasFoodDrinkType(resolvedDetails.types || [])) continue;
+            if (!textSearchResp.ok) continue;
+            const textSearchData = await textSearchResp.json();
+            const place = textSearchData.places?.[0];
+            if (!place) continue;
 
-            const vLat = resolvedDetails.geometry?.location?.lat;
-            const vLon = resolvedDetails.geometry?.location?.lng;
+            const cleanId = place.id || '';
+            if (!cleanId) continue;
+            if (existingPlaceIds.has(cleanId)) continue;
+            if (!hasFoodDrinkType(place.types || [])) continue;
+
+            const vLat = place.location?.latitude;
+            const vLon = place.location?.longitude;
             if (!vLat || !vLon) continue;
 
             const sgDist = calculateDistance(lat, lon, vLat, vLon);
             if (sgDist > admission.maxRadius) continue;
 
-            const sgPLRaw = resolvedDetails.price_level;
+            const sgPLRaw = place.priceLevel;
             let sgPLInt: number | null = null;
             if (sgPLRaw != null) {
               if (typeof sgPLRaw === 'number') {
@@ -1302,39 +1299,39 @@ async function handleSearch(params: {
 
             await sbGround.from('venues').upsert([{
               google_place_id: cleanId,
-              name:            resolvedDetails.name || item.title || '',
+              name:            place.displayName?.text || venueName,
               lat:             vLat,
               lng:             vLon,
-              rating:          resolvedDetails.rating,
-              review_count:    resolvedDetails.user_ratings_total,
+              rating:          place.rating ?? null,
+              review_count:    place.userRatingCount ?? null,
               price_level:     sgPLInt,
-              venue_types:     resolvedDetails.types || [],
-              business_status: null,
-              address:         resolvedDetails.formatted_address || '',
+              venue_types:     place.types || [],
+              business_status: place.businessStatus || null,
+              address:         place.formattedAddress || '',
               enriched:        false,
               is_chain:        false,
             }], { onConflict: 'google_place_id', ignoreDuplicates: true });
 
             filteredVenues.push({
-              name:               resolvedDetails.name || item.title || '',
-              address:            resolvedDetails.formatted_address || '',
+              name:               place.displayName?.text || venueName,
+              address:            place.formattedAddress || '',
               lat:                vLat,
               lon:                vLon,
               distance_km:        sgDist,
-              rating:             resolvedDetails.rating,
-              review_count:       resolvedDetails.user_ratings_total,
+              rating:             place.rating ?? null,
+              review_count:       place.userRatingCount ?? null,
               price_level:        sgMappedPL,
               place_id:           `places/${cleanId}`,
-              category:           (resolvedDetails.types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
-              cuisine_type:       (resolvedDetails.types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
-              isRelaxedAdmission: (resolvedDetails.rating || 0) < SCORING.RATING_FLOOR || (resolvedDetails.user_ratings_total || 0) < SCORING.REVIEW_FLOOR,
+              category:           (place.types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+              cuisine_type:       (place.types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+              isRelaxedAdmission: (place.rating || 0) < SCORING.RATING_FLOOR || (place.userRatingCount || 0) < SCORING.REVIEW_FLOOR,
               unknownPrice:       false,
-              _rawTypes:          resolvedDetails.types || [],
+              _rawTypes:          place.types || [],
               _photoUrls:         [],
             });
             existingPlaceIds.add(cleanId);
             groundApiCalls++;
-            console.log(`✅ Grounding cross-ref: "${resolvedDetails.name || item.title}" added via Places API`);
+            console.log(`✅ Grounding cross-ref: "${place.displayName?.text || venueName}" added via Text Search`);
           }
         }
       }
