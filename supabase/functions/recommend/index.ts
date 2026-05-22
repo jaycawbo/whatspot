@@ -1263,7 +1263,7 @@ async function handleSearch(params: {
   }
 
   // ─── Mechanism 2: Maps Grounding ───
-  if (!isDiscoveryMode && GEMINI_API_KEY && sessionGapFills < 10) {
+  if (!isDiscoveryMode && !servedFromSupabase && GEMINI_API_KEY && sessionGapFills < 10) {
     try {
       const groundingResp = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
@@ -1402,6 +1402,7 @@ async function handleSearch(params: {
               is_chain:        false,
             }], { onConflict: 'google_place_id', ignoreDuplicates: true });
 
+            if (!hasFoodDrinkType(resolvedDetails.types || [])) continue;
             const m2Relaxed = (resolvedDetails.rating || 0) < SCORING.RATING_FLOOR || (resolvedDetails.user_ratings_total || 0) < SCORING.REVIEW_FLOOR;
             filteredVenues.push({
               name:               resolvedDetails.name || item.title || '',
