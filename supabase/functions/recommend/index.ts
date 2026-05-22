@@ -1608,7 +1608,7 @@ async function handleSearch(params: {
 
   const comprehensiveResult = await safe('comprehensive-llm', () => callLLM(
     'gemini-2.5-flash',
-    `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues honestly and only include genuinely suitable matches. Venue types reflect what the place actually serves — use them as the primary relevance signal. A venue is NOT relevant if its types don't match the query intent even if keywords coincide in the name.`,
+    `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues honestly and only include genuinely suitable matches. Venue types reflect what the place actually serves — use them as the primary relevance signal. A venue is NOT relevant if its types don't match the query intent even if keywords coincide in the name. If a venue offers the queried item only incidentally alongside a different primary activity (for example, a board game cafe where coffee is secondary, or a sports complex that sells food), assign confidence below 0.5.`,
     `The user searched for "${search_term}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.5. Order by confidence descending. Maximum 5 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
     [
       {
@@ -1769,6 +1769,178 @@ async function handleSearch(params: {
   };
 }
 
+// ─── Per-tab Gemini grounding for unseeded cities ────────────────────────────
+
+async function getGroundedVenuesForTab(params: {
+  tab: string;
+  lat: number;
+  lon: number;
+  location_name: string;
+  GOOGLE_KEY: string;
+  sb: any;
+  exclude_ids: string[];
+  maxRadius: number;
+}): Promise<any[]> {
+  const { tab, lat, lon, location_name, GOOGLE_KEY, sb, exclude_ids, maxRadius } = params;
+
+  const TAB_PROMPTS: Record<string, string> = {
+    walkin:   `Best bars, restaurants and cafes in ${location_name} open now with walk-in seating`,
+    popular:  `Most popular and highly rated restaurants and bars in ${location_name}`,
+    new:      `Newest restaurant and bar openings in ${location_name} in the last 12 months`,
+    trending: `Trending restaurants and bars getting buzz in ${location_name} right now`,
+  };
+  const prompt = TAB_PROMPTS[tab] ?? `Best restaurants bars and cafes in ${location_name}`;
+
+  const groundingResp = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ googleSearch: {} }],
+        toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+      }),
+    },
+  );
+
+  if (!groundingResp.ok) {
+    console.warn(`[getGroundedVenuesForTab] Gemini grounding failed: ${groundingResp.status}`);
+    return [];
+  }
+
+  const groundingData = await groundingResp.json();
+  const chunks: any[] = groundingData.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  console.log(`🗺️ Grounded discovery (${tab}): ${chunks.length} chunks`);
+
+  const extractedIds: Array<{ cid?: string; placeId?: string; title: string }> = [];
+  for (const chunk of chunks) {
+    const uri: string   = chunk.web?.uri   || '';
+    const title: string = chunk.web?.title || '';
+    const cidMatch   = uri.match(/[?&]cid=(\d+)/);
+    const placeMatch = uri.match(/place_id=(ChIJ[^&]+)/);
+    if (cidMatch)   { extractedIds.push({ cid: cidMatch[1], title }); continue; }
+    if (placeMatch) { extractedIds.push({ placeId: placeMatch[1], title }); }
+  }
+
+  if (extractedIds.length === 0) return [];
+
+  const { checkAndLog } = await import('../_shared/apiCallLog.ts');
+  const excludeSet = new Set(exclude_ids.map((id: string) => id.replace(/^places\//, '')));
+  const PLMap: Record<string, number> = {
+    PRICE_LEVEL_FREE: 1, PRICE_LEVEL_INEXPENSIVE: 1,
+    PRICE_LEVEL_MODERATE: 2, PRICE_LEVEL_EXPENSIVE: 3, PRICE_LEVEL_VERY_EXPENSIVE: 4,
+  };
+  const PLStrs = ['$', '$', '$$', '$$$', '$$$$'];
+  const results: any[] = [];
+
+  for (const item of extractedIds.slice(0, 10)) {
+    const guardKey = item.cid ? `gdisc_cid_${item.cid}` : `gdisc_${item.placeId}`;
+    const allowed = await checkAndLog(sb, 'grounded_discovery', guardKey);
+    if (!allowed) continue;
+
+    let cleanId: string | null = null;
+    let resolvedDetails: any = null;
+
+    if (item.cid) {
+      const legacyResp = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?cid=${item.cid}&fields=place_id,name,formatted_address,geometry,rating,user_ratings_total,price_level,types,business_status&key=${GOOGLE_KEY}`,
+      );
+      if (!legacyResp.ok) continue;
+      const legacyData = await legacyResp.json();
+      if (!legacyData.result?.place_id) continue;
+      cleanId = legacyData.result.place_id.replace(/^places\//, '');
+      resolvedDetails = legacyData.result;
+    } else if (item.placeId) {
+      cleanId = item.placeId.replace(/^places\//, '');
+    }
+
+    if (!cleanId || excludeSet.has(cleanId)) continue;
+
+    const { data: existing } = await sb.from('venues').select('google_place_id').eq('google_place_id', cleanId).maybeSingle();
+    if (existing) continue;
+
+    if (!resolvedDetails) {
+      const newDetailsResp = await fetch(
+        `https://places.googleapis.com/v1/places/${cleanId}`,
+        {
+          headers: {
+            'X-Goog-Api-Key': GOOGLE_KEY,
+            'X-Goog-FieldMask': 'displayName,formattedAddress,location,rating,userRatingCount,priceLevel,types,businessStatus',
+          },
+        },
+      );
+      if (!newDetailsResp.ok) continue;
+      const nd = await newDetailsResp.json();
+      resolvedDetails = {
+        name:               nd.displayName?.text    || '',
+        formatted_address:  nd.formattedAddress     || '',
+        geometry:           { location: { lat: nd.location?.latitude, lng: nd.location?.longitude } },
+        rating:             nd.rating               ?? null,
+        user_ratings_total: nd.userRatingCount      ?? null,
+        price_level:        nd.priceLevel           ?? null,
+        types:              nd.types                || [],
+        business_status:    nd.businessStatus       || null,
+      };
+    }
+
+    const vLat = resolvedDetails.geometry?.location?.lat;
+    const vLon = resolvedDetails.geometry?.location?.lng;
+    if (!vLat || !vLon) continue;
+
+    const dist = calculateDistance(lat, lon, vLat, vLon);
+    if (dist > maxRadius) continue;
+
+    if (!hasFoodDrinkType(resolvedDetails.types || [])) continue;
+
+    const plRaw = resolvedDetails.price_level;
+    let plInt: number | null = null;
+    if (plRaw != null) {
+      plInt = typeof plRaw === 'number'
+        ? (plRaw === 0 ? 1 : Math.min(plRaw, 4))
+        : (PLMap[plRaw] ?? null);
+    }
+    const mappedPL = plInt != null ? (PLStrs[plInt] || null) : null;
+
+    await sb.from('venues').upsert([{
+      google_place_id: cleanId,
+      name:            resolvedDetails.name || item.title || '',
+      lat:             vLat,
+      lng:             vLon,
+      rating:          resolvedDetails.rating,
+      review_count:    resolvedDetails.user_ratings_total,
+      price_level:     plInt,
+      venue_types:     resolvedDetails.types || [],
+      business_status: null,
+      address:         resolvedDetails.formatted_address || '',
+      enriched:        false,
+      is_chain:        false,
+    }], { onConflict: 'google_place_id', ignoreDuplicates: true });
+
+    results.push({
+      name:               resolvedDetails.name || item.title || '',
+      address:            resolvedDetails.formatted_address || '',
+      lat:                vLat,
+      lon:                vLon,
+      distance_km:        dist,
+      rating:             resolvedDetails.rating,
+      review_count:       resolvedDetails.user_ratings_total,
+      price_level:        mappedPL,
+      place_id:           `places/${cleanId}`,
+      category:           (resolvedDetails.types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+      cuisine_type:       (resolvedDetails.types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+      isRelaxedAdmission: false,
+      unknownPrice:       false,
+      _rawTypes:          resolvedDetails.types || [],
+      _photoUrls:         [],
+    });
+
+    console.log(`✅ Grounded discovery (${tab}): "${resolvedDetails.name || item.title}" added`);
+  }
+
+  return results;
+}
+
 // ─── Main handler ───
 
 Deno.serve(async (req) => {
@@ -1781,6 +1953,7 @@ Deno.serve(async (req) => {
       mode,
       category,
       query,
+      tab = 'discovery',
       radius_km,
       lat: originalLat,
       lon: originalLon,
@@ -1926,7 +2099,7 @@ Deno.serve(async (req) => {
         console.warn('⚠️ Google Places API key not configured — no fallback available, returning empty results');
         throw new Error('GOOGLE_PLACES_API_KEY not configured');
       }
-      // Spend guard — tracks all Google discovery fallback calls against monthly cap
+      // Spend guard — location-level circuit breaker for all discovery fallback paths
       const { checkAndLog } = await import('../_shared/apiCallLog.ts');
       const sbGuard = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
       const locationKey = `disc_${Math.round(lat * 10) / 10}_${Math.round(lon * 10) / 10}`;
@@ -1944,27 +2117,44 @@ Deno.serve(async (req) => {
         );
       }
 
-      const googleVenues = await getGoogleVenues({
-        GOOGLE_KEY, refinedSearchTerm, location_name, lat, lon, admission,
-        open_now, price_levels, cuisine_types, isDiscoveryMode: true,
-        isOnStreetSearch: false, detectedStreetName: '', detectedStreetBase: '',
-        exclude_ids, relaxation_level,
-      });
-
-      if (googleVenues === null) {
-        return new Response(
-          JSON.stringify({
-            results: [], suggested_chips: [], search_summary: null,
-            pagination: { has_more: false },
-            relaxation_applied: relaxation_level > 0, relaxation_level,
-            gated: false, nearby_overflow: [], reserve_venues: [], staged_venues: [],
-            was_google_fallback: false,
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
+      let groundedVenues: any[] | null = null;
+      if (GEMINI_API_KEY) {
+        try {
+          groundedVenues = await getGroundedVenuesForTab({
+            tab, lat, lon, location_name, GOOGLE_KEY,
+            sb: sbGuard, exclude_ids, maxRadius: admission.maxRadius,
+          });
+        } catch (e: any) {
+          console.warn('[getGroundedVenuesForTab] failed silently:', e.message);
+          groundedVenues = null;
+        }
       }
-      filteredVenues = googleVenues;
-      wasGoogleFallback = true;
+
+      if (!groundedVenues || groundedVenues.length === 0) {
+        const googleVenues = await getGoogleVenues({
+          GOOGLE_KEY, refinedSearchTerm, location_name, lat, lon, admission,
+          open_now, price_levels, cuisine_types, isDiscoveryMode: true,
+          isOnStreetSearch: false, detectedStreetName: '', detectedStreetBase: '',
+          exclude_ids, relaxation_level,
+        });
+        if (googleVenues === null) {
+          return new Response(
+            JSON.stringify({
+              results: [], suggested_chips: [], search_summary: null,
+              pagination: { has_more: false },
+              relaxation_applied: relaxation_level > 0, relaxation_level,
+              gated: false, nearby_overflow: [], reserve_venues: [], staged_venues: [],
+              was_google_fallback: false,
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+        filteredVenues = googleVenues;
+        wasGoogleFallback = true;
+      } else {
+        filteredVenues = groundedVenues;
+        wasGoogleFallback = false;
+      }
     }
     console.log(`✅ ${filteredVenues.length} passed filters`);
 

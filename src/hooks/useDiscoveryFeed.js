@@ -688,6 +688,7 @@ export function useDiscoveryFeed() {
       const recommendParams = {
         mode: effectiveMode,
         query: query || undefined,
+        tab: state.feedTab || 'discovery',
         lat: anchorPointRef.current?.lat ?? state.userLocation?.lat,
         lon: anchorPointRef.current?.lon ?? state.userLocation?.lon,
         location_name: state.locationName,
@@ -938,6 +939,7 @@ export function useDiscoveryFeed() {
     try {
       const res = await recommend({
         mode: 'discovery',
+        tab: state.feedTab || 'discovery',
         lat: anchor.lat,
         lon: anchor.lon,
         location_name: state.locationName,
