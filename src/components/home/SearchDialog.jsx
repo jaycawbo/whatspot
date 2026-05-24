@@ -45,7 +45,7 @@ export default function SearchDialog({
   const [localQuery, setLocalQuery] = useState(query);
 
   const { suggestions, onSearchFocus, selectSuggestion } = useVenueAutocomplete(
-    query,
+    localQuery,
     userCoordinates
   );
 
