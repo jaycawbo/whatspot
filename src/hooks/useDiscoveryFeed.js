@@ -812,6 +812,13 @@ export function useDiscoveryFeed() {
         const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
         if (id) allServedIdsRef.current.add(id);
       });
+      // Also seed from interacted venues so they're excluded from post-remount prefetch API calls.
+      // addClientSkippedId(_clientSkippedIds) already handles down-swipes; this covers
+      // right/left/rated swipes which write to whatspot_skipped_venues but not _clientSkippedIds.
+      try {
+        const raw = sessionStorage.getItem('whatspot_skipped_venues');
+        if (raw) JSON.parse(raw).forEach(id => allServedIdsRef.current.add(id));
+      } catch {}
       // Write whatspot_deck_venue_ids so DiscoveryDeck can restore position on back-nav
       const venueIdStr = seedVenues
         .map(v => (v.place_id || v.google_place_id || '').replace(/^places\//, ''))
