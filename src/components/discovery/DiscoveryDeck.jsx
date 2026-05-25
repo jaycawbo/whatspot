@@ -291,7 +291,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   }, [logRatingSheetOpened]);
 
   // Handle interaction + animate out
-  const performAction = useCallback(async (direction, venue) => {
+  // exitDuration: drag gestures pass a velocity-derived value; button presses use the default 0.2s
+  const performAction = useCallback(async (direction, venue, exitDuration = 0.2) => {
     if (isAnimatingRef.current) return;
     isAnimatingRef.current = true;
     x.stop();
@@ -304,6 +305,18 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       return;
     }
 
+    // Start exit animation immediately so the card moves while DB work runs concurrently.
+    // This eliminates the pause caused by awaiting handleInterested/handleNotInterested
+    // before beginning the visual transition.
+    setExitDirection(direction);
+    const exitX = direction === 'right' ? 500 : direction === 'left' ? -500 : 0;
+    const exitY = direction === 'down' ? 500 : 0;
+    const exitAnim = Promise.all([
+      animate(x, exitX, { duration: exitDuration, ease: 'easeOut' }),
+      animate(y, exitY, { duration: exitDuration, ease: 'easeOut' }),
+      animate(opacity, 0, { duration: exitDuration, ease: 'easeOut' }),
+    ]);
+
     let success = true;
     if (direction === 'right') {
       success = await handleInterested(venue);
@@ -315,27 +328,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       addClientSkippedId(skipId);
     }
 
-    if (success === false) {
-      const exitX = direction === 'right' ? 500 : -500;
-      setExitDirection(direction);
-      await Promise.all([
-        animate(x, exitX, { duration: 0.2 }),
-        animate(opacity, 0, { duration: 0.2 }),
-      ]);
-      advanceCard();
-      setAuthModalOpen(true);
-      return;
-    }
-
-    setExitDirection(direction);
-    const exitX = direction === 'right' ? 500 : direction === 'left' ? -500 : 0;
-    const exitY = direction === 'down' ? 500 : 0;
-    await Promise.all([
-      animate(x, exitX, { duration: 0.2 }),
-      animate(y, exitY, { duration: 0.2 }),
-      animate(opacity, 0, { duration: 0.2 }),
-    ]);
+    await exitAnim;
     advanceCard();
+    if (success === false) setAuthModalOpen(true);
   }, [handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, opacity, advanceCard]);
 
   const handleRate = useCallback(async (rating, notes) => {
@@ -382,14 +377,21 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
   const handleDragEnd = useCallback((event, info) => {
     if (!currentVenue || isAnimatingRef.current) { setIsDragging(false); return; }
-    const { offset } = info;
+    const { offset, velocity } = info;
 
     if (offset.x > SWIPE_THRESHOLD) {
-      performAction('right', currentVenue);
+      // Stop immediately so Framer Motion's drag-release behaviour can't snap toward rest
+      x.stop(); y.stop(); opacity.stop();
+      const dur = Math.min(0.25, Math.max(0.10, 300 / Math.abs(velocity.x || 500)));
+      performAction('right', currentVenue, dur);
     } else if (offset.x < -SWIPE_THRESHOLD) {
-      performAction('left', currentVenue);
+      x.stop(); y.stop(); opacity.stop();
+      const dur = Math.min(0.25, Math.max(0.10, 300 / Math.abs(velocity.x || 500)));
+      performAction('left', currentVenue, dur);
     } else if (offset.y > SWIPE_DOWN_THRESHOLD) {
-      performAction('down', currentVenue);
+      x.stop(); y.stop(); opacity.stop();
+      const dur = Math.min(0.25, Math.max(0.10, 300 / Math.abs(velocity.y || 500)));
+      performAction('down', currentVenue, dur);
     } else if (offset.y < -SWIPE_UP_THRESHOLD) {
       performAction('up', currentVenue);
     } else {
@@ -397,7 +399,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       animate(x, 0, { type: 'spring', stiffness: 500, damping: 30 });
       animate(y, 0, { type: 'spring', stiffness: 500, damping: 30 });
     }
-  }, [currentVenue, performAction, x, y]);
+  }, [currentVenue, performAction, x, y, opacity]);
 
   const handleCardBodyTap = useCallback((venue) => {
     if (ratingSheetOpenRef.current) return;
@@ -541,6 +543,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
             style={{ x, y, opacity }}
             drag={!ratingSheetOpen}
             dragMomentum={false}
+            dragElastic={0.05}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             animate={
