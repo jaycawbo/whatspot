@@ -121,7 +121,13 @@ export function useSpots() {
         );
       if (intError) throw intError;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: SPOTS_KEY }),
+    onSuccess: (_, { venue }) => {
+      queryClient.invalidateQueries({ queryKey: SPOTS_KEY });
+      const placeId = venue.place_id?.replace(/^places\//, '') || venue.google_place_id;
+      if (placeId) {
+        try { window.dispatchEvent(new CustomEvent('whatspot:spot-saved', { detail: { placeId } })); } catch {}
+      }
+    },
   });
 
   // Remove a venue from Spots
@@ -156,7 +162,12 @@ export function useSpots() {
         .eq('venue_id', placeId);
       if (error) throw error;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: SPOTS_KEY }),
+    onSuccess: (_, { placeId }) => {
+      queryClient.invalidateQueries({ queryKey: SPOTS_KEY });
+      if (placeId) {
+        try { window.dispatchEvent(new CustomEvent('whatspot:spot-saved', { detail: { placeId } })); } catch {}
+      }
+    },
   });
 
   // Move to list — bypasses Favourites guard for explicit user moves
