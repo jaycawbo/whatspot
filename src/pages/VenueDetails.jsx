@@ -15,6 +15,25 @@ import { createPillMarker } from '@/components/map/createPillMarker';
 import { useSpots } from '@/hooks/useSpots';
 import 'leaflet/dist/leaflet.css';
 
+const GOOGLE_PRICE_LEVEL_MAP = {
+  PRICE_LEVEL_FREE: null,
+  PRICE_LEVEL_INEXPENSIVE: '$',
+  PRICE_LEVEL_MODERATE: '$$',
+  PRICE_LEVEL_EXPENSIVE: '$$$',
+  PRICE_LEVEL_VERY_EXPENSIVE: '$$$$',
+};
+
+function formatPrice(level) {
+  if (!level) return null;
+  if (typeof level === 'string' && level.startsWith('$')) return level;
+  if (typeof level === 'string' && level.startsWith('PRICE_LEVEL_')) {
+    return GOOGLE_PRICE_LEVEL_MAP[level] || null;
+  }
+  const n = parseInt(level, 10);
+  if (!n || n < 1 || n > 4) return null;
+  return '$'.repeat(n);
+}
+
 export default function VenueDetails() {
   const { placeId } = useParams();
   const { spots } = useSpots();
@@ -219,7 +238,7 @@ export default function VenueDetails() {
                   {reviewCount && <span className="text-muted-foreground font-normal">({reviewCount})</span>}
                 </span>
               )}
-              {priceLevel && <span className="text-sm text-muted-foreground">{priceLevel}</span>}
+              {formatPrice(priceLevel) && <span className="text-sm text-muted-foreground">{formatPrice(priceLevel)}</span>}
               {cuisineType && (
                 <Badge variant="secondary" className="text-xs">{cuisineType}</Badge>
               )}
