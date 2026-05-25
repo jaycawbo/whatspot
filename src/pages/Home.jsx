@@ -301,12 +301,14 @@ export default function Home() {
   // Intercept device back button / gesture while search is active.
   // Pushes a sentinel history entry so the first popstate stays on this page
   // and clears search instead of navigating away.
+  // Skip the push when remounting on an existing sentinel entry (e.g. after back-nav from a venue page)
+  // — the sentinel is already in place, so pushing again would require an extra back press to escape.
   useEffect(() => {
     if (!state.query) return;
-    window.history.pushState({ wsSearchActive: true }, '');
+    if (!window.history.state?.wsSearchActive) {
+      window.history.pushState({ wsSearchActive: true }, '');
+    }
     const onPopstate = (event) => {
-      // If we're landing on the sentinel entry (returning from a venue page),
-      // stay in search state — don't clear. The sentinel already consumed the pop.
       if (event.state?.wsSearchActive) return;
       handleClearSearch();
     };
