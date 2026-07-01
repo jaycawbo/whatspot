@@ -301,10 +301,12 @@ export default function Home() {
   // Intercept device back button / gesture while search is active.
   // Pushes a sentinel history entry so the first popstate stays on this page
   // and clears search instead of navigating away.
-  // Skip the push when remounting on an existing sentinel entry (e.g. after back-nav from a venue page)
-  // — the sentinel is already in place, so pushing again would require an extra back press to escape.
+  // Skip entirely when not on '/' — Home stays mounted under /venue/:placeId,
+  // and running here would push a sentinel on top of the venue URL, corrupting the stack.
+  // Skip the push when a sentinel is already in place (e.g. after back-nav from a venue page).
   useEffect(() => {
     if (!state.query) return;
+    if (window.location.pathname !== '/') return;
     if (!window.history.state?.wsSearchActive) {
       window.history.pushState({ wsSearchActive: true }, '');
     }
