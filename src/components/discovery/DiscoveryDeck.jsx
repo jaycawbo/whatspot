@@ -379,18 +379,27 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     if (!currentVenue || isAnimatingRef.current) { setIsDragging(false); return; }
     const { offset, velocity } = info;
 
+    // Duration is remaining-distance / release-velocity, so the exit continues at
+    // roughly the speed the card was already moving instead of a flat velocity-only
+    // formula, which collapsed to the floor (and looked like a snap) on fast flicks.
+    const exitDuration = (current, target, releaseVelocity) => {
+      const remaining = Math.abs(target - current);
+      const speed = Math.max(Math.abs(releaseVelocity), 400);
+      return Math.min(0.25, Math.max(0.12, remaining / speed));
+    };
+
     if (offset.x > SWIPE_THRESHOLD) {
       // Stop immediately so Framer Motion's drag-release behaviour can't snap toward rest
       x.stop(); y.stop(); opacity.stop();
-      const dur = Math.min(0.25, Math.max(0.10, 300 / Math.abs(velocity.x || 500)));
+      const dur = exitDuration(x.get(), 500, velocity.x);
       performAction('right', currentVenue, dur);
     } else if (offset.x < -SWIPE_THRESHOLD) {
       x.stop(); y.stop(); opacity.stop();
-      const dur = Math.min(0.25, Math.max(0.10, 300 / Math.abs(velocity.x || 500)));
+      const dur = exitDuration(x.get(), -500, velocity.x);
       performAction('left', currentVenue, dur);
     } else if (offset.y > SWIPE_DOWN_THRESHOLD) {
       x.stop(); y.stop(); opacity.stop();
-      const dur = Math.min(0.25, Math.max(0.10, 300 / Math.abs(velocity.y || 500)));
+      const dur = exitDuration(y.get(), 500, velocity.y);
       performAction('down', currentVenue, dur);
     } else if (offset.y < -SWIPE_UP_THRESHOLD) {
       performAction('up', currentVenue);
