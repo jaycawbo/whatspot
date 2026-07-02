@@ -121,7 +121,7 @@ export async function runConversationalSearch({
           session_context: [],
         },
       });
-      const fallbackVenues = (data?.results ?? []).filter(v => (v.rating ?? 0) >= 4.0);
+      const fallbackVenues = (data?.results ?? []).filter(v => (v.rating ?? 0) >= 3.8);
       // Cuisine is already embedded in the placesQuery sent to recommend, so we don't
       // re-filter by type here — the edge function's venue types don't reliably include
       // the specific cuisine type string. Only apply the explicit user price filter.
