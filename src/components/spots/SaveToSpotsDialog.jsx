@@ -49,6 +49,7 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
 
   const [selectedLabels, setSelectedLabels] = useState([]);
   const [customInput, setCustomInput] = useState('');
+  const [previewImgReady, setPreviewImgReady] = useState(false);
 
   const customTypedLabels = selectedLabels.filter(
     (l) => !ALL_PRESET_LABELS.includes(l)
@@ -58,6 +59,7 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
     if (open) {
       setSelectedLabels(currentLabels);
       setCustomInput('');
+      setPreviewImgReady(false);
     }
   }, [open, currentLabels.join(',')]);
 
@@ -133,12 +135,22 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
         <div className="overflow-y-auto flex-1 min-h-0 space-y-4 py-2">
           {/* Venue preview */}
           <div className="flex gap-3 items-center rounded-lg border border-border bg-muted/30 p-3">
-            {venue.image_urls?.[0] && (
-              <img
-                src={venue.image_urls[0]}
-                alt={venue.name}
-                className="h-12 w-12 rounded-md object-cover shrink-0"
-              />
+            {(venue.image_urls?.[0] || venue.photo_urls?.[0]) && (
+              <div className="relative shrink-0">
+                <img
+                  src={venue.image_urls?.[0] || venue.photo_urls?.[0]}
+                  alt={venue.name}
+                  className="h-12 w-12 rounded-md object-cover"
+                  onLoad={() => setPreviewImgReady(true)}
+                  onError={() => setPreviewImgReady(true)}
+                />
+                {!previewImgReady && (
+                  <>
+                    <div className="absolute inset-0 rounded-md animate-pulse bg-muted-foreground/25" />
+                    <div className="absolute inset-0 rounded-md shimmer-sweep" />
+                  </>
+                )}
+              </div>
             )}
             <div className="min-w-0">
               <p className="font-medium text-sm text-foreground truncate">{venue.name}</p>

@@ -50,14 +50,19 @@ export default function VenueDetails() {
   const [walkinReported, setWalkinReported] = useState(false);
 
 
-  // Images: from nav state (image_urls) or single photo_url, or fetched
+  // Images: from nav state (image_urls, photo_urls) or single photo_url, or fetched
   const images = venue.image_urls?.length
     ? venue.image_urls
-    : venue.photo_url
-      ? [venue.photo_url]
-      : [];
+    : venue.photo_urls?.length
+      ? venue.photo_urls
+      : venue.photo_url
+        ? [venue.photo_url]
+        : [];
 
   const [photoUrls, setPhotoUrls] = useState(images);
+  // True only when we start with zero known photos and are waiting on the background fetch —
+  // keeps the carousel shimmering through that gap instead of sitting static and unanimated.
+  const [photosLoading, setPhotosLoading] = useState(images.length === 0);
 
   // Coordinates
   const lat = venue.lat || venue.latitude;
@@ -103,6 +108,8 @@ export default function VenueDetails() {
         }
       } catch (err) {
         console.error('Failed to fetch photos:', err);
+      } finally {
+        setPhotosLoading(false);
       }
     };
 
@@ -204,7 +211,7 @@ export default function VenueDetails() {
       </div>
 
       {/* Image carousel */}
-      <VenueImageCarousel images={photoUrls} />
+      <VenueImageCarousel images={photoUrls} forceLoading={photosLoading} />
 
       {/* Core info */}
       <div className="px-4 pt-4 space-y-3">

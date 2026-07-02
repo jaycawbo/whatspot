@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapPin, Check, MoreHorizontal, Trash2, ArrowRightLeft, Tag, FileText } from 'lucide-react';
 
@@ -73,8 +73,14 @@ export default function SpotCard({
     navigate(`/venue/${placeId}`, { state: { venue: spot } });
   };
 
-  const imgUrl = spot.photo_url || '/placeholder.svg';
+  const imgUrl = spot.photo_urls?.[0] || spot.photo_url || '/placeholder.svg';
   const RatingIcon = spot.rating ? RATING_ICONS[spot.rating] : null;
+  const [imgReady, setImgReady] = useState(false);
+
+  // Re-arm the shimmer whenever the src changes
+  useEffect(() => {
+    setImgReady(false);
+  }, [imgUrl]);
 
   return (
     <div
@@ -104,7 +110,15 @@ export default function SpotCard({
           alt={spot.name}
           className="h-20 w-20 rounded-lg object-cover bg-muted"
           loading="lazy"
+          onLoad={() => setImgReady(true)}
+          onError={() => setImgReady(true)}
         />
+        {!imgReady && (
+          <>
+            <div className="absolute inset-0 rounded-lg animate-pulse bg-muted-foreground/25" />
+            <div className="absolute inset-0 rounded-lg shimmer-sweep" />
+          </>
+        )}
       </div>
 
       {/* Content */}

@@ -273,7 +273,10 @@ export default function DiscoveryCard({
             {/* Loading shimmer — sits above photos until the first real photo is ready.
                 Removes itself as soon as the browser fires onLoad for photos[0]. */}
             {!firstPhotoReady && (
-              <div className="absolute inset-0 z-[1] animate-pulse bg-muted" />
+              <>
+                <div className="absolute inset-0 z-[1] animate-pulse bg-muted-foreground/25" />
+                <div className="absolute inset-0 z-[1] shimmer-sweep" />
+              </>
             )}
 
             {/* Spots list membership badge */}

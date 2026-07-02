@@ -11,6 +11,7 @@ function SpotRow({ item, listId, onRemove }) {
   const navigate = useNavigate();
   const { openRequestModal } = useBronco();
   const venue = item.venue;
+  const [imgReady, setImgReady] = useState(false);
 
   if (!venue) return null;
 
@@ -18,6 +19,7 @@ function SpotRow({ item, listId, onRemove }) {
   const avgResponseMin = venue.avg_response_sec != null
     ? Math.max(1, Math.round(venue.avg_response_sec / 60))
     : null;
+  const photoUrl = venue.photo_urls?.[0];
 
   return (
     <div className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card">
@@ -25,8 +27,22 @@ function SpotRow({ item, listId, onRemove }) {
         className="relative shrink-0 cursor-pointer"
         onClick={() => placeId && navigate(`/venue/${placeId}`, { state: { venue } })}
       >
-        {venue.photo_url ? (
-          <img src={venue.photo_url} alt={venue.name} className="h-14 w-14 rounded-lg object-cover" />
+        {photoUrl ? (
+          <>
+            <img
+              src={photoUrl}
+              alt={venue.name}
+              className="h-14 w-14 rounded-lg object-cover"
+              onLoad={() => setImgReady(true)}
+              onError={() => setImgReady(true)}
+            />
+            {!imgReady && (
+              <>
+                <div className="absolute inset-0 rounded-lg animate-pulse bg-muted-foreground/25" />
+                <div className="absolute inset-0 rounded-lg shimmer-sweep" />
+              </>
+            )}
+          </>
         ) : (
           <div className="h-14 w-14 rounded-lg bg-muted" />
         )}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCollections } from '@/hooks/useCollections';
 import { useBronco } from '@/context/BroncoContext';
@@ -8,11 +8,13 @@ import { useBronco } from '@/context/BroncoContext';
 function CompactVenueCard({ venue }) {
   const navigate = useNavigate();
   const { openRequestModal } = useBronco();
+  const [imgReady, setImgReady] = useState(false);
 
   const placeId = (venue.google_place_id || '').replace(/^places\//, '');
   const avgResponseMin = venue.avg_response_sec != null
     ? Math.max(1, Math.round(venue.avg_response_sec / 60))
     : null;
+  const photoUrl = venue.photo_urls?.[0];
 
   const handleRequestWalkIn = (e) => {
     e.stopPropagation();
@@ -29,13 +31,23 @@ function CompactVenueCard({ venue }) {
       className="flex-shrink-0 w-40 rounded-xl border border-border bg-card overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
     >
       <div className="relative">
-        {venue.photo_url ? (
-          <img
-            src={venue.photo_url}
-            alt={venue.name}
-            className="h-28 w-full object-cover"
-            loading="lazy"
-          />
+        {photoUrl ? (
+          <>
+            <img
+              src={photoUrl}
+              alt={venue.name}
+              className="h-28 w-full object-cover"
+              loading="lazy"
+              onLoad={() => setImgReady(true)}
+              onError={() => setImgReady(true)}
+            />
+            {!imgReady && (
+              <>
+                <div className="absolute inset-0 animate-pulse bg-muted-foreground/25" />
+                <div className="absolute inset-0 shimmer-sweep" />
+              </>
+            )}
+          </>
         ) : (
           <div className="h-28 w-full bg-muted" />
         )}
