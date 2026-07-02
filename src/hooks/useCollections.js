@@ -32,7 +32,7 @@ export function useCollections() {
 
         const { data: venues } = await supabase
           .from('venues')
-          .select('id, name, photo_url, google_place_id, is_available, avg_response_sec, lat, lng')
+          .select('id, name, photo_urls, google_place_id, is_available, avg_response_sec, lat, lng')
           .in('id', allIds)
           .eq('is_available', true);
 

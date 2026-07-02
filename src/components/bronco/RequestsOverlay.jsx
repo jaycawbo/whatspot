@@ -85,6 +85,8 @@ function ActiveCard({ request, venue, distanceKm, onCancel }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [onOurWay, setOnOurWay] = useState(false);
+  const [imgReady, setImgReady] = useState(false);
+  const photoUrl = venue?.photo_urls?.[0];
 
   const countdownTarget = request.status === 'pending'
     ? request.expires_at
@@ -113,12 +115,22 @@ function ActiveCard({ request, venue, distanceKm, onCancel }) {
 
   return (
     <div className="flex gap-3 rounded-xl border border-border bg-card p-3">
-      {venue?.photo_url && (
-        <img
-          src={venue.photo_url}
-          alt={venue.name}
-          className="h-16 w-16 rounded-lg object-cover shrink-0"
-        />
+      {photoUrl && (
+        <div className="relative shrink-0">
+          <img
+            src={photoUrl}
+            alt={venue.name}
+            className="h-16 w-16 rounded-lg object-cover"
+            onLoad={() => setImgReady(true)}
+            onError={() => setImgReady(true)}
+          />
+          {!imgReady && (
+            <>
+              <div className="absolute inset-0 rounded-lg animate-pulse bg-muted-foreground/25" />
+              <div className="absolute inset-0 rounded-lg shimmer-sweep" />
+            </>
+          )}
+        </div>
       )}
       <div className="flex flex-col flex-1 min-w-0 gap-1">
         <div className="flex items-start justify-between gap-2">
@@ -196,6 +208,51 @@ function ActiveCard({ request, venue, distanceKm, onCancel }) {
   );
 }
 
+function ExpiredWaitlistRow({ request, venue, onJoin, onDismiss }) {
+  const [imgReady, setImgReady] = useState(false);
+  const photoUrl = venue?.photo_urls?.[0];
+
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 p-3 mb-1">
+      {photoUrl && (
+        <div className="relative shrink-0">
+          <img
+            src={photoUrl}
+            alt={venue?.name}
+            className="h-10 w-10 rounded-lg object-cover"
+            onLoad={() => setImgReady(true)}
+            onError={() => setImgReady(true)}
+          />
+          {!imgReady && (
+            <>
+              <div className="absolute inset-0 rounded-lg animate-pulse bg-muted-foreground/25" />
+              <div className="absolute inset-0 rounded-lg shimmer-sweep" />
+            </>
+          )}
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold">{venue?.name ?? 'Venue'}</p>
+        <p className="text-xs text-muted-foreground">Request expired — join their waitlist?</p>
+      </div>
+      <div className="flex gap-1.5 shrink-0">
+        <button
+          onClick={() => onJoin(request)}
+          className="rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-orange-600"
+        >
+          Join
+        </button>
+        <button
+          onClick={() => onDismiss(request.id)}
+          className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/80"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PastCard({ request, venue }) {
   const navigate = useNavigate();
   const placeId = venue?.google_place_id;
@@ -252,7 +309,7 @@ export default function RequestsOverlay() {
     if (!missing.length) return;
     const { data } = await supabase
       .from('venues')
-      .select('id, name, photo_url, google_place_id, lat, lng')
+      .select('id, name, photo_urls, google_place_id, lat, lng')
       .in('id', missing);
     if (data) {
       setVenuesMap((prev) => {
@@ -373,34 +430,15 @@ export default function RequestsOverlay() {
               )}
 
               {/* Recently-expired waitlist prompts */}
-              {recentlyExpiredRequests.map((r) => {
-                const venue = venuesMap[r.venue_id];
-                return (
-                  <div key={r.id} className="flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 p-3 mb-1">
-                    {venue?.photo_url && (
-                      <img src={venue.photo_url} alt={venue?.name} className="h-10 w-10 rounded-lg object-cover shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold">{venue?.name ?? 'Venue'}</p>
-                      <p className="text-xs text-muted-foreground">Request expired — join their waitlist?</p>
-                    </div>
-                    <div className="flex gap-1.5 shrink-0">
-                      <button
-                        onClick={() => handleJoinWaitlist(r)}
-                        className="rounded-full bg-orange-500 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-orange-600"
-                      >
-                        Join
-                      </button>
-                      <button
-                        onClick={() => dismissExpired(r.id)}
-                        className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/80"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+              {recentlyExpiredRequests.map((r) => (
+                <ExpiredWaitlistRow
+                  key={r.id}
+                  request={r}
+                  venue={venuesMap[r.venue_id]}
+                  onJoin={handleJoinWaitlist}
+                  onDismiss={dismissExpired}
+                />
+              ))}
 
               {!activeLoading && visibleActive.length === 0 && recentlyExpiredRequests.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-12">

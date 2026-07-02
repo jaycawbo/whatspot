@@ -109,3 +109,17 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+/* Centered radial highlight that breathes in place on a loading placeholder, layered on top of
+   the animate-pulse shade shift for a more distinct "shimmer" read than a flat pulse alone. */
+@keyframes shimmer-glow {
+  0%, 100% { opacity: 0.4; background-size: 30% 30%; }
+  50% { opacity: 1; background-size: 55% 55%; }
+}
+
+.shimmer-sweep {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.6), transparent 65%);
+  background-position: center;
+  background-repeat: no-repeat;
+  animation: shimmer-glow 2.2s ease-in-out infinite;
+}

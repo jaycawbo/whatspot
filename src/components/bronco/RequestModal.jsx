@@ -41,6 +41,7 @@ function RequestForm({ venue, onClose, onSuccess }) {
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
+  const [imgReady, setImgReady] = useState(false);
 
   const depositCents = venue?.deposit_amount_cents ?? 0;
   const requiresDeposit = depositCents > 0;
@@ -57,6 +58,7 @@ function RequestForm({ venue, onClose, onSuccess }) {
     setPartySize(2);
     setNote('');
     setPaymentError(null);
+    setImgReady(false);
   }, [venue?.id]);
 
   const handleSubmit = async () => {
@@ -110,12 +112,22 @@ function RequestForm({ venue, onClose, onSuccess }) {
     <>
       {venue && (
         <div className="flex items-center gap-3 mb-6 pb-5 border-b border-border">
-          {venue.image_urls?.[0] && (
-            <img
-              src={venue.image_urls[0]}
-              alt={venueName}
-              className="h-12 w-12 rounded-lg object-cover shrink-0"
-            />
+          {(venue.image_urls?.[0] || venue.photo_urls?.[0]) && (
+            <div className="relative shrink-0">
+              <img
+                src={venue.image_urls?.[0] || venue.photo_urls?.[0]}
+                alt={venueName}
+                className="h-12 w-12 rounded-lg object-cover"
+                onLoad={() => setImgReady(true)}
+                onError={() => setImgReady(true)}
+              />
+              {!imgReady && (
+                <>
+                  <div className="absolute inset-0 rounded-lg animate-pulse bg-muted-foreground/25" />
+                  <div className="absolute inset-0 rounded-lg shimmer-sweep" />
+                </>
+              )}
+            </div>
           )}
           <div className="min-w-0">
             <p className="font-semibold text-sm leading-tight truncate">{venueName}</p>

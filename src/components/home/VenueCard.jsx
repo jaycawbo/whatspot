@@ -35,6 +35,7 @@ export default function VenueCard({ venue, index, currentQuery }) {
   const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
   const beenHereRating = getBeenHereRating(placeId);
   const [livePhotoUrl, setLivePhotoUrl] = useState(null);
+  const [imgReady, setImgReady] = useState(false);
 
   useEffect(() => {
     const el = cardRef.current;
@@ -84,6 +85,11 @@ export default function VenueCard({ venue, index, currentQuery }) {
 
   const rawPhotoUrl = venue.image_urls?.[0] || venue._photoUrls?.[0] || venue.photo_urls?.[0] || null;
   const imgUrl = livePhotoUrl || rawPhotoUrl || '/placeholder.svg';
+
+  // Re-arm the shimmer whenever the src changes (placeholder -> live photo swap included)
+  useEffect(() => {
+    setImgReady(false);
+  }, [imgUrl]);
 
   // When no photo is available, call get-place-photos (cache-first — covers back-nav and
   // first-time fetch for search results). Capped at 10 calls per search to control API cost.
@@ -136,7 +142,15 @@ export default function VenueCard({ venue, index, currentQuery }) {
           alt={venue.name}
           className="h-24 w-24 rounded-lg object-cover bg-muted"
           loading="lazy"
+          onLoad={() => setImgReady(true)}
+          onError={() => setImgReady(true)}
         />
+        {!imgReady && (
+          <>
+            <div className="absolute inset-0 rounded-lg animate-pulse bg-muted-foreground/25" />
+            <div className="absolute inset-0 rounded-lg shimmer-sweep" />
+          </>
+        )}
         <div className="absolute top-1 right-1 flex flex-col gap-1">
           <BeenHereButton
             rating={beenHereRating}

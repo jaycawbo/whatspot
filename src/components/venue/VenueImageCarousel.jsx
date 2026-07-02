@@ -2,7 +2,7 @@ import React from 'react';
 import useEmblaCarousel from 'embla-carousel-react';
 import { cn } from '@/lib/utils';
 
-export default function VenueImageCarousel({ images = [] }) {
+export default function VenueImageCarousel({ images = [], forceLoading = false }) {
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true });
   const [selectedIndex, setSelectedIndex] = React.useState(0);
 
@@ -14,19 +14,29 @@ export default function VenueImageCarousel({ images = [] }) {
   }, [emblaApi]);
 
   const srcs = images.length > 0 ? images : ['/placeholder.svg'];
+  const [loadedSrcs, setLoadedSrcs] = React.useState(() => new Set());
+  const markLoaded = (src) => setLoadedSrcs((prev) => (prev.has(src) ? prev : new Set(prev).add(src)));
 
   return (
     <div className="relative w-full">
       <div className="overflow-hidden" ref={emblaRef}>
         <div className="flex">
           {srcs.map((src, i) => (
-            <div key={i} className="min-w-0 flex-[0_0_100%]">
+            <div key={i} className="relative min-w-0 flex-[0_0_100%]">
               <img
                 src={src}
                 alt={`Venue photo ${i + 1}`}
                 className="h-60 w-full object-cover bg-muted"
                 loading={i === 0 ? 'eager' : 'lazy'}
+                onLoad={() => markLoaded(src)}
+                onError={() => markLoaded(src)}
               />
+              {(forceLoading || !loadedSrcs.has(src)) && (
+                <>
+                  <div className="absolute inset-0 animate-pulse bg-muted-foreground/25" />
+                  <div className="absolute inset-0 shimmer-sweep" />
+                </>
+              )}
             </div>
           ))}
         </div>

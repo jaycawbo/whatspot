@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Star, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import BeenHereButton from '@/components/ui/BeenHereButton';
+import { Skeleton } from '@/components/ui/skeleton';
 
 function formatPrice(level) {
   if (!level) return null;
@@ -46,6 +47,7 @@ export default function DiscoveryCard({
   const [currentPhoto, setCurrentPhoto] = useState(0);
   const [nextPhoto, setNextPhoto] = useState(null);
   const [isFading, setIsFading] = useState(false);
+  const [firstPhotoReady, setFirstPhotoReady] = useState(false);
   const cardRef = useRef(null);
   const [isInViewport, setIsInViewport] = useState(false);
   const intervalRef = useRef(null);
@@ -263,8 +265,19 @@ export default function DiscoveryCard({
                     : (i === currentPhoto ? 1 : 0),
                   transition: isFading ? 'opacity 600ms ease' : 'none',
                 }}
+                onLoad={i === 0 && src !== '/placeholder.svg' ? () => setFirstPhotoReady(true) : undefined}
+                onError={i === 0 ? () => setFirstPhotoReady(true) : undefined}
               />
             ))}
+
+            {/* Loading shimmer — sits above photos until the first real photo is ready.
+                Removes itself as soon as the browser fires onLoad for photos[0]. */}
+            {!firstPhotoReady && (
+              <>
+                <div className="absolute inset-0 z-[1] animate-pulse bg-muted-foreground/25" />
+                <div className="absolute inset-0 z-[1] shimmer-sweep" />
+              </>
+            )}
 
             {/* Spots list membership badge */}
             {listLabel && (
@@ -314,7 +327,7 @@ export default function DiscoveryCard({
             </div>
           </>
         ) : (
-          <div className="absolute inset-0 bg-muted" />
+          <Skeleton className="absolute inset-0 rounded-none" />
         )}
       </div>
 
