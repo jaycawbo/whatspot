@@ -155,6 +155,16 @@ export default function VenueDetails() {
     return () => observer.disconnect();
   }, [details, aiFetched]);
 
+  // Fallback: if details arrive after the trigger element is already in view, fire directly
+  useEffect(() => {
+    if (aiFetched || !details?.reviews?.length || !aiTriggerRef.current) return;
+    const rect = aiTriggerRef.current.getBoundingClientRect();
+    if (rect.top < window.innerHeight && rect.bottom > 0) {
+      setAiFetched(true);
+      fetchAiInsights(details.reviews);
+    }
+  }, [details]);
+
   const fetchAiInsights = async (reviews) => {
     setAiLoading(true);
     try {

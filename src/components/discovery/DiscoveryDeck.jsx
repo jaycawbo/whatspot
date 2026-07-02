@@ -291,7 +291,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   }, [logRatingSheetOpened]);
 
   // Handle interaction + animate out
-  const performAction = useCallback(async (direction, venue) => {
+  // exitDuration: drag gestures pass a velocity-derived value; button presses use the default 0.2s
+  const performAction = useCallback(async (direction, venue, exitDuration = 0.2) => {
     if (isAnimatingRef.current) return;
     isAnimatingRef.current = true;
     x.stop();
@@ -305,6 +306,19 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     }
 
     const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
+
+    // Start exit animation immediately so the card moves while DB work runs concurrently.
+    // This eliminates the pause caused by awaiting handleInterested/handleNotInterested
+    // before beginning the visual transition.
+    setExitDirection(direction);
+    const exitX = direction === 'right' ? 500 : direction === 'left' ? -500 : 0;
+    const exitY = direction === 'down' ? 500 : 0;
+    const exitAnim = Promise.all([
+      animate(x, exitX, { duration: exitDuration, ease: 'easeOut' }),
+      animate(y, exitY, { duration: exitDuration, ease: 'easeOut' }),
+      animate(opacity, 0, { duration: exitDuration, ease: 'easeOut' }),
+    ]);
+
     let success = true;
     if (direction === 'right') {
       success = await handleInterested(venue);
@@ -317,27 +331,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       addClientSkippedId(placeId);
     }
 
-    if (success === false) {
-      const exitX = direction === 'right' ? 500 : -500;
-      setExitDirection(direction);
-      await Promise.all([
-        animate(x, exitX, { duration: 0.2 }),
-        animate(opacity, 0, { duration: 0.2 }),
-      ]);
-      advanceCard();
-      setAuthModalOpen(true);
-      return;
-    }
-
-    setExitDirection(direction);
-    const exitX = direction === 'right' ? 500 : direction === 'left' ? -500 : 0;
-    const exitY = direction === 'down' ? 500 : 0;
-    await Promise.all([
-      animate(x, exitX, { duration: 0.2 }),
-      animate(y, exitY, { duration: 0.2 }),
-      animate(opacity, 0, { duration: 0.2 }),
-    ]);
+    await exitAnim;
     advanceCard();
+    if (success === false) setAuthModalOpen(true);
   }, [handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, opacity, advanceCard]);
 
   const handleRate = useCallback(async (rating, notes) => {
@@ -386,14 +382,30 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
   const handleDragEnd = useCallback((event, info) => {
     if (!currentVenue || isAnimatingRef.current) { setIsDragging(false); return; }
-    const { offset } = info;
+    const { offset, velocity } = info;
+
+    // Duration is remaining-distance / release-velocity, so the exit continues at
+    // roughly the speed the card was already moving instead of a flat velocity-only
+    // formula, which collapsed to the floor (and looked like a snap) on fast flicks.
+    const exitDuration = (current, target, releaseVelocity) => {
+      const remaining = Math.abs(target - current);
+      const speed = Math.max(Math.abs(releaseVelocity), 400);
+      return Math.min(0.25, Math.max(0.12, remaining / speed));
+    };
 
     if (offset.x > SWIPE_THRESHOLD) {
-      performAction('right', currentVenue);
+      // Stop immediately so Framer Motion's drag-release behaviour can't snap toward rest
+      x.stop(); y.stop(); opacity.stop();
+      const dur = exitDuration(x.get(), 500, velocity.x);
+      performAction('right', currentVenue, dur);
     } else if (offset.x < -SWIPE_THRESHOLD) {
-      performAction('left', currentVenue);
+      x.stop(); y.stop(); opacity.stop();
+      const dur = exitDuration(x.get(), -500, velocity.x);
+      performAction('left', currentVenue, dur);
     } else if (offset.y > SWIPE_DOWN_THRESHOLD) {
-      performAction('down', currentVenue);
+      x.stop(); y.stop(); opacity.stop();
+      const dur = exitDuration(y.get(), 500, velocity.y);
+      performAction('down', currentVenue, dur);
     } else if (offset.y < -SWIPE_UP_THRESHOLD) {
       performAction('up', currentVenue);
     } else {
@@ -401,7 +413,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       animate(x, 0, { type: 'spring', stiffness: 500, damping: 30 });
       animate(y, 0, { type: 'spring', stiffness: 500, damping: 30 });
     }
-  }, [currentVenue, performAction, x, y]);
+  }, [currentVenue, performAction, x, y, opacity]);
 
   const handleCardBodyTap = useCallback((venue) => {
     if (ratingSheetOpenRef.current) return;
@@ -466,6 +478,27 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       clearPending();
     }
   }, [isAuthenticated, pendingAction, executePending, clearPending]);
+
+  // Silently advance the card if the user saved the venue from the detail page
+  useEffect(() => {
+    const handler = (e) => {
+      const { placeId } = e.detail || {};
+      if (!placeId || !currentVenue) return;
+      const currentId = (currentVenue.place_id || currentVenue.google_place_id || '').replace(/^places\//, '');
+      if (placeId !== currentId) return;
+      try {
+        const raw = sessionStorage.getItem('whatspot_skipped_venues');
+        const existing = raw ? JSON.parse(raw) : [];
+        if (!existing.includes(placeId)) {
+          sessionStorage.setItem('whatspot_skipped_venues', JSON.stringify([...existing, placeId]));
+        }
+      } catch {}
+      addClientSkippedId(placeId);
+      advanceCard();
+    };
+    window.addEventListener('whatspot:spot-saved', handler);
+    return () => window.removeEventListener('whatspot:spot-saved', handler);
+  }, [currentVenue, advanceCard]);
 
   // Whether to show post-search instructional copy
   const showSearchCopy = !!currentQuery;
@@ -545,6 +578,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
             style={{ x, y, opacity }}
             drag={!ratingSheetOpen}
             dragMomentum={false}
+            dragElastic={0.05}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             animate={
