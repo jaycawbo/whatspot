@@ -305,6 +305,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       return;
     }
 
+    const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
+
     // Start exit animation immediately so the card moves while DB work runs concurrently.
     // This eliminates the pause caused by awaiting handleInterested/handleNotInterested
     // before beginning the visual transition.
@@ -320,12 +322,13 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     let success = true;
     if (direction === 'right') {
       success = await handleInterested(venue);
+      addClientSkippedId(placeId);
     } else if (direction === 'left') {
       success = await handleNotInterested(venue);
+      addClientSkippedId(placeId);
     } else if (direction === 'down') {
       success = handleSkip(venue);
-      const skipId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
-      addClientSkippedId(skipId);
+      addClientSkippedId(placeId);
     }
 
     await exitAnim;
@@ -338,8 +341,10 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     ratingSheetOpenRef.current = false;
     setRatingSheetOpen(false);
     if (!ratingPendingVenue) return;
+    const ratingPlaceId = (ratingPendingVenue.place_id || ratingPendingVenue.google_place_id || '').replace(/^places\//, '');
 
     const success = await handleRated(ratingPendingVenue, rating, notes);
+    addClientSkippedId(ratingPlaceId);
     if (success === false) {
       setAuthModalOpen(true);
       setRatingPendingVenue(null);
