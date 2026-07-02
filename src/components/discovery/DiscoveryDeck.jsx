@@ -474,6 +474,27 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     }
   }, [isAuthenticated, pendingAction, executePending, clearPending]);
 
+  // Silently advance the card if the user saved the venue from the detail page
+  useEffect(() => {
+    const handler = (e) => {
+      const { placeId } = e.detail || {};
+      if (!placeId || !currentVenue) return;
+      const currentId = (currentVenue.place_id || currentVenue.google_place_id || '').replace(/^places\//, '');
+      if (placeId !== currentId) return;
+      try {
+        const raw = sessionStorage.getItem('whatspot_skipped_venues');
+        const existing = raw ? JSON.parse(raw) : [];
+        if (!existing.includes(placeId)) {
+          sessionStorage.setItem('whatspot_skipped_venues', JSON.stringify([...existing, placeId]));
+        }
+      } catch {}
+      addClientSkippedId(placeId);
+      advanceCard();
+    };
+    window.addEventListener('whatspot:spot-saved', handler);
+    return () => window.removeEventListener('whatspot:spot-saved', handler);
+  }, [currentVenue, advanceCard]);
+
   // Whether to show post-search instructional copy
   const showSearchCopy = !!currentQuery;
 
