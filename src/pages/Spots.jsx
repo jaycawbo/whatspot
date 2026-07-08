@@ -363,7 +363,7 @@ export default function Spots() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={`Search within ${activeList}...`}
-                className="w-full rounded-xl border border-border bg-background pl-9 pr-9 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="w-full rounded-xl border border-border bg-background pl-9 pr-9 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               />
               {searchQuery && (
                 <button

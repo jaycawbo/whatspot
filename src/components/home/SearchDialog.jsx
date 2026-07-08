@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowRight, Search, SlidersHorizontal } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import CategoryTiles from './CategoryTiles';
 import RefinementChips from './RefinementChips';
 import SuggestedChips from './SuggestedChips';
@@ -164,18 +165,27 @@ export default function SearchDialog({
             style={{ top: '56px', maxHeight: 'calc(100dvh - 56px)' }}
           >
             {/* Input row */}
-            <div className="flex items-center gap-2 px-3 py-2 max-w-5xl mx-auto w-full">
+            <div className="flex items-center gap-2 px-3 pt-5 pb-2 max-w-5xl mx-auto w-full">
               <form onSubmit={handleSubmit} className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={localQuery}
-                  onChange={(e) => setLocalQuery(e.target.value)}
-                  onFocus={onSearchFocus}
-                  className="w-full h-10 pl-10 pr-10 rounded-full border border-input bg-card text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ring-offset-background transition-shadow"
-                  placeholder="Ask and you shall receive..."
-                />
+                {/* ai-search-ring wrapper supplies the gradient border; the input's own
+                    bg-card fill covers the rest. See SearchRow for the same pattern. */}
+                <div
+                  className={cn(
+                    'ai-search-ring rounded-xl',
+                    isSearching && 'ai-search-ring--active'
+                  )}
+                >
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={localQuery}
+                    onChange={(e) => setLocalQuery(e.target.value)}
+                    onFocus={onSearchFocus}
+                    className="relative w-full h-9 pl-10 pr-10 rounded-xl bg-card text-base placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-shadow"
+                    placeholder="Ask and you shall receive..."
+                  />
+                </div>
                 {localQuery && (
                   <button
                     type="submit"

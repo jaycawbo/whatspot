@@ -353,6 +353,7 @@ export default function Home() {
         onFilterClick={() => setFilterOpen(true)}
         onSearchOpen={() => setSearchDialogOpen(true)}
         activeFilterCount={activeFilterCount}
+        isSearching={conversation.isSearching}
       />
 
       {/* Modals and sheets */}
@@ -442,7 +443,7 @@ export default function Home() {
       {isDesktopPostSearch && (
         <div
           className="flex overflow-hidden"
-          style={{ marginTop: '110px', height: 'calc(100dvh - 110px)' }}
+          style={{ marginTop: '122px', height: 'calc(100dvh - 122px)' }}
         >
           <div className="w-[40%] overflow-y-auto border-r border-border px-4 py-4 pb-4">
             {conversation.isSearching && <LoadingMessages />}
@@ -468,7 +469,7 @@ export default function Home() {
       {!state.query && (
         <div
           className="flex flex-col flex-1 overflow-hidden"
-          style={{ paddingTop: '120px' }}
+          style={{ paddingTop: '132px' }}
         >
           {/* Feed mode tabs + filter is handled inside SearchRow now for filters;
               tabs remain here since they only show in feed mode */}

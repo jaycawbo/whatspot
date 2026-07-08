@@ -19,10 +19,11 @@ export default function SearchRow({
   onFilterClick,
   onSearchOpen,
   activeFilterCount = 0,
+  isSearching = false,
 }) {
   return (
     <div className="fixed top-14 left-0 right-0 z-40 bg-background">
-      <div className="flex items-center gap-2 px-3 py-2 max-w-5xl mx-auto" style={{ touchAction: 'manipulation' }}>
+      <div className="flex items-center gap-2 px-3 pt-5 pb-2 max-w-5xl mx-auto" style={{ touchAction: 'manipulation' }}>
         {/* Back button — always mounted, hidden until query is active */}
         <button
           onClick={onBackClick}
@@ -37,15 +38,25 @@ export default function SearchRow({
           <ChevronLeft className="h-4 w-4 text-muted-foreground" />
         </button>
 
-        {/* Search pill — opens SearchDialog */}
-        <button
-          onClick={onSearchOpen}
-          className="flex-1 flex items-center gap-2 h-9 rounded-full border border-input bg-card px-3 text-left text-sm text-muted-foreground hover:bg-accent transition-colors min-w-0"
-          aria-label="Open search"
+        {/* Search pill — opens SearchDialog. Wrapped in the ai-search-ring gradient for a
+            subtle "AI-powered" signal; the ring supplies the border, the button's own
+            bg-card fill covers the rest. Sized/positioned to match SearchDialog's input
+            exactly so opening the dialog doesn't visibly resize. */}
+        <div
+          className={cn(
+            'ai-search-ring flex-1 rounded-xl min-w-0',
+            isSearching && 'ai-search-ring--active'
+          )}
         >
-          <Search className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{query || 'Ask and you shall receive...'}</span>
-        </button>
+          <button
+            onClick={onSearchOpen}
+            className="relative w-full flex items-center h-9 pl-10 pr-4 rounded-xl bg-card text-left text-base text-muted-foreground hover:bg-accent transition-colors min-w-0"
+            aria-label="Open search"
+          >
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 shrink-0 pointer-events-none" />
+            <span className="truncate">{query || 'Ask and you shall receive...'}</span>
+          </button>
+        </div>
 
         {/* Filter button */}
         <button
