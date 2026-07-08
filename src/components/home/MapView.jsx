@@ -104,7 +104,7 @@ function SearchFromHereButton({ onClick, isMobile }) {
   return (
     <div
       className={`absolute left-1/2 -translate-x-1/2 z-[500] ${
-        isMobile ? 'top-[120px]' : 'top-4'
+        isMobile ? 'top-[132px]' : 'top-4'
       }`}
     >
       <button

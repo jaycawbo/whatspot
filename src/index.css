@@ -123,3 +123,63 @@ All colors MUST be HSL.
   background-repeat: no-repeat;
   animation: shimmer-glow 2.2s ease-in-out infinite;
 }
+
+/* "AI-powered" search bar ring. .ai-search-ring always shows a permanent thin solid
+   border (box-shadow, foreground-coloured) as the base layer. Its ::before overlay
+   carries a conic-gradient that's half transparent / half a rainbow band, so rotating
+   it makes a coloured half-band chase around the ring while the other half keeps
+   showing the resting border beneath — a shimmer sweep, not a flat colour swap.
+   Ambient cadence (revolve 1.5s, rest 5s, forever) is pure CSS via ai-ring-ambient, so
+   it runs identically wherever .ai-search-ring is mounted (pill or dialog) with no
+   JS/prop involvement. .ai-search-ring--active (gated on isSearching) overrides the
+   overlay to chase continuously with no rest, for the duration of a real query. */
+@property --ai-border-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes ai-border-spin {
+  0% { --ai-border-angle: 0deg; }
+  100% { --ai-border-angle: 360deg; }
+}
+
+@keyframes ai-ring-ambient {
+  0% { --ai-border-angle: 0deg; opacity: 1; }
+  23.08% { --ai-border-angle: 360deg; opacity: 1; }
+  23.09% { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+.ai-search-ring {
+  position: relative;
+  border: 1px solid hsl(var(--border));
+  background: transparent;
+}
+
+.ai-search-ring::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--ai-border-angle),
+    transparent 0deg,
+    transparent 180deg,
+    #4285f4 180deg,
+    #b8c9ff 202.5deg,
+    #9c27b0 225deg,
+    #e91e63 247.5deg,
+    #ffcf9e 270deg,
+    #ff9800 292.5deg,
+    #22c55e 315deg,
+    #4285f4 360deg
+  );
+  animation: ai-ring-ambient 6.5s linear infinite;
+}
+
+.ai-search-ring--active::before {
+  opacity: 1;
+  animation: ai-border-spin 1.5s linear infinite;
+}

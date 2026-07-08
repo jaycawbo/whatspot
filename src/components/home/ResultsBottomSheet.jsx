@@ -10,14 +10,14 @@ import { useBronco } from '@/context/BroncoContext';
  *   PARTIAL    35%  — default on every new search
  *   EXPANDED   80%  — fully open
  *
- * Accessible height = 100dvh - nav (56px) - search row (56px)
+ * Accessible height = 100dvh - nav (56px) - search row (68px)
  *
  * Drag the handle up/down to move. Release snaps to nearest position.
  * A fast flick (>400 px/s) jumps one step in the swipe direction.
  */
 
 const NAV_H = 56;
-const SEARCH_ROW_H = 56;
+const SEARCH_ROW_H = 68;
 const OVERHEAD = NAV_H + SEARCH_ROW_H;
 
 const SNAPS = [0.10, 0.35, 0.90]; // collapsed, partial, expanded
