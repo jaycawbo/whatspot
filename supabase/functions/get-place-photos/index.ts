@@ -142,11 +142,12 @@ Deno.serve(async (req) => {
 
     // ── Step 4: Write permanent URLs to DB (fire-and-forget) ──────────────
     if (validUrls.length > 0) {
-      sb.from('venues')
+      const { error: updateError } = await sb.from('venues')
         .update({ photo_urls: validUrls, photos_complete: validUrls.length >= totalAvailable, enriched: true })
-        .eq('google_place_id', cleanId)
-        .then(() => {})
-        .catch(() => {});
+        .eq('google_place_id', cleanId);
+      if (updateError) {
+        console.error(`Failed to persist photo_urls for ${cleanId}:`, updateError.message);
+      }
     }
 
     return new Response(JSON.stringify({ success: true, photo_urls: validUrls }), {

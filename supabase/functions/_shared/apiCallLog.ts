@@ -32,6 +32,17 @@ export async function checkAndLog(
 
   if (countError) {
     console.warn('[apiCallLog] Count query failed — failing open:', countError.message);
+    const rows = Array.from({ length: count }, () => ({
+      service:   'google_places',
+      call_type: callType,
+      venue_id:  venueId ?? null,
+      called_at: new Date().toISOString(),
+      month_key: monthKey,
+    }));
+    const { error: insertError } = await sb.from('api_call_log').insert(rows);
+    if (insertError) {
+      console.error('[apiCallLog] Insert also failed after count error:', insertError.message);
+    }
     return true;
   }
 
@@ -53,7 +64,7 @@ export async function checkAndLog(
   const { error: insertError } = await sb.from('api_call_log').insert(rows);
 
   if (insertError) {
-    console.warn('[apiCallLog] Insert failed — call will still proceed:', insertError.message);
+    console.error('[apiCallLog] Insert failed — call will still proceed:', insertError.message);
   }
 
   return true;

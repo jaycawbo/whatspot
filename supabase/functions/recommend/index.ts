@@ -198,7 +198,7 @@ function expandQueryToTypes(queryWords: string[]): Set<string> {
     if (word === 'seafood') { expandedTypes.add('seafood_restaurant'); }
     if (word === 'cocktail') { expandedTypes.add('cocktail_bar'); expandedTypes.add('bar'); }
     if (word === 'wine') { expandedTypes.add('wine_bar'); }
-    if (word === 'coffee') { expandedTypes.add('coffee_shop'); expandedTypes.add('cafe'); expandedTypes.add('coffee_roastery'); expandedTypes.add('coffee_stand'); }
+    if (word === 'coffee') { expandedTypes.add('coffee_shop'); expandedTypes.add('coffee_roastery'); expandedTypes.add('coffee_stand'); }
     if (word === 'cafe') { expandedTypes.add('cafe'); expandedTypes.add('coffee_shop'); expandedTypes.add('bakery'); }
     if (word === 'tapas') { expandedTypes.add('tapas_restaurant'); expandedTypes.add('spanish_restaurant'); }
     if (word === 'diner') { expandedTypes.add('diner'); expandedTypes.add('breakfast_restaurant'); }
@@ -1013,9 +1013,9 @@ async function handleSearch(params: {
   let filteredVenues: any[] = [];
   let servedFromSupabase = false;
 
-  if (!isDiscoveryMode && !servedFromSupabase) {
-    let effectiveCuisineTypes: string[] | null = null;
+  let effectiveCuisineTypes: string[] | null = null;
 
+  if (!isDiscoveryMode && !servedFromSupabase) {
     if (Array.isArray(cuisine_types) && cuisine_types.length > 0) {
       effectiveCuisineTypes = cuisine_types;
     } else if (refinedSearchTerm) {
@@ -1178,11 +1178,16 @@ async function handleSearch(params: {
         const TITLE_SUFFIX_RE = /\s*[|\-]\s*(Yelp|TripAdvisor|OpenTable|Google Maps|Reserve|Reservations|Menu|Photos|Reviews|Hours|Website|Instagram|Facebook|Order Online|Delivery|DoorDash|Uber Eats|SkipTheDishes).*$/i;
         const seenNames = new Set<string>();
         const venueNames: string[] = [];
+        const DOMAIN_RE = /\.\w{2,4}\b/;
+        const ARTICLE_RE = /^(best\b|top\b|the best\b|where to\b|guide to\b|\d{1,2}\s)/i;
         for (const chunk of chunks) {
           const raw = (chunk.web?.title || '').trim();
           if (!raw) continue;
           const cleaned = raw.replace(TITLE_SUFFIX_RE, '').trim();
           if (!cleaned || cleaned.length < 3) continue;
+          if (cleaned.length > 50) continue;
+          if (DOMAIN_RE.test(cleaned)) continue;
+          if (ARTICLE_RE.test(cleaned)) continue;
           const key = cleaned.toLowerCase();
           if (seenNames.has(key)) continue;
           seenNames.add(key);
@@ -1198,6 +1203,7 @@ async function handleSearch(params: {
           const { checkAndLog } = await import('../_shared/apiCallLog.ts');
           const existingPlaceIds = new Set(filteredVenues.map((v: any) => (v.place_id || '').replace(/^places\//, '')));
           let groundApiCalls = 0;
+          let groundingAdded = 0;
 
           for (const venueName of venueNames.slice(0, 10)) {
             if (groundApiCalls >= 5) break;
@@ -1216,6 +1222,7 @@ async function handleSearch(params: {
               const existingDist = calculateDistance(lat, lon, nameMatch.lat, nameMatch.lng);
               if (existingDist > admission.maxRadius) continue;
               if (existingPlaceIds.has(nameMatch.google_place_id)) continue;
+              if (effectiveCuisineTypes?.length && !(nameMatch.venue_types || []).some((t: string) => effectiveCuisineTypes!.includes(t))) continue;
               filteredVenues.push({
                 name:               nameMatch.name,
                 address:            nameMatch.address || '',
@@ -1232,7 +1239,9 @@ async function handleSearch(params: {
                 unknownPrice:       false,
                 _rawTypes:          nameMatch.venue_types || [],
                 _photoUrls:         [],
+                _fromGrounding:     true,
               });
+              groundingAdded++;
               existingPlaceIds.add(nameMatch.google_place_id);
               console.log(`✅ Grounding cross-ref: "${nameMatch.name}" served from Supabase cache`);
               continue;
@@ -1273,6 +1282,7 @@ async function handleSearch(params: {
             if (!cleanId) continue;
             if (existingPlaceIds.has(cleanId)) continue;
             if (!hasFoodDrinkType(place.types || [])) continue;
+            if (effectiveCuisineTypes?.length && !(place.types || []).some((t: string) => effectiveCuisineTypes!.includes(t))) continue;
 
             const vLat = place.location?.latitude;
             const vLon = place.location?.longitude;
@@ -1328,11 +1338,14 @@ async function handleSearch(params: {
               unknownPrice:       false,
               _rawTypes:          place.types || [],
               _photoUrls:         [],
+              _fromGrounding:     true,
             });
+            groundingAdded++;
             existingPlaceIds.add(cleanId);
             groundApiCalls++;
             console.log(`✅ Grounding cross-ref: "${place.displayName?.text || venueName}" added via Text Search`);
           }
+          console.log(`🔍 Grounding cross-ref total: ${groundingAdded} venues added to filteredVenues`);
         }
       }
     } catch (e: any) {
@@ -1406,6 +1419,8 @@ async function handleSearch(params: {
           const gapDist = calculateDistance(lat, lon, firstResult.lat, firstResult.lon);
           if (gapDist > admission.maxRadius) continue;
 
+          if (effectiveCuisineTypes?.length && !(firstResult.types || []).some((t: string) => effectiveCuisineTypes!.includes(t))) continue;
+
           const gapPriceToInt: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
           const gapMappedPL = priceLevelMap[firstResult.price_level] || null;
           await sbGap.from('venues').upsert([{
@@ -1424,6 +1439,7 @@ async function handleSearch(params: {
           }], { onConflict: 'google_place_id', ignoreDuplicates: true });
 
           const gapRelaxed = (firstResult.rating || 0) < SCORING.RATING_FLOOR || (firstResult.user_ratings_total || 0) < SCORING.REVIEW_FLOOR;
+          if (effectiveCuisineTypes?.length && !(firstResult.types || []).some((t: string) => effectiveCuisineTypes!.includes(t))) continue;
           filteredVenues.push({
             name:              firstResult.name,
             address:           firstResult.address || '',
@@ -1728,7 +1744,7 @@ async function handleSearch(params: {
   };
   const intentPriceTarget = intent?.price_signal ? intentPriceLevels[intent.price_signal] : null;
 
-  const scoredVenues = streetFilteredVenues
+  const scoredMapped = streetFilteredVenues
     .map((venue: any) => {
       let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
       if (venue.unknownPrice) score *= 0.7; // Down-rank venues with unknown price when price filter is active
@@ -1745,8 +1761,16 @@ async function handleSearch(params: {
 
       const display_weight = isDiscoveryMode ? score + (Math.random() * 0.3) : score;
       return { ...venue, score, display_weight };
-    })
-    .filter((v: any) => v.score > admission.minScore)
+    });
+
+  const groundingInStep4 = scoredMapped.filter((v: any) => v._fromGrounding);
+  const groundingWouldDrop = groundingInStep4.filter((v: any) => v.score <= admission.minScore).length;
+  if (groundingInStep4.length > 0) {
+    console.log(`🔍 STEP 4 grounding: ${groundingInStep4.length - groundingWouldDrop} passed score filter naturally, ${groundingWouldDrop} exempted (score ≤ ${admission.minScore})`);
+  }
+
+  const scoredVenues = scoredMapped
+    .filter((v: any) => v._fromGrounding || v.score > admission.minScore)
     .sort((a: any, b: any) => b.display_weight - a.display_weight);
 
   console.log(`📊 STEP 4: ${scoredVenues.length} scored above ${admission.minScore}`);
@@ -1768,17 +1792,20 @@ async function handleSearch(params: {
       const expandedTypes = expandQueryToTypes(queryWords);
 
       const typeMatched = candidates.filter((v: any) => {
-        const types = (v._rawTypes || []).join(' ').toLowerCase();
+        const rawTypes: string[] = (v._rawTypes || []).map((t: string) => t.toLowerCase());
         const cat = (v.category || '').toLowerCase();
-        return [...expandedTypes].some((t: string) => types.includes(t) || cat.includes(t));
+        return rawTypes.some((t: string) => expandedTypes.has(t)) || expandedTypes.has(cat);
       });
 
       typeMatchedIds = new Set(typeMatched.map((v: any) => v.place_id));
       const unmatched = candidates.filter((v: any) => !typeMatchedIds.has(v.place_id));
+      const unmatchedFiltered = unmatched.filter((v: any) =>
+        !(v._rawTypes || []).some((t: string) => t.endsWith('_restaurant'))
+      );
 
-      // Priority order: type-matched first, then unmatched to fill up to 20
-      filteredCandidates = [...typeMatched, ...unmatched].slice(0, 20);
-      console.log(`🎯 Query-intent pre-filter: ${typeMatched.length} type-matched + ${Math.min(unmatched.length, 20 - typeMatched.length)} unmatched = ${filteredCandidates.length} candidates`);
+      // Priority order: type-matched first, then contradiction-filtered unmatched to fill up to 20
+      filteredCandidates = [...typeMatched, ...unmatchedFiltered].slice(0, 20);
+      console.log(`🎯 Query-intent pre-filter: ${typeMatched.length} type-matched + ${Math.min(unmatchedFiltered.length, 20 - typeMatched.length)} unmatched = ${filteredCandidates.length} candidates`);
     }
   }
 
@@ -1798,8 +1825,8 @@ async function handleSearch(params: {
 
   const comprehensiveResult = await safe('comprehensive-llm', () => callLLM(
     'gemini-2.5-flash',
-    `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues honestly and only include genuinely suitable matches. Venue types reflect what the place actually serves — use them as the primary relevance signal. A venue is NOT relevant if its types don't match the query intent even if keywords coincide in the name. If a venue offers the queried item only incidentally alongside a different primary activity (for example, a board game cafe where coffee is secondary, or a sports complex that sells food), assign confidence below 0.5.`,
-    `The user searched for "${search_term}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.5. Order by confidence descending. Maximum 5 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
+    `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues and only include genuinely suitable matches. Venue types reflect what the place actually serves — use them as the primary relevance signal. A venue is NOT relevant if its primary purpose does not match the query intent. Examples of venues to exclude with confidence 0: an Italian restaurant for a coffee query, a shisha lounge for a coffee query, a sushi restaurant for a wine bar query, a gym for any food or drink query. A venue scores below 0.5 only if the queried item is incidental to its primary activity. Only include venues where the queried item is a core part of what the venue is known for.`,
+    `The user searched for "${search_term}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.5. Order by confidence descending. Maximum 8 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
     [
       {
         type: 'function',
@@ -1864,7 +1891,8 @@ async function handleSearch(params: {
     })
     .filter(Boolean);
 
-  // Backfill to guarantee 8 results.
+
+  // Backfill to guarantee 8 results — pool is type-matched only when typeMatchedIds is populated.
   if (finalVenues.length < 8) {
     const usedPlaceIds = new Set(
       rankings
