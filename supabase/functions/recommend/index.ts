@@ -329,7 +329,7 @@ async function safe<T>(label: string, fn: () => Promise<T>, fallback: T): Promis
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? '';
 let sessionGapFills = 0;
 
-async function callLLM(model: string, systemPrompt: string, userPrompt: string, tools?: any[], toolChoice?: any, options?: { max_tokens?: number; temperature?: number }): Promise<any> {
+async function callLLM(model: string, systemPrompt: string, userPrompt: string, tools?: any[], toolChoice?: any, options?: { max_tokens?: number; temperature?: number; thinkingBudget?: number }): Promise<any> {
   const body: any = {
     system_instruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
@@ -353,10 +353,11 @@ async function callLLM(model: string, systemPrompt: string, userPrompt: string, 
     }
   }
 
-  if (options?.temperature !== undefined || options?.max_tokens !== undefined) {
+  if (options?.temperature !== undefined || options?.max_tokens !== undefined || options?.thinkingBudget !== undefined) {
     body.generationConfig = {};
     if (options.temperature !== undefined) body.generationConfig.temperature = options.temperature;
     if (options.max_tokens !== undefined) body.generationConfig.maxOutputTokens = options.max_tokens;
+    if (options.thinkingBudget !== undefined) body.generationConfig.thinkingConfig = { thinkingBudget: options.thinkingBudget };
   }
 
   const resp = await fetch(
@@ -1151,57 +1152,36 @@ async function handleSearch(params: {
     }
   }
 
-  // ─── Parallel Gemini grounding cross-reference ───
+  // ─── Direct Gemini venue list cross-reference ───
   if (!isDiscoveryMode && GEMINI_API_KEY && !searchGroundingFired) {
     searchGroundingFired = true;
     try {
-      const groundingResp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: `Best ${refinedSearchTerm} in ${location_name}` }] }],
-            tools: [{ googleSearch: {} }],
-          }),
-        },
+      const groundingRaw = await callLLM(
+        'gemini-2.5-flash',
+        'You are a knowledgeable local venue expert.',
+        `List the 8 best ${refinedSearchTerm} venues in ${location_name}. Return only a JSON array of venue names, nothing else. Example: ["Venue Name 1", "Venue Name 2"]. Only include well-known, highly regarded venues.`,
+        undefined, undefined,
+        { max_tokens: 500, temperature: 0, thinkingBudget: 0 },
       );
 
-      if (!groundingResp.ok) {
-        const errText = await groundingResp.text();
-        console.warn(`⚠️ Grounding Gemini call failed: ${groundingResp.status} — ${errText.slice(0, 200)}`);
-      } else {
-        const groundingData = await groundingResp.json();
-        const chunks: any[] = groundingData.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      let venueNames: string[] = [];
+      try {
+        const cleaned = groundingRaw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        venueNames = JSON.parse(cleaned);
+        if (!Array.isArray(venueNames)) venueNames = [];
+      } catch { console.warn(`⚠️ Grounding: failed to parse Gemini response (length=${groundingRaw.length}): ${groundingRaw.slice(0, 200)}`); }
 
-        // Extract venue names from chunk titles, stripping platform suffixes
-        const TITLE_SUFFIX_RE = /\s*[|\-]\s*(Yelp|TripAdvisor|OpenTable|Google Maps|Reserve|Reservations|Menu|Photos|Reviews|Hours|Website|Instagram|Facebook|Order Online|Delivery|DoorDash|Uber Eats|SkipTheDishes).*$/i;
-        const seenNames = new Set<string>();
-        const venueNames: string[] = [];
-        const DOMAIN_RE = /\.\w{2,4}\b/;
-        const ARTICLE_RE = /^(best\b|top\b|the best\b|where to\b|guide to\b|\d{1,2}\s)/i;
-        for (const chunk of chunks) {
-          const raw = (chunk.web?.title || '').trim();
-          if (!raw) continue;
-          const cleaned = raw.replace(TITLE_SUFFIX_RE, '').trim();
-          if (!cleaned || cleaned.length < 3) continue;
-          if (cleaned.length > 50) continue;
-          if (DOMAIN_RE.test(cleaned)) continue;
-          if (ARTICLE_RE.test(cleaned)) continue;
-          const key = cleaned.toLowerCase();
-          if (seenNames.has(key)) continue;
-          seenNames.add(key);
-          venueNames.push(cleaned);
-        }
-        console.log(`🔍 Grounding cross-ref: ${venueNames.length} venue names extracted`);
-        console.log(`🔍 Grounding names: ${venueNames.join(', ')}`);
+      console.log(`🔍 Grounding cross-ref: ${venueNames.length} venue names from Gemini`);
+      console.log(`🔍 Grounding names: ${venueNames.join(', ')}`);
 
+      {
         if (venueNames.length > 0 && GOOGLE_KEY) {
           const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
           const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
           const sbGround = createClient(supabaseUrl, supabaseKey);
           const { checkAndLog } = await import('../_shared/apiCallLog.ts');
           const existingPlaceIds = new Set(filteredVenues.map((v: any) => (v.place_id || '').replace(/^places\//, '')));
+          const groundingBiasRadius = (isOnStreetSearch || admission.maxRadius <= 3) ? 2000 : 25000;
           let groundApiCalls = 0;
           let groundingAdded = 0;
 
@@ -1265,7 +1245,7 @@ async function handleSearch(params: {
                   locationBias: {
                     circle: {
                       center: { latitude: lat, longitude: lon },
-                      radius: 1000.0,
+                      radius: groundingBiasRadius,
                     },
                   },
                   maxResultCount: 1,
@@ -1361,14 +1341,15 @@ async function handleSearch(params: {
         'You are a Toronto restaurant and venue expert.',
         `A user searched for: "${refinedSearchTerm}". List the top 5 real venues in Toronto that best match this search intent. Return ONLY a JSON array of venue names, nothing else. Example: ["Alo", "Canoe", "Edulis"]. Only include venues you are confident exist in Toronto.`,
         undefined, undefined,
-        { max_tokens: 200, temperature: 0 },
+        { max_tokens: 500, temperature: 0, thinkingBudget: 0 },
       );
 
       let geminiNames: string[] = [];
       try {
-        geminiNames = JSON.parse(gapRaw);
+        const cleaned = gapRaw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        geminiNames = JSON.parse(cleaned);
         if (!Array.isArray(geminiNames)) geminiNames = [];
-      } catch { /* parse failed — skip */ }
+      } catch { console.warn(`⚠️ Gap detection: failed to parse Gemini response (length=${gapRaw.length}): ${gapRaw.slice(0, 200)}`); }
 
       if (geminiNames.length > 0 && GOOGLE_KEY) {
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -1794,6 +1775,9 @@ async function handleSearch(params: {
       const typeMatched = candidates.filter((v: any) => {
         const rawTypes: string[] = (v._rawTypes || []).map((t: string) => t.toLowerCase());
         const cat = (v.category || '').toLowerCase();
+        const restaurantTypes = rawTypes.filter((t: string) => t.endsWith('_restaurant'));
+        const hasContradiction = restaurantTypes.length > 0 && !restaurantTypes.some((t: string) => expandedTypes.has(t));
+        if (hasContradiction) return false;
         return rawTypes.some((t: string) => expandedTypes.has(t)) || expandedTypes.has(cat);
       });
 
@@ -1816,7 +1800,7 @@ async function handleSearch(params: {
   const candidateList = filteredCandidates.map((v: any, i: number) => {
     const displayName = v.name.split(/[|–—:]/).at(0).trim();
     const typeHints = (v._rawTypes || []).slice(0, 2).join(', ');
-    return `${i + 1}. ${displayName} (${v.cuisine_type || 'restaurant'}${typeHints ? `, types: ${typeHints}` : ''}, ${v.rating}★, ${v.review_count} reviews, ${v.price_level || 'price unknown'}, ${v.distance_km?.toFixed(1)}km)`;
+    return `${i + 1}. ${displayName} | PRIMARY TYPE: ${v.cuisine_type || 'restaurant'} | also tagged: ${typeHints || 'none'} | ${v.rating}★, ${v.review_count} reviews, ${v.price_level || 'price unknown'}, ${v.distance_km?.toFixed(1)}km`;
   }).join('\n');
 
   let finalVenues: any[] = [];
@@ -1825,8 +1809,8 @@ async function handleSearch(params: {
 
   const comprehensiveResult = await safe('comprehensive-llm', () => callLLM(
     'gemini-2.5-flash',
-    `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues and only include genuinely suitable matches. Venue types reflect what the place actually serves — use them as the primary relevance signal. A venue is NOT relevant if its primary purpose does not match the query intent. Examples of venues to exclude with confidence 0: an Italian restaurant for a coffee query, a shisha lounge for a coffee query, a sushi restaurant for a wine bar query, a gym for any food or drink query. A venue scores below 0.5 only if the queried item is incidental to its primary activity. Only include venues where the queried item is a core part of what the venue is known for.`,
-    `The user searched for "${search_term}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.5. Order by confidence descending. Maximum 8 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
+    `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues and only include genuinely suitable matches. Venue types reflect what the place actually serves — use them as the primary relevance signal. A venue is NOT relevant if its primary purpose does not match the query intent. Examples of venues to exclude with confidence 0: an Italian restaurant for a coffee query, a shisha lounge for a coffee query, a sushi restaurant for a wine bar query, a gym for any food or drink query. A venue's PRIMARY TYPE is the strongest signal. If the PRIMARY TYPE is a cuisine category (italian, vegan, french, japanese, etc.) and the query is for a different category (coffee, wine bar, etc.), assign confidence 0 regardless of secondary tags. A venue scores below 0.5 only if the queried item is incidental to its primary activity. Only include venues where the queried item is a core part of what the venue is known for.`,
+    `The user searched for "${search_term}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for EVERY candidate venue listed above, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits or doesn't) }. Score honestly: venues that are primarily what the query is about score 0.7-1.0. Venues where the queried item is incidental to a different primary purpose (e.g. a vegan restaurant or bakery that also happens to serve coffee, for a coffee query) score 0.2-0.4. Venues completely unrelated to the query score 0.0-0.1. Order by confidence descending.\n- "descriptors": array of arrays, one per rankings entry with confidence >= 0.5 only (in that same relative order — do not generate descriptors for venues scored below 0.5), each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
     [
       {
         type: 'function',
@@ -1872,7 +1856,7 @@ async function handleSearch(params: {
       }
     ],
     { type: 'function', function: { name: 'comprehensive_venue_analysis' } },
-    { max_tokens: 1500, temperature: 0 }
+    { max_tokens: 4000, temperature: 0, thinkingBudget: 0 }
   ), { rankings: [], descriptors: [], summary: null, chips: [] });
 
   const rankings = comprehensiveResult.rankings || [];
@@ -1900,13 +1884,25 @@ async function handleSearch(params: {
         .map((r: any) => filteredCandidates[r.index - 1]?.place_id)
         .filter(Boolean)
     );
+    const rejectedPlaceIds = new Set(
+      rankings
+        .filter((r: any) => r.confidence < 0.1)
+        .map((r: any) => filteredCandidates[r.index - 1]?.place_id)
+        .filter(Boolean)
+    );
+    const confidenceByPlaceId = new Map(
+      rankings
+        .map((r: any) => [filteredCandidates[r.index - 1]?.place_id, r.confidence])
+        .filter(([id]: any) => Boolean(id))
+    );
     const backfillPool = typeMatchedIds.size > 0
       ? filteredCandidates.filter((v: any) => typeMatchedIds.has(v.place_id))
       : filteredCandidates;
     const backfill = backfillPool
-      .filter((v: any) => !usedPlaceIds.has(v.place_id))
-      .slice(0, 8 - finalVenues.length)
-      .map((v: any) => ({ ...v, descriptors: [], reasoning_explanation: '' }));
+      .filter((v: any) => !usedPlaceIds.has(v.place_id) && !rejectedPlaceIds.has(v.place_id))
+      .map((v: any) => ({ ...v, descriptors: [], reasoning_explanation: '', llm_confidence: confidenceByPlaceId.get(v.place_id) ?? 0 }))
+      .sort((a: any, b: any) => (b.llm_confidence || 0) - (a.llm_confidence || 0))
+      .slice(0, 8 - finalVenues.length);
     finalVenues.push(...backfill);
   }
 

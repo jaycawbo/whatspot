@@ -1,6 +1,11 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-export const MONTHLY_CAP = 4000;
+const PHOTOS_MONTHLY_CAP = 3000;
+const DEFAULT_MONTHLY_CAP = 500;
+
+function monthlyCapFor(callType: string): number {
+  return callType === 'photos' ? PHOTOS_MONTHLY_CAP : DEFAULT_MONTHLY_CAP;
+}
 
 export function currentMonthKey(): string {
   const now = new Date();
@@ -23,11 +28,13 @@ export async function checkAndLog(
   count: number = 1,
 ): Promise<boolean> {
   const monthKey = currentMonthKey();
+  const cap = monthlyCapFor(callType);
 
   const { count: currentCount, error: countError } = await sb
     .from('api_call_log')
     .select('*', { count: 'exact', head: true })
     .eq('service', 'google_places')
+    .eq('call_type', callType)
     .eq('month_key', monthKey);
 
   if (countError) {
@@ -46,9 +53,9 @@ export async function checkAndLog(
     return true;
   }
 
-  if ((currentCount ?? 0) + count > MONTHLY_CAP) {
+  if ((currentCount ?? 0) + count > cap) {
     console.warn(
-      `[apiCallLog] Monthly cap reached (${currentCount}/${MONTHLY_CAP}). Blocking call_type="${callType}" venue="${venueId ?? 'n/a'}".`,
+      `[apiCallLog] Monthly cap reached for call_type="${callType}" (${currentCount}/${cap}). Blocking venue="${venueId ?? 'n/a'}".`,
     );
     return false;
   }
