@@ -1,6 +1,11 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-export const MONTHLY_CAP = 4000;
+const PHOTOS_MONTHLY_CAP = 3000;
+const DEFAULT_MONTHLY_CAP = 500;
+
+function monthlyCapFor(callType: string): number {
+  return callType === 'photos' ? PHOTOS_MONTHLY_CAP : DEFAULT_MONTHLY_CAP;
+}
 
 export function currentMonthKey(): string {
   const now = new Date();
@@ -20,37 +25,53 @@ export async function checkAndLog(
   sb: SupabaseClient,
   callType: string,
   venueId?: string,
+  count: number = 1,
 ): Promise<boolean> {
   const monthKey = currentMonthKey();
+  const cap = monthlyCapFor(callType);
 
-  const { count, error: countError } = await sb
+  const { count: currentCount, error: countError } = await sb
     .from('api_call_log')
     .select('*', { count: 'exact', head: true })
     .eq('service', 'google_places')
+    .eq('call_type', callType)
     .eq('month_key', monthKey);
 
   if (countError) {
     console.warn('[apiCallLog] Count query failed — failing open:', countError.message);
+    const rows = Array.from({ length: count }, () => ({
+      service:   'google_places',
+      call_type: callType,
+      venue_id:  venueId ?? null,
+      called_at: new Date().toISOString(),
+      month_key: monthKey,
+    }));
+    const { error: insertError } = await sb.from('api_call_log').insert(rows);
+    if (insertError) {
+      console.error('[apiCallLog] Insert also failed after count error:', insertError.message);
+    }
     return true;
   }
 
-  if ((count ?? 0) >= MONTHLY_CAP) {
+  if ((currentCount ?? 0) + count > cap) {
     console.warn(
-      `[apiCallLog] Monthly cap reached (${count}/${MONTHLY_CAP}). Blocking call_type="${callType}" venue="${venueId ?? 'n/a'}".`,
+      `[apiCallLog] Monthly cap reached for call_type="${callType}" (${currentCount}/${cap}). Blocking venue="${venueId ?? 'n/a'}".`,
     );
     return false;
   }
 
-  const { error: insertError } = await sb.from('api_call_log').insert({
+  const rows = Array.from({ length: count }, () => ({
     service:    'google_places',
     call_type:  callType,
     venue_id:   venueId ?? null,
     called_at:  new Date().toISOString(),
     month_key:  monthKey,
-  });
+  }));
+
+  const { error: insertError } = await sb.from('api_call_log').insert(rows);
 
   if (insertError) {
-    console.warn('[apiCallLog] Insert failed — call will still proceed:', insertError.message);
+    console.error('[apiCallLog] Insert failed — call will still proceed:', insertError.message);
   }
 
   return true;
