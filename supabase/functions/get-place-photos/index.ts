@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
   }
 
   // ── Step 2: Fetch photo resource names from Google ─────────────────────────
-  const allowed = await checkAndLog(sb, 'photos', cleanId);
+  const allowed = await checkAndLog(sb, 'photos', cleanId, max_photos + 1);
   if (!allowed) {
     return new Response(JSON.stringify({ success: false, error: 'Monthly API cap reached', photo_urls: [] }), {
       status: 429,
@@ -142,11 +142,17 @@ Deno.serve(async (req) => {
 
     // ── Step 4: Write permanent URLs to DB (fire-and-forget) ──────────────
     if (validUrls.length > 0) {
-      sb.from('venues')
-        .update({ photo_urls: validUrls, photos_complete: validUrls.length >= totalAvailable, enriched: true })
-        .eq('google_place_id', cleanId)
-        .then(() => {})
-        .catch(() => {});
+      const { error: updateError } = await sb.from('venues')
+        .update({
+          photo_urls: validUrls,
+          photos_complete: validUrls.length >= max_photos || validUrls.length >= totalAvailable,
+          photos_fetched_count: validUrls.length,
+          enriched: true,
+        })
+        .eq('google_place_id', cleanId);
+      if (updateError) {
+        console.error(`Failed to persist photo_urls for ${cleanId}:`, updateError.message);
+      }
     }
 
     return new Response(JSON.stringify({ success: true, photo_urls: validUrls }), {
