@@ -263,7 +263,7 @@ export default function DiscoveryCard({
                   : (i === currentPhoto ? 1 : 0),
                 transition: isFading ? 'opacity 600ms ease' : 'none',
               }}
-              onLoad={i === 0 && src !== '/placeholder.svg' ? () => setFirstPhotoReady(true) : undefined}
+              onLoad={i === 0 ? () => setFirstPhotoReady(true) : undefined}
               onError={i === 0 ? () => setFirstPhotoReady(true) : undefined}
             />
           ))}
