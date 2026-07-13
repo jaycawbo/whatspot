@@ -84,7 +84,18 @@ export default function VenueImageCarousel({ images = [], forceLoading = false }
       <Dialog open={isExpanded} onOpenChange={setIsExpanded}>
         <DialogPortal>
           <DialogOverlay />
-          <DialogPrimitive.Content className="fixed inset-0 z-[1001] flex items-center justify-center bg-black outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0">
+          <DialogPrimitive.Content
+            className="fixed inset-0 z-[1001] flex items-center justify-center bg-black outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                expandedEmblaApi?.scrollPrev();
+              } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                expandedEmblaApi?.scrollNext();
+              }
+            }}
+          >
             <DialogTitle className="sr-only">Venue photos</DialogTitle>
             <div className="overflow-hidden w-full h-full" ref={expandedEmblaRef}>
               <div className="flex h-full">
