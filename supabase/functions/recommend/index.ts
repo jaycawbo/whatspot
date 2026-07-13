@@ -628,6 +628,8 @@ async function getSupabaseVenues(params: {
     _rawTypes: v.venue_types ?? [],
     _photoUrls: v.photo_urls ?? [],
     _regularOpeningHours: v.regular_opening_hours ?? null,
+    photos_complete: v.photos_complete ?? false,
+    photos_fetched_count: v.photos_fetched_count ?? 0,
     score: v.score,
     display_weight: v.display_weight,
     ...extra,
@@ -1198,6 +1200,8 @@ Deno.serve(async (req) => {
               unknownPrice: false,
               _rawTypes: v.venue_types ?? [],
               _photoUrls: v.photo_urls ?? [],
+              photos_complete: v.photos_complete ?? false,
+              photos_fetched_count: v.photos_fetched_count ?? 0,
             };
           })
           .filter((v: any) => {
@@ -1254,6 +1258,8 @@ Deno.serve(async (req) => {
                 unknownPrice: false,
                 _rawTypes: v.venue_types ?? [],
                 _photoUrls: v.photo_urls ?? [],
+                photos_complete: v.photos_complete ?? false,
+                photos_fetched_count: v.photos_fetched_count ?? 0,
               };
             })
             .filter((v: any) => {
