@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { Star, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import BeenHereButton from '@/components/ui/BeenHereButton';
-import { Skeleton } from '@/components/ui/skeleton';
 
 function formatPrice(level) {
   if (!level) return null;
@@ -248,87 +247,83 @@ export default function DiscoveryCard({
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
       >
-        {isInViewport ? (
-          <>
-            {/* All photos always mounted — opacity-based crossfade prevents src-swap flash.
-                Incoming photo transitions 0→1 on an existing DOM element so CSS fires correctly.
-                Outgoing transitions 1→0. At completion only state changes — no src swap, no unmount. */}
-            {photos.map((src, i) => (
-              <img
-                key={i}
-                src={src}
-                alt={i === currentPhoto ? (venue?.name || 'Venue photo') : ''}
-                className="absolute inset-0 h-full w-full object-cover"
-                style={{
-                  opacity: isFading
-                    ? (i === nextPhoto ? 1 : i === currentPhoto ? 0 : 0)
-                    : (i === currentPhoto ? 1 : 0),
-                  transition: isFading ? 'opacity 600ms ease' : 'none',
-                }}
-                onLoad={i === 0 && src !== '/placeholder.svg' ? () => setFirstPhotoReady(true) : undefined}
-                onError={i === 0 ? () => setFirstPhotoReady(true) : undefined}
-              />
-            ))}
+        <>
+          {/* All photos always mounted — opacity-based crossfade prevents src-swap flash.
+              Incoming photo transitions 0→1 on an existing DOM element so CSS fires correctly.
+              Outgoing transitions 1→0. At completion only state changes — no src swap, no unmount. */}
+          {photos.map((src, i) => (
+            <img
+              key={i}
+              src={src}
+              alt={i === currentPhoto ? (venue?.name || 'Venue photo') : ''}
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{
+                opacity: isFading
+                  ? (i === nextPhoto ? 1 : i === currentPhoto ? 0 : 0)
+                  : (i === currentPhoto ? 1 : 0),
+                transition: isFading ? 'opacity 600ms ease' : 'none',
+              }}
+              onLoad={i === 0 && src !== '/placeholder.svg' ? () => setFirstPhotoReady(true) : undefined}
+              onError={i === 0 ? () => setFirstPhotoReady(true) : undefined}
+            />
+          ))}
 
-            {/* Loading shimmer — sits above photos until the first real photo is ready.
-                Removes itself as soon as the browser fires onLoad for photos[0]. */}
-            {!firstPhotoReady && (
-              <>
-                <div className="absolute inset-0 z-[1] animate-pulse bg-muted-foreground/25" />
-                <div className="absolute inset-0 z-[1] shimmer-sweep" />
-              </>
-            )}
+          {/* Loading shimmer — sits above photos until the first real photo is ready.
+              Removes itself as soon as the browser fires onLoad for photos[0]. */}
+          {!firstPhotoReady && (
+            <>
+              <div className="absolute inset-0 z-[1] animate-pulse bg-muted-foreground/25" />
+              <div className="absolute inset-0 z-[1] shimmer-sweep" />
+            </>
+          )}
 
-            {/* Spots list membership badge */}
-            {listLabel && (
-              <div className={cn('absolute top-3 z-10 pointer-events-none', onBeenHereClick ? 'left-3' : 'right-3')}>
-                <span className="rounded-full px-2.5 py-1 text-xs font-semibold bg-black/55 text-white backdrop-blur-sm">
-                  {listLabel}
-                </span>
-              </div>
-            )}
-
-            {/* Been here button */}
-            {!isGhost && onBeenHereClick && (
-              <div className="absolute top-3 right-3 z-20">
-                <BeenHereButton rating={beenHereRating} onClick={onBeenHereClick} />
-              </div>
-            )}
-
-            {/* Dot indicators */}
-            {photos.length > 1 && (
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-                {photos.map((_, i) => (
-                  <div
-                    key={i}
-                    className={cn(
-                      'h-1.5 rounded-full transition-all',
-                      i === (nextPhoto ?? currentPhoto)
-                        ? 'w-4 bg-background'
-                        : 'w-1.5 bg-background/50'
-                    )}
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* Invisible tap regions for photo navigation */}
-            <div className="absolute inset-0 flex z-[5]">
-              <button
-                className="flex-1 cursor-default"
-                onClick={() => goToPhoto('prev')}
-                aria-label="Previous photo"
-              />
-              <button
-                className="flex-1 cursor-default"
-                onClick={() => goToPhoto('next')}
-                aria-label="Next photo"
-              />
+          {/* Spots list membership badge */}
+          {listLabel && (
+            <div className={cn('absolute top-3 z-10 pointer-events-none', onBeenHereClick ? 'left-3' : 'right-3')}>
+              <span className="rounded-full px-2.5 py-1 text-xs font-semibold bg-black/55 text-white backdrop-blur-sm">
+                {listLabel}
+              </span>
             </div>
-          </>
-        ) : (
-          <Skeleton className="absolute inset-0 rounded-none" />
-        )}
+          )}
+
+          {/* Been here button */}
+          {!isGhost && onBeenHereClick && (
+            <div className="absolute top-3 right-3 z-20">
+              <BeenHereButton rating={beenHereRating} onClick={onBeenHereClick} />
+            </div>
+          )}
+
+          {/* Dot indicators */}
+          {photos.length > 1 && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+              {photos.map((_, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    'h-1.5 rounded-full transition-all',
+                    i === (nextPhoto ?? currentPhoto)
+                      ? 'w-4 bg-background'
+                      : 'w-1.5 bg-background/50'
+                  )}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Invisible tap regions for photo navigation */}
+          <div className="absolute inset-0 flex z-[5]">
+            <button
+              className="flex-1 cursor-default"
+              onClick={() => goToPhoto('prev')}
+              aria-label="Previous photo"
+            />
+            <button
+              className="flex-1 cursor-default"
+              onClick={() => goToPhoto('next')}
+              aria-label="Next photo"
+            />
+          </div>
+        </>
       </div>
 
       {/* Venue info area — tappable to open details */}
