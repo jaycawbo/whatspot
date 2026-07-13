@@ -43,6 +43,8 @@ export default function DiscoveryCard({
     : venue?._photoUrls?.length > 0
       ? venue._photoUrls
       : ['/placeholder.svg'];
+  const photosFetchDone = venue?.photosFetchDone ?? true;
+  const isPlaceholderOnly = photos.length === 1 && photos[0] === '/placeholder.svg';
   const [currentPhoto, setCurrentPhoto] = useState(0);
   const [nextPhoto, setNextPhoto] = useState(null);
   const [isFading, setIsFading] = useState(false);
@@ -248,32 +250,43 @@ export default function DiscoveryCard({
         onTouchEnd={onTouchEnd}
       >
         <>
-          {/* All photos always mounted — opacity-based crossfade prevents src-swap flash.
-              Incoming photo transitions 0→1 on an existing DOM element so CSS fires correctly.
-              Outgoing transitions 1→0. At completion only state changes — no src swap, no unmount. */}
-          {photos.map((src, i) => (
-            <img
-              key={i}
-              src={src}
-              alt={i === currentPhoto ? (venue?.name || 'Venue photo') : ''}
-              className="absolute inset-0 h-full w-full object-cover"
-              style={{
-                opacity: isFading
-                  ? (i === nextPhoto ? 1 : i === currentPhoto ? 0 : 0)
-                  : (i === currentPhoto ? 1 : 0),
-                transition: isFading ? 'opacity 600ms ease' : 'none',
-              }}
-              onLoad={i === 0 ? () => setFirstPhotoReady(true) : undefined}
-              onError={i === 0 ? () => setFirstPhotoReady(true) : undefined}
-            />
-          ))}
-
-          {/* Loading shimmer — sits above photos until the first real photo is ready.
-              Removes itself as soon as the browser fires onLoad for photos[0]. */}
-          {!firstPhotoReady && (
+          {isPlaceholderOnly && !photosFetchDone ? (
+            /* Photo fetch still in flight — plain shimmer only. Don't mount the
+               placeholder image yet; we don't know if a real photo is coming. */
             <>
               <div className="absolute inset-0 z-[1] animate-pulse bg-muted-foreground/25" />
               <div className="absolute inset-0 z-[1] shimmer-sweep" />
+            </>
+          ) : (
+            <>
+              {/* All photos always mounted — opacity-based crossfade prevents src-swap flash.
+                  Incoming photo transitions 0→1 on an existing DOM element so CSS fires correctly.
+                  Outgoing transitions 1→0. At completion only state changes — no src swap, no unmount. */}
+              {photos.map((src, i) => (
+                <img
+                  key={i}
+                  src={src}
+                  alt={i === currentPhoto ? (venue?.name || 'Venue photo') : ''}
+                  className="absolute inset-0 h-full w-full object-cover"
+                  style={{
+                    opacity: isFading
+                      ? (i === nextPhoto ? 1 : i === currentPhoto ? 0 : 0)
+                      : (i === currentPhoto ? 1 : 0),
+                    transition: isFading ? 'opacity 600ms ease' : 'none',
+                  }}
+                  onLoad={i === 0 ? () => setFirstPhotoReady(true) : undefined}
+                  onError={i === 0 ? () => setFirstPhotoReady(true) : undefined}
+                />
+              ))}
+
+              {/* Loading shimmer — sits above photos until the first real photo is ready.
+                  Removes itself as soon as the browser fires onLoad for photos[0]. */}
+              {!firstPhotoReady && (
+                <>
+                  <div className="absolute inset-0 z-[1] animate-pulse bg-muted-foreground/25" />
+                  <div className="absolute inset-0 z-[1] shimmer-sweep" />
+                </>
+              )}
             </>
           )}
 

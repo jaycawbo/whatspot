@@ -65,6 +65,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const ratingWasSubmittedRef = useRef(false);
   const ratingSheetOpenRef = useRef(false);
   const [venuePhotoOverrides, setVenuePhotoOverrides] = useState({});
+  const [photoFetchSettledIds, setPhotoFetchSettledIds] = useState(() => new Set());
   const fetchedPlaceIdsRef = useRef(new Set());
   const isFadingRef = useRef(false);
   const pendingOverridesRef = useRef({});
@@ -107,11 +108,16 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
                 } else {
                   setVenuePhotoOverrides((prev) => ({ ...prev, [rawId]: data.photo_urls }));
                 }
+                setPhotoFetchSettledIds((prev) => new Set(prev).add(rawId));
               };
               img.src = data.photo_urls[0];
+            } else {
+              setPhotoFetchSettledIds((prev) => new Set(prev).add(rawId));
             }
           })
-          .catch(() => {});
+          .catch(() => {
+            setPhotoFetchSettledIds((prev) => new Set(prev).add(rawId));
+          });
       }
     }
   }, [currentVenue, writePassiveSkip]);
@@ -255,11 +261,16 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
             } else {
               setVenuePhotoOverrides((prev) => ({ ...prev, [rawId]: data.photo_urls }));
             }
+            setPhotoFetchSettledIds((prev) => new Set(prev).add(rawId));
           };
           img.src = data.photo_urls[0];
+        } else {
+          setPhotoFetchSettledIds((prev) => new Set(prev).add(rawId));
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        setPhotoFetchSettledIds((prev) => new Set(prev).add(rawId));
+      });
   }, [nextVenue]);
 
   // Advance to next card — clamped to venues.length
@@ -509,12 +520,13 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const enrichVenue = (venue) => {
     if (!venue) return venue;
     const rawId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
+    const photosFetchDone = venue.photos_complete === true || (rawId ? photoFetchSettledIds.has(rawId) : true);
     const override = rawId ? venuePhotoOverrides[rawId] : undefined;
-    if (!override) return venue;
+    if (!override) return { ...venue, photosFetchDone };
     const existing = venue.image_urls || [];
     const hasRealPhotos = existing.length > 0 && existing[0] !== '/placeholder.svg';
-    if (hasRealPhotos) return venue;
-    return { ...venue, image_urls: override };
+    if (hasRealPhotos) return { ...venue, photosFetchDone };
+    return { ...venue, image_urls: override, photosFetchDone };
   };
 
   // Empty state
