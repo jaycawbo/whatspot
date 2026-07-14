@@ -10,6 +10,7 @@ import { BroncoProvider } from '@/context/BroncoContext';
 import RequestModal from '@/components/bronco/RequestModal';
 import FloatingRequestsPill from '@/components/bronco/FloatingRequestsPill';
 import RequestsOverlay from '@/components/bronco/RequestsOverlay';
+import OnboardingInterstitial from '@/components/onboarding/OnboardingInterstitial';
 import VenueDetails from '@/pages/VenueDetails';
 import VenuePortal from '@/pages/VenuePortal';
 import EnrichmentDashboard from '@/pages/EnrichmentDashboard';
@@ -91,6 +92,7 @@ function App() {
             <RequestModal />
             <FloatingRequestsPill />
             <RequestsOverlay />
+            <OnboardingInterstitial />
             <Toaster />
           </QueryClientProvider>
         </BroncoProvider>
