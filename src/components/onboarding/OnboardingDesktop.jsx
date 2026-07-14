@@ -12,9 +12,10 @@ const SCREEN_COUNT = ONBOARDING_SCREENS.length;
 // 450ms, cubic-bezier(0.4, 0, 0.2, 1) for the horizontal screen slide.
 const SLIDE_TRANSITION = { duration: 0.45, ease: [0.4, 0, 0.2, 1] };
 
-export default function OnboardingDesktop({ screenIndex, onNext, onClose }) {
+export default function OnboardingDesktop({ screenIndex, onNext, onDotClick, onClose }) {
   const prefersReducedMotion = useReducedMotion();
-  const [liveSubcopy, setLiveSubcopy] = useState(ONBOARDING_SCREENS[0].subcopy);
+  const [liveSwipeSubcopy, setLiveSwipeSubcopy] = useState(ONBOARDING_SCREENS[0].subcopy);
+  const [liveSpotsSubcopy, setLiveSpotsSubcopy] = useState(ONBOARDING_SCREENS[2].subcopy);
   const isLast = screenIndex === SCREEN_COUNT - 1;
 
   return (
@@ -52,28 +53,38 @@ export default function OnboardingDesktop({ screenIndex, onNext, onClose }) {
               const Demo = DEMOS[i];
               return (
                 <section key={i} className="flex h-full" style={{ width: `${100 / SCREEN_COUNT}%` }}>
-                  <div className="flex w-[52%] items-center justify-center bg-muted">
+                  <div className="flex w-[52%] items-center justify-center overflow-hidden bg-muted">
                     <Demo
                       active={i === screenIndex}
                       reducedMotion={!!prefersReducedMotion}
-                      {...(i === 0 ? { onSubcopyChange: setLiveSubcopy } : {})}
+                      {...(i === 0 ? { onSubcopyChange: setLiveSwipeSubcopy } : {})}
+                      {...(i === 2
+                        ? { onSubcopyChange: (text) => setLiveSpotsSubcopy(text ?? ONBOARDING_SCREENS[2].subcopy) }
+                        : {})}
                     />
                   </div>
                   <div className="flex w-[48%] flex-col justify-center px-10 text-left">
                     <div className="mb-4 flex gap-1.5">
                       {ONBOARDING_SCREENS.map((_, dotIndex) => (
-                        <span
+                        <button
                           key={dotIndex}
-                          className={cn(
-                            'h-[7px] rounded-full transition-all duration-300',
-                            dotIndex === screenIndex ? 'w-5 bg-green-600' : 'w-[7px] bg-border'
-                          )}
-                        />
+                          type="button"
+                          onClick={() => onDotClick(dotIndex)}
+                          aria-label={`Go to screen ${dotIndex + 1}`}
+                          className="p-1.5"
+                        >
+                          <span
+                            className={cn(
+                              'block h-[7px] rounded-full transition-all duration-300',
+                              dotIndex === screenIndex ? 'w-5 bg-green-600' : 'w-[7px] bg-border'
+                            )}
+                          />
+                        </button>
                       ))}
                     </div>
                     <h2 className="text-2xl font-extrabold tracking-tight text-foreground">{s.headline}</h2>
                     <p className="mb-4 mt-2 min-h-[20px] text-sm text-muted-foreground">
-                      {i === 0 ? liveSubcopy : s.subcopy}
+                      {i === 0 ? liveSwipeSubcopy : i === 2 ? liveSpotsSubcopy : s.subcopy}
                     </p>
                     <button
                       type="button"

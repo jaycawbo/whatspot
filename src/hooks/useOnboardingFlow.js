@@ -41,11 +41,16 @@ export function useOnboardingFlow() {
     });
   }, [close]);
 
+  const goTo = useCallback((index) => {
+    setScreenIndex(Math.min(Math.max(index, 0), SCREEN_COUNT - 1));
+  }, []);
+
   return {
     isOpen: !seen,
     screenIndex,
     screenCount: SCREEN_COUNT,
     next,
+    goTo,
     close,
   };
 }

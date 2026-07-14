@@ -7,7 +7,7 @@ export const ONBOARDING_SCREENS = [
   },
   {
     headline: 'Know what you want? Search for it.',
-    subcopy: 'We read the vibe, not just the words.',
+    subcopy: 'We read the vibes to match you with better results.',
   },
   {
     headline: 'Save spots, organized for later.',

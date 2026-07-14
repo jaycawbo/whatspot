@@ -8,14 +8,16 @@ import OnboardingDesktop from './OnboardingDesktop';
 export default function OnboardingInterstitial() {
   const { isAuthenticated, isLoadingAuth } = useAuth();
   const isMobile = useIsMobile();
-  const { isOpen, screenIndex, next, close } = useOnboardingFlow();
+  const { isOpen, screenIndex, next, goTo, close } = useOnboardingFlow();
 
   const shouldRender = isOpen && !isLoadingAuth && !isAuthenticated;
   const Variant = isMobile ? OnboardingMobile : OnboardingDesktop;
 
   return (
     <AnimatePresence>
-      {shouldRender && <Variant key="onboarding" screenIndex={screenIndex} onNext={next} onClose={close} />}
+      {shouldRender && (
+        <Variant key="onboarding" screenIndex={screenIndex} onNext={next} onDotClick={goTo} onClose={close} />
+      )}
     </AnimatePresence>
   );
 }

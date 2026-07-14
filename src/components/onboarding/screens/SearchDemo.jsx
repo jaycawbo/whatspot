@@ -8,7 +8,7 @@ const PHRASE = 'Iconic bar for a night cap.';
 const CHAR_MS = 48;
 const CHIPS = ['🍸 Cocktails', '🌙 Late night', '💎 Upscale'];
 const RESULTS = [
-  { name: 'Ruby Room', meta: '★ 4.8 · $$$ · Cocktail bar', gradient: 'from-emerald-300 to-green-600' },
+  { name: 'Bar Volta', meta: '★ 4.8 · $$$ · Cocktail bar', gradient: 'from-emerald-300 to-green-600' },
   { name: 'The Tin Cup', meta: '★ 4.5 · $$ · Late night', gradient: 'from-indigo-300 to-indigo-500' },
   { name: 'Cafe Lumen', meta: '★ 4.6 · $$$ · Wine bar', gradient: 'from-rose-300 to-rose-500' },
 ];
@@ -105,6 +105,7 @@ export default function SearchDemo({ active, reducedMotion }) {
           <StampBounce
             key={`${cycle}-${i}`}
             reducedMotion={reducedMotion}
+            variant="appear"
             className="rounded-full border border-green-500 bg-green-50 px-2.5 py-1 text-[11px] font-bold text-green-700"
           >
             {chip}
