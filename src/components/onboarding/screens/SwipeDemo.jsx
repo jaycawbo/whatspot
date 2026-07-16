@@ -13,18 +13,21 @@ const BOUNCE_TRANSITION = { duration: 2.4, repeat: Infinity, ease: 'easeInOut' }
 // consistent dataset across screens rather than a one-off placeholder.
 const VENUE = { name: 'Bar Volta', gradient: 'from-amber-200 to-amber-500', rating: '4.7', price: '$$', distance: '0.4 km' };
 
+// Colors mirror the real swipe-action colors in DiscoveryDeck.jsx: right/green (like),
+// left/destructive-red (dislike), down/muted-grey (skip), up/blue (been-here overlay is
+// hsla(210, 70%, 50%)).
 const DIRECTIONS = [
-  { area: 'up', icon: ArrowUp, label: 'Been here' },
-  { area: 'left', icon: ArrowLeft, label: 'Not interested' },
-  { area: 'right', icon: ArrowRight, label: 'Interested' },
-  { area: 'down', icon: ArrowDown, label: 'Skip for now' },
+  { area: 'up', icon: ArrowUp, label: 'Been here', colorClass: 'text-blue-500' },
+  { area: 'left', icon: ArrowLeft, label: 'Not interested', colorClass: 'text-destructive' },
+  { area: 'right', icon: ArrowRight, label: 'Interested', colorClass: 'text-green-600' },
+  { area: 'down', icon: ArrowDown, label: 'Skip for now', colorClass: 'text-muted-foreground' },
 ];
 
-function DirectionArrow({ icon: Icon, label, area }) {
+function DirectionArrow({ icon: Icon, label, area, colorClass }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-1 text-center" style={{ gridArea: area }}>
-      <Icon className="h-5 w-5 text-foreground/70" />
-      <span className="max-w-[68px] text-[11px] font-semibold leading-tight text-muted-foreground">{label}</span>
+    <div className="flex flex-col items-center justify-center gap-2 text-center" style={{ gridArea: area }}>
+      <Icon className={cn('h-7 w-7', colorClass)} strokeWidth={3} />
+      <span className="max-w-[72px] text-[11px] font-semibold leading-tight text-muted-foreground">{label}</span>
     </div>
   );
 }
@@ -34,13 +37,13 @@ export default function SwipeDemo({ active, reducedMotion }) {
 
   return (
     <div
-      className="relative grid w-full max-w-[320px] items-center justify-items-center"
+      className="relative grid w-full max-w-[360px] items-center justify-items-center"
       style={{
         gridTemplateAreas: '". up ." "left card right" ". down ."',
-        gridTemplateColumns: 'minmax(60px,1fr) auto minmax(60px,1fr)',
+        gridTemplateColumns: 'minmax(70px,1fr) auto minmax(70px,1fr)',
         gridTemplateRows: 'auto auto auto',
-        columnGap: 4,
-        rowGap: 6,
+        columnGap: 20,
+        rowGap: 18,
       }}
     >
       {DIRECTIONS.map((d) => (
