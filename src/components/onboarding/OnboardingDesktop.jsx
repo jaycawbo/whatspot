@@ -87,10 +87,7 @@ export default function OnboardingDesktop({ screenIndex, onNext, onDotClick, onC
                     <button
                       type="button"
                       onClick={onNext}
-                      className={cn(
-                        'w-fit rounded-full px-7 py-3 text-[15px] font-bold text-white transition-colors',
-                        isLast ? 'bg-green-600 hover:bg-green-700' : 'bg-foreground hover:bg-foreground/90'
-                      )}
+                      className="w-fit rounded-full bg-green-600 px-7 py-3 text-[15px] font-bold text-white transition-colors hover:bg-green-700"
                     >
                       {isLast ? 'Get started' : 'Next'}
                     </button>

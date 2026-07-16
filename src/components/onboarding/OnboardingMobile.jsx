@@ -111,10 +111,7 @@ export default function OnboardingMobile({ screenIndex, onNext, onDotClick, onCl
         <button
           type="button"
           onClick={onNext}
-          className={cn(
-            'w-full rounded-full py-3.5 text-[15px] font-bold text-white transition-colors',
-            isLast ? 'bg-green-600 hover:bg-green-700' : 'bg-foreground hover:bg-foreground/90'
-          )}
+          className="w-full rounded-full bg-green-600 py-3.5 text-[15px] font-bold text-white transition-colors hover:bg-green-700"
         >
           {isLast ? 'Get started' : 'Next'}
         </button>
