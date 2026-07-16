@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { LayoutGroup, motion } from 'framer-motion';
-import { Heart, MapPin } from 'lucide-react';
+import { Coffee, Heart, MapPin } from 'lucide-react';
 import StampBounce from '../StampBounce';
 import { cn } from '@/lib/utils';
 
@@ -31,7 +31,7 @@ const PRE_SELECT_HOLD_MS = 700;
 const SELECT_MS = 450;
 const POST_FILTER_HOLD_MS = 700;
 const MAP_HOLD_MS = 1800;
-const MAP_SUBCOPY = 'See them all on the map.';
+const MAP_SUBCOPY = 'See them all on the map';
 
 export default function SpotsDemo({ active, reducedMotion, onSubcopyChange }) {
   const [savedCount, setSavedCount] = useState(0);
@@ -129,7 +129,11 @@ export default function SpotsDemo({ active, reducedMotion, onSubcopyChange }) {
                       className={cn('h-16 w-16 rounded-2xl bg-gradient-to-br', spot.gradient)}
                     />
                     {saved && (
-                      <div className="absolute -right-1.5 -top-1.5">
+                      <motion.div
+                        className="absolute -right-1.5 -top-1.5"
+                        animate={{ opacity: filteredOut ? 0 : 1, scale: filteredOut ? 0.7 : 1 }}
+                        transition={{ duration: SELECT_MS / 1000, ease: 'easeInOut' }}
+                      >
                         <StampBounce
                           key={`${cycle}-${i}`}
                           reducedMotion={reducedMotion}
@@ -138,7 +142,7 @@ export default function SpotsDemo({ active, reducedMotion, onSubcopyChange }) {
                         >
                           <Heart className="h-3.5 w-3.5 fill-red-500 text-red-500" />
                         </StampBounce>
-                      </div>
+                      </motion.div>
                     )}
                   </div>
                 );
@@ -146,7 +150,7 @@ export default function SpotsDemo({ active, reducedMotion, onSubcopyChange }) {
             </div>
 
             <div className="mt-4 flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-[13px] font-bold shadow-md">
-              <span>📌 Spots saved ·</span>
+              <span>Spots saved ·</span>
               <span className="text-green-700">{savedCount}</span>
             </div>
 
@@ -160,7 +164,7 @@ export default function SpotsDemo({ active, reducedMotion, onSubcopyChange }) {
                     variant="appear"
                     className={cn(
                       'rounded-full border px-3 py-1.5 text-[11px] font-bold text-foreground',
-                      selected ? 'border-zinc-300 bg-zinc-200 shadow-md' : 'border-border bg-muted'
+                      selected ? 'border-zinc-300 bg-white shadow-md' : 'border-border bg-muted'
                     )}
                   >
                     <motion.span
@@ -206,11 +210,17 @@ export default function SpotsDemo({ active, reducedMotion, onSubcopyChange }) {
               >
                 <motion.div layoutId={`spot-${spotIndex}`} transition={{ duration: 0.6, ease: 'easeInOut' }}>
                   <StampBounce reducedMotion={reducedMotion}>
-                    <MapPin
-                      className={cn('h-6 w-6 drop-shadow', SPOTS[spotIndex].pin)}
-                      fill="currentColor"
-                      fillOpacity={0.25}
-                    />
+                    <div className="relative">
+                      <MapPin
+                        className={cn('h-6 w-6 drop-shadow', SPOTS[spotIndex].pin)}
+                        fill="currentColor"
+                        fillOpacity={0.25}
+                      />
+                      <Coffee
+                        className="absolute left-1/2 top-[6px] h-2.5 w-2.5 -translate-x-1/2 text-white"
+                        strokeWidth={2.5}
+                      />
+                    </div>
                   </StampBounce>
                 </motion.div>
               </div>

@@ -27,7 +27,7 @@ function DirectionArrow({ icon: Icon, label, area, colorClass }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 text-center" style={{ gridArea: area }}>
       <Icon className={cn('h-7 w-7', colorClass)} strokeWidth={3} />
-      <span className="max-w-[72px] text-[11px] font-semibold leading-tight text-muted-foreground">{label}</span>
+      <span className="max-w-[100px] text-[17px] font-semibold leading-tight text-muted-foreground">{label}</span>
     </div>
   );
 }

@@ -6,11 +6,11 @@ export const ONBOARDING_SCREENS = [
     subcopy: "We'll show you more of what you like and less of what you don't",
   },
   {
-    headline: 'Know what you want? Search for it.',
-    subcopy: 'We read the vibes to match you with better results.',
+    headline: 'Know what you want? Search for it',
+    subcopy: 'We read the vibes to match you with better results',
   },
   {
-    headline: 'Save spots, organized for later.',
-    subcopy: 'They sort themselves into lists as you go.',
+    headline: 'All your favourites in one place',
+    subcopy: "We organize them so you don't have to",
   },
 ];
