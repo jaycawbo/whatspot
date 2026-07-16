@@ -14,7 +14,6 @@ const SLIDE_TRANSITION = { duration: 0.45, ease: [0.4, 0, 0.2, 1] };
 
 export default function OnboardingDesktop({ screenIndex, onNext, onDotClick, onClose }) {
   const prefersReducedMotion = useReducedMotion();
-  const [liveSwipeSubcopy, setLiveSwipeSubcopy] = useState(ONBOARDING_SCREENS[0].subcopy);
   const [liveSpotsSubcopy, setLiveSpotsSubcopy] = useState(ONBOARDING_SCREENS[2].subcopy);
   const isLast = screenIndex === SCREEN_COUNT - 1;
 
@@ -57,7 +56,6 @@ export default function OnboardingDesktop({ screenIndex, onNext, onDotClick, onC
                     <Demo
                       active={i === screenIndex}
                       reducedMotion={!!prefersReducedMotion}
-                      {...(i === 0 ? { onSubcopyChange: setLiveSwipeSubcopy } : {})}
                       {...(i === 2
                         ? { onSubcopyChange: (text) => setLiveSpotsSubcopy(text ?? ONBOARDING_SCREENS[2].subcopy) }
                         : {})}
@@ -84,7 +82,7 @@ export default function OnboardingDesktop({ screenIndex, onNext, onDotClick, onC
                     </div>
                     <h2 className="text-2xl font-extrabold tracking-tight text-foreground">{s.headline}</h2>
                     <p className="mb-4 mt-2 min-h-[20px] text-sm text-muted-foreground">
-                      {i === 0 ? liveSwipeSubcopy : i === 2 ? liveSpotsSubcopy : s.subcopy}
+                      {i === 2 ? liveSpotsSubcopy : s.subcopy}
                     </p>
                     <button
                       type="button"

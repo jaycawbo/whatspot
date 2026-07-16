@@ -1,9 +1,9 @@
-// Static headline/subcopy per onboarding screen. Screen 1's subcopy is overridden live by
-// SwipeDemo as it cycles through swipe directions; screens 2 and 3 keep their default.
+// Static headline/subcopy per onboarding screen. Screen 3's subcopy is overridden live by
+// SpotsDemo as spots get saved; screens 1 and 2 keep their default.
 export const ONBOARDING_SCREENS = [
   {
     headline: 'Swipe to discover new spots',
-    subcopy: 'Swipe right when something looks good.',
+    subcopy: "We'll show you more of what you like and less of what you don't",
   },
   {
     headline: 'Know what you want? Search for it.',
