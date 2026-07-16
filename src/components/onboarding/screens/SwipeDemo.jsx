@@ -6,8 +6,8 @@ import { cn } from '@/lib/utils';
 // Static compass layout: one venue card centered with a subtle idle bounce, arrows in all
 // four directions carrying the swipe-meaning copy. Replaces the previous auto-cycling
 // exit/stamp sequence — simpler visual, no state machine needed.
-const CARD_WIDTH = 132;
-const CARD_HEIGHT = 150;
+const CARD_WIDTH = 158;
+const CARD_HEIGHT = 180;
 const BADGE_SIZE = 40;
 const NUDGE_MS = 1300;
 // Card wiggles once every 2 arrow-nudge cycles, not continuously.
@@ -44,8 +44,7 @@ function DirectionArrow({ icon: Icon, label, area, colorClass, nudge, animated }
       >
         <Icon className={cn('h-4 w-4', colorClass)} strokeWidth={2.5} />
       </motion.div>
-      {/* Matches the subcopy's font styling (weight/leading), just at the larger 17px size. */}
-      <span className="max-w-[88px] text-[17px] text-muted-foreground">{label}</span>
+      <span className="max-w-[88px] text-[14px] leading-tight text-muted-foreground">{label}</span>
     </div>
   );
 }
@@ -65,7 +64,7 @@ export default function SwipeDemo({ active, reducedMotion }) {
 
   return (
     <div
-      className="relative grid w-full max-w-[300px] items-center justify-items-center"
+      className="relative grid w-full max-w-[320px] items-center justify-items-center"
       style={{
         gridTemplateAreas: '". up ." "left card right" ". down ."',
         // Side columns just fit the badge (40px) — sized to stay within narrow mobile
@@ -73,8 +72,8 @@ export default function SwipeDemo({ active, reducedMotion }) {
         // arrow off the edge of the demo stage on phones.
         gridTemplateColumns: 'minmax(40px,1fr) auto minmax(40px,1fr)',
         gridTemplateRows: 'auto auto auto',
-        columnGap: 8,
-        rowGap: 14,
+        columnGap: 12,
+        rowGap: 18,
       }}
     >
       {DIRECTIONS.map((d) => (
