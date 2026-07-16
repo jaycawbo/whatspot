@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { LayoutGroup, motion } from 'framer-motion';
-import { Coffee, Heart, MapPin } from 'lucide-react';
+import { Heart, MapPin } from 'lucide-react';
 import StampBounce from '../StampBounce';
 import { cn } from '@/lib/utils';
 
@@ -31,7 +31,7 @@ const PRE_SELECT_HOLD_MS = 700;
 const SELECT_MS = 450;
 const POST_FILTER_HOLD_MS = 700;
 const MAP_HOLD_MS = 1800;
-const MAP_SUBCOPY = 'See them all on the map';
+const MAP_SUBCOPY = 'See them all on the map.';
 
 export default function SpotsDemo({ active, reducedMotion, onSubcopyChange }) {
   const [savedCount, setSavedCount] = useState(0);
@@ -164,7 +164,7 @@ export default function SpotsDemo({ active, reducedMotion, onSubcopyChange }) {
                     variant="appear"
                     className={cn(
                       'rounded-full border px-3 py-1.5 text-[11px] font-bold text-foreground',
-                      selected ? 'border-zinc-300 bg-white shadow-md' : 'border-border bg-muted'
+                      selected ? 'border-green-400 bg-green-100 shadow-md' : 'border-border bg-muted'
                     )}
                   >
                     <motion.span
@@ -210,17 +210,11 @@ export default function SpotsDemo({ active, reducedMotion, onSubcopyChange }) {
               >
                 <motion.div layoutId={`spot-${spotIndex}`} transition={{ duration: 0.6, ease: 'easeInOut' }}>
                   <StampBounce reducedMotion={reducedMotion}>
-                    <div className="relative">
-                      <MapPin
-                        className={cn('h-6 w-6 drop-shadow', SPOTS[spotIndex].pin)}
-                        fill="currentColor"
-                        fillOpacity={0.25}
-                      />
-                      <Coffee
-                        className="absolute left-1/2 top-[6px] h-2.5 w-2.5 -translate-x-1/2 text-white"
-                        strokeWidth={2.5}
-                      />
-                    </div>
+                    <MapPin
+                      className={cn('h-6 w-6 drop-shadow', SPOTS[spotIndex].pin)}
+                      fill="currentColor"
+                      fillOpacity={0.25}
+                    />
                   </StampBounce>
                 </motion.div>
               </div>
