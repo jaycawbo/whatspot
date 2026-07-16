@@ -95,6 +95,12 @@ Deno.serve(async (req) => {
     const photoResources = ((data.photos || []) as any[]).slice(0, max_photos);
 
     if (photoResources.length === 0) {
+      const { error: updateError } = await sb.from('venues')
+        .update({ photos_complete: true, photos_fetched_count: 0 })
+        .eq('google_place_id', cleanId);
+      if (updateError) {
+        console.error(`Failed to persist empty-photos state for ${cleanId}:`, updateError.message);
+      }
       return new Response(JSON.stringify({ success: true, photo_urls: [] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
