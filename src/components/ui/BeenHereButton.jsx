@@ -64,13 +64,13 @@ export default function BeenHereButton({ rating, onClick, className }) {
       type="button"
       onClick={(e) => { e.stopPropagation(); onClick?.(); }}
       className={cn(
-        'group flex items-center justify-center gap-1 h-7 rounded-full border-2 border-white/60 bg-black/20 backdrop-blur-sm px-1.5 transition-all duration-200 hover:px-2.5 hover:bg-black/30 hover:border-white/80',
+        'group flex items-center justify-center h-7 rounded-full border-2 border-white/60 bg-black/20 backdrop-blur-sm px-1.5 transition-all duration-200 hover:px-2.5 hover:bg-black/30 hover:border-white/80',
         className
       )}
       aria-label="Been here"
     >
       <Plus className="h-3.5 w-3.5 shrink-0 text-white" />
-      <span className="max-w-0 overflow-hidden whitespace-nowrap text-xs font-medium text-white transition-all duration-200 group-hover:max-w-[60px]">
+      <span className="max-w-0 overflow-hidden whitespace-nowrap text-xs font-medium text-white transition-all duration-200 group-hover:max-w-[60px] group-hover:ml-1">
         Been here
       </span>
     </button>
