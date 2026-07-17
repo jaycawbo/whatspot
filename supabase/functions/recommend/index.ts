@@ -74,6 +74,7 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
     .or('business_status.eq.OPERATIONAL,business_status.is.null')
     .eq('is_chain', false)
     .not('google_place_id', 'is', null)
+    .order('rating', { ascending: false })
     .limit(5000);
 
   if (error || !data) return [];
@@ -1200,6 +1201,7 @@ async function handleSearch(params: {
               .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, address')
               .ilike('name', `%${venueName}%`)
               .not('google_place_id', 'is', null)
+              .order('review_count', { ascending: false, nullsFirst: false })
               .limit(1)
               .maybeSingle();
 
@@ -1459,7 +1461,7 @@ async function handleSearch(params: {
   if (!isDiscoveryMode && !servedFromSupabase && GEMINI_API_KEY && sessionGapFills < 10) {
     try {
       const groundingResp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2012,7 +2014,7 @@ async function getGroundedVenuesForTab(params: {
   const prompt = TAB_PROMPTS[tab] ?? `Best restaurants bars and cafes in ${location_name}`;
 
   const groundingResp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
