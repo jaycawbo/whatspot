@@ -4,7 +4,7 @@ import { queryVenuesFromDb } from '@/services/venueDataRouter';
 import { scoreVenue } from '@/lib/scoreVenue';
 import { buildResponsePrompt } from '@/lib/buildResponsePrompt';
 
-const DB_THRESHOLD = 3;
+const DB_THRESHOLD = 12;
 
 function toPriceLevelString(level) {
   return (
