@@ -525,9 +525,16 @@ async function getSupabaseVenues(params: {
   GOOGLE_KEY?: string;
   isDiscoveryMode?: boolean;
 }): Promise<{ filteredVenues: any[]; reserve_venues: any[]; staged_venues: any[]; servedFromSupabase: boolean; relaxation_applied: boolean; relaxation_level: number }> {
-  const { lat, lon, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY, isDiscoveryMode } = params;
+  const { lat, lon, admission, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY, isDiscoveryMode } = params;
 
-  const RIPPLE_RINGS = [2, 4, 6, 8, 10, 12];
+  // Never ripple past the caller's selected radius — a user-set distance filter takes
+  // priority over progressive widening. If maxRadius falls between/below the standard
+  // rings, add it as the final ring so there's still at least one attempt at exactly
+  // the radius the user chose.
+  const RIPPLE_RINGS = [2, 4, 6, 8, 10, 12].filter((r) => r <= admission.maxRadius);
+  if (RIPPLE_RINGS.length === 0 || RIPPLE_RINGS[RIPPLE_RINGS.length - 1] < admission.maxRadius) {
+    RIPPLE_RINGS.push(admission.maxRadius);
+  }
   const THRESHOLD = 10; // minimum raw venue pool before Google fallback fires
 
   // ─── Ripple ring expansion: find smallest radius with >= 22 pass-1 quality venues ───
@@ -587,7 +594,8 @@ async function getSupabaseVenues(params: {
       .filter((v: any) =>
         (v.rating ?? 0) >= c.minRating &&
         (v.review_count ?? 0) >= c.minReviewCount &&
-        v.score >= c.scoreThreshold
+        v.score >= c.scoreThreshold &&
+        v.distance_km <= admission.maxRadius
       );
     if (passed.length >= THRESHOLD || i === DISCOVERY_CRITERIA.length - 1) {
       admittedPool = passed;
