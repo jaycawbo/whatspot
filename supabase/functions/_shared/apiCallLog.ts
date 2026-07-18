@@ -2,9 +2,14 @@ import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const PHOTOS_MONTHLY_CAP = 3000;
 const DEFAULT_MONTHLY_CAP = 500;
+// Gemini calls are individually cheap (~$0.001-0.0015 each) — this cap is a circuit
+// breaker against runaway cost (bug/spike/abuse), not a routine per-search throttle.
+const LLM_MONTHLY_CAP = 75000;
 
 function monthlyCapFor(callType: string): number {
-  return callType === 'photos' ? PHOTOS_MONTHLY_CAP : DEFAULT_MONTHLY_CAP;
+  if (callType === 'photos') return PHOTOS_MONTHLY_CAP;
+  if (callType === 'completeness_llm') return LLM_MONTHLY_CAP;
+  return DEFAULT_MONTHLY_CAP;
 }
 
 export function currentMonthKey(): string {
@@ -26,6 +31,7 @@ export async function checkAndLog(
   callType: string,
   venueId?: string,
   count: number = 1,
+  service: string = 'google_places',
 ): Promise<boolean> {
   const monthKey = currentMonthKey();
   const cap = monthlyCapFor(callType);
@@ -33,14 +39,14 @@ export async function checkAndLog(
   const { count: currentCount, error: countError } = await sb
     .from('api_call_log')
     .select('*', { count: 'exact', head: true })
-    .eq('service', 'google_places')
+    .eq('service', service)
     .eq('call_type', callType)
     .eq('month_key', monthKey);
 
   if (countError) {
     console.warn('[apiCallLog] Count query failed — failing open:', countError.message);
     const rows = Array.from({ length: count }, () => ({
-      service:   'google_places',
+      service,
       call_type: callType,
       venue_id:  venueId ?? null,
       called_at: new Date().toISOString(),
@@ -61,7 +67,7 @@ export async function checkAndLog(
   }
 
   const rows = Array.from({ length: count }, () => ({
-    service:    'google_places',
+    service,
     call_type:  callType,
     venue_id:   venueId ?? null,
     called_at:  new Date().toISOString(),
