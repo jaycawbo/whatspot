@@ -1282,8 +1282,8 @@ Deno.serve(async (req) => {
       try {
         const gapRaw = await callLLM(
           'gemini-2.5-flash',
-          'You are a Toronto restaurant and venue expert.',
-          `A user searched for: "${refinedSearchTerm}". List the top 5 real venues in Toronto that best match this search intent. Return ONLY a JSON array of venue names, nothing else. Example: ["Alo", "Canoe", "Edulis"]. Only include venues you are confident exist in Toronto.`,
+          'You are a knowledgeable local restaurant and venue expert.',
+          `A user searched for: "${refinedSearchTerm}" in ${location_name}. List the top 5 real venues in ${location_name} that best match this search intent. Return ONLY a JSON array of venue names, nothing else. Example: ["Alo", "Canoe", "Edulis"]. Only include venues you are confident exist in ${location_name}.`,
           undefined, undefined,
           { max_tokens: 200, temperature: 0 },
         );
@@ -1323,7 +1323,7 @@ Deno.serve(async (req) => {
             let searchResults: any[] = [];
             try {
               searchResults = await googlePlacesBroadSearch(
-                GOOGLE_KEY, `${name}, Toronto`, lat, lon, admission.maxRadius, undefined, [],
+                GOOGLE_KEY, `${name}, ${location_name}`, lat, lon, admission.maxRadius, undefined, [],
               );
             } catch { continue; }
 
@@ -1406,7 +1406,7 @@ Deno.serve(async (req) => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              contents: [{ parts: [{ text: `Find venues in Toronto matching: ${refinedSearchTerm}` }] }],
+              contents: [{ parts: [{ text: `Find venues in ${location_name} matching: ${refinedSearchTerm}` }] }],
               tools: [{ googleSearch: {} }],
               toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
             }),
