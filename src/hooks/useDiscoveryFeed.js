@@ -675,13 +675,6 @@ export function useDiscoveryFeed() {
     setCurrentQuery(query);
     setOverflowVenues([]);
 
-    // Read session context
-    let session_context = [];
-    try {
-      const raw = sessionStorage.getItem('whatspot_session_history');
-      if (raw) session_context = JSON.parse(raw);
-    } catch {}
-
     const excludeIds = Array.from(new Set([...allServedIdsRef.current, ..._clientSkippedIds]));
 
     try {

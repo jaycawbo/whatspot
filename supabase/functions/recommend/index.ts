@@ -893,20 +893,10 @@ Deno.serve(async (req) => {
       open_now,
       price_levels,
       cuisine_types,
-      session_context = [],
       exclude_ids = [],
       criteria_pass,
       intent,
     } = await req.json();
-
-    // Build session context string for LLM prompts
-    let sessionContextString = '';
-    if (Array.isArray(session_context) && session_context.length > 0) {
-      sessionContextString = '\n\nPrevious searches this session:\n' + session_context.map((s: any) =>
-        `- Query: "${s.query}"\n  Top results: ${(s.results || []).map((r: any) => `${r.name}${r.cuisine_type ? ` (${r.cuisine_type})` : ''}`).join(', ')}${s.search_summary ? `\n  Summary: ${typeof s.search_summary === 'string' ? s.search_summary : s.search_summary?.intro || ''}` : ''}`
-      ).join('\n');
-      console.log(`📝 Session context: ${session_context.length} previous searches`);
-    }
 
     let lat = originalLat;
     let lon = originalLon;
@@ -980,7 +970,7 @@ Deno.serve(async (req) => {
       safe('step1-refinement', () => callLLM(
         'gemini-2.5-flash',
         'You extract cuisine keywords from search queries for Google Places API. IMPORTANT: Do NOT include any location names, street names, city names, or neighbourhood names in your output. Only return food/cuisine/dining keywords. PRESERVE specific culinary sub-types and styles (e.g. "neapolitan pizza", "omakase sushi", "dim sum") — do not collapse them to a generic parent term.',
-        `The user is searching for "${searchTerm}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query includes a specific sub-type or style (e.g. "neapolitan", "omakase", "wood-fired"), preserve it in your keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "Toronto", etc.).\nReturn ONLY a comma-separated list of 1-4 highly relevant and concise cuisine/food keywords suitable for a Google Places search.${sessionContextString}`,
+        `The user is searching for "${searchTerm}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query includes a specific sub-type or style (e.g. "neapolitan", "omakase", "wood-fired"), preserve it in your keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "Toronto", etc.).\nReturn ONLY a comma-separated list of 1-4 highly relevant and concise cuisine/food keywords suitable for a Google Places search.`,
         [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'] } } }],
         { type: 'function', function: { name: 'refine_query' } },
         { max_tokens: 100, temperature: 0 },
@@ -1042,13 +1032,12 @@ Deno.serve(async (req) => {
       console.log('⏩ DISCOVERY MODE: Skipping Steps 1, 1b (no query refinement needed)');
     }
 
-    // ─── Street-level precision detection + Step 1c (skip for discovery) ───
+    // ─── Street-level precision detection (skip for discovery) ───
     const STREET_IDENTIFIERS = /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i;
     const PROXIMITY_WORDS = /\b(near|around|by|close\s+to|nearby|near\s+me|off\s+of|around\s+the\s+corner)\b/i;
     let isOnStreetSearch = false;
     let detectedStreetName = '';
     let detectedStreetBase = '';
-    let refinementIntent: { is_refinement: boolean; keep_results: string[]; replace_count: number; refined_query: string } | null = null;
 
     if (!isDiscoveryMode) {
     // Check both searchTerm AND location_name for street identifiers
@@ -1073,52 +1062,7 @@ Deno.serve(async (req) => {
     } else if (hasProximityWords) {
       console.log(`📍 Proximity words detected in query — using standard radius logic`);
     }
-
-    // ─── STEP 1c: Refinement intent detection ───
-    if (Array.isArray(session_context) && session_context.length > 0) {
-      console.log('🔄 STEP 1c: Checking for refinement intent...');
-      try {
-        const lastSearch = session_context[session_context.length - 1];
-        const previousResultNames = (lastSearch?.results || []).map((r: any) => r.name);
-
-        refinementIntent = await callLLM(
-          'gemini-2.5-flash',
-          'You detect whether a search query is asking to modify/replace specific results from a previous search, or is a fresh new search.',
-          `Given the query "${searchTerm}" and the session history, determine if this query is asking to modify previous results rather than start a fresh search. Specifically detect phrases like "replace", "swap", "different option", "something else", "instead of", "change #[number]", or "not that one".\n\nPrevious search query: "${lastSearch?.query || ''}"\nPrevious results: ${previousResultNames.map((n: string, i: number) => `#${i + 1} ${n}`).join(', ')}\n\nReturn a JSON object.${sessionContextString}`,
-          [{
-            type: 'function',
-            function: {
-              name: 'detect_refinement',
-              description: 'Detect if query is a refinement of previous results',
-              parameters: {
-                type: 'object',
-                properties: {
-                  is_refinement: { type: 'boolean', description: 'True if the query asks to modify/replace previous results' },
-                  keep_results: { type: 'array', items: { type: 'string' }, description: 'Venue names from previous search to keep unchanged' },
-                  replace_count: { type: 'number', description: 'Number of venues to replace' },
-                  refined_query: { type: 'string', description: 'The underlying search intent stripped of refinement language' },
-                },
-                required: ['is_refinement', 'keep_results', 'replace_count', 'refined_query'],
-              },
-            },
-          }],
-          { type: 'function', function: { name: 'detect_refinement' } },
-          { max_tokens: 100, temperature: 0 },
-        );
-
-        if (refinementIntent?.is_refinement) {
-          console.log(`✅ STEP 1c: Refinement detected — keep ${refinementIntent.keep_results.length} venues, replace ${refinementIntent.replace_count}, refined query: "${refinementIntent.refined_query}"`);
-          refinedSearchTerm = refinementIntent.refined_query;
-        } else {
-          console.log('⏩ STEP 1c: Not a refinement, proceeding normally');
-          refinementIntent = null;
-        }
-      } catch (e: any) {
-        console.warn('⚠️ STEP 1c: Refinement detection failed:', e.message);
-        refinementIntent = null;
-      }
-    }
-    } // end !isDiscoveryMode for street detection + step 1c
+    } // end !isDiscoveryMode for street detection
 
     // ─── SUPABASE-FIRST DISCOVERY TRACK ───
     let filteredVenues: any[] = [];
@@ -1914,7 +1858,7 @@ Deno.serve(async (req) => {
       const comprehensiveResult = await safe('comprehensive-llm', () => callLLM(
         'gemini-2.5-flash',
         `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues honestly and only include genuinely suitable matches. Venue types reflect what the place actually serves — use them as the primary relevance signal. A venue is NOT relevant if its types don't match the query intent even if keywords coincide in the name.`,
-        `The user searched for "${searchTerm}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.5. Order by confidence descending. Maximum 5 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
+        `The user searched for "${searchTerm}" in ${location_name}.\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.5. Order by confidence descending. Maximum 5 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
         [
           {
             type: 'function',
@@ -2005,59 +1949,6 @@ Deno.serve(async (req) => {
 
     console.log(`⏱️ Comprehensive LLM duration: ${Date.now() - llmCallStart}ms`);
     console.log(`✅ COMPREHENSIVE LLM complete — ${finalVenues.length} venues selected`);
-
-    // ─── STEP 4c: Apply refinement post-processing ───
-    if (refinementIntent) {
-      console.log('🔄 STEP 4c: Applying refinement post-processing...');
-
-      const allPreviousNames = new Set<string>();
-      for (const s of session_context) {
-        for (const r of (s.results || [])) {
-          allPreviousNames.add(r.name.toLowerCase().trim());
-        }
-      }
-
-      const keepNamesLower = new Set(refinementIntent.keep_results.map((n: string) => n.toLowerCase().trim()));
-      const newCandidates = finalVenues.filter((v: any) => {
-        const nameLower = v.name.toLowerCase().trim();
-        return !allPreviousNames.has(nameLower) && !keepNamesLower.has(nameLower);
-      });
-
-      const replacements = newCandidates.slice(0, refinementIntent.replace_count);
-
-      const lastSearch = session_context[session_context.length - 1];
-      const previousResults = lastSearch?.results || [];
-      const keptVenues: any[] = [];
-      for (const prev of previousResults) {
-        if (keepNamesLower.has(prev.name.toLowerCase().trim())) {
-          const matchInCurrent = finalVenues.find((v: any) => v.name.toLowerCase().trim() === prev.name.toLowerCase().trim());
-          if (matchInCurrent) {
-            keptVenues.push(matchInCurrent);
-          } else {
-            keptVenues.push({
-              name: prev.name,
-              address: prev.address || '',
-              lat: prev.lat,
-              lon: prev.lon,
-              distance_km: prev.distance_km,
-              rating: prev.rating,
-              review_count: prev.review_count,
-              price_level: prev.price_level,
-              place_id: prev.place_id,
-              category: prev.category,
-              cuisine_type: prev.cuisine_type,
-              descriptors: prev.descriptors || [],
-              reasoning_explanation: prev.reasoning_explanation,
-              image_urls: prev.image_urls || [],
-              score: prev.score,
-            });
-          }
-        }
-      }
-
-      finalVenues = [...keptVenues, ...replacements];
-      console.log(`✅ STEP 4c: Kept ${keptVenues.length} venues, added ${replacements.length} replacements`);
-    }
 
     // ─── Build reserve venues from remaining candidates ───
     const finalVenueIds = new Set(finalVenues.map((v: any) => v.place_id));
