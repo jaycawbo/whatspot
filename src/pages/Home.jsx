@@ -45,6 +45,7 @@ export default function Home() {
     isLoading: feedLoading,
     currentQuery,
     tabEmpty,
+    trendingAvailable,
     searchFeed,
     restoreSearch,
     expandSearch,
@@ -474,7 +475,7 @@ export default function Home() {
           {/* Feed mode tabs + filter is handled inside SearchRow now for filters;
               tabs remain here since they only show in feed mode */}
           <div className="flex items-center justify-center gap-3 px-4 py-2">
-            <FeedModeTabs onTabChange={handleTabChange} />
+            <FeedModeTabs trendingAvailable={trendingAvailable} onTabChange={handleTabChange} />
           </div>
 
           {/* Editorial collections — hidden when empty */}

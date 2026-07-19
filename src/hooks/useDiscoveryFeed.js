@@ -408,6 +408,8 @@ export function useDiscoveryFeed() {
   const [error, setError] = useState(null);
   const [currentQuery, setCurrentQuery] = useState(cached?.currentQuery || '');
   const [tabEmpty, setTabEmpty] = useState(false);
+  // Hidden until confirmed >= 1 trending venue exists, so the tab never leads to a dead end.
+  const [trendingAvailable, setTrendingAvailable] = useState(false);
   const radiusRef = useRef(state.filters?.radius || 5);
   const abortRef = useRef(null);
   const hasFetchedRef = useRef(!!cached);
@@ -656,6 +658,31 @@ export function useDiscoveryFeed() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.feedTab, state.filters]);
+
+  // Eagerly check trending availability once, independent of which tab is active, so the
+  // Trending tab can stay hidden instead of leading to a "not enough data" dead end.
+  useEffect(() => {
+    if (_isBackNav) return;
+    const anchor = anchorPointRef.current ?? state.userLocation;
+    if (!anchor) return;
+
+    let skippedIds = [];
+    try {
+      const raw = sessionStorage.getItem('whatspot_skipped_venues');
+      if (raw) skippedIds = JSON.parse(raw);
+    } catch {}
+
+    fetchTabVenues('trending', {
+      anchor,
+      filters: state.filters,
+      skippedIds,
+    }).then(({ venues: trendingVenues }) => {
+      setTrendingAvailable(trendingVenues.length >= 1);
+    }).catch(() => {
+      setTrendingAvailable(false);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.userLocation]);
 
   const fetchFeed = useCallback(async ({ query = '', radius, mode } = {}) => {
     if (import.meta.env.VITE_TESTING_MODE === 'true') {
@@ -1064,6 +1091,7 @@ export function useDiscoveryFeed() {
     error,
     currentQuery,
     tabEmpty,
+    trendingAvailable,
     searchFeed,
     restoreSearch,
     expandSearch,

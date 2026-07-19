@@ -9,7 +9,7 @@ const TABS = [
   { key: 'popular', label: 'Popular'  },
 ];
 
-export default function FeedModeTabs({ onTabChange }) {
+export default function FeedModeTabs({ trendingAvailable, onTabChange }) {
   const { state, dispatch } = useGlobalState();
   const active = state.feedTab || 'walkin';
 
@@ -18,9 +18,13 @@ export default function FeedModeTabs({ onTabChange }) {
     onTabChange?.(key);
   };
 
+  // Hide Trending until we've confirmed at least one trending venue exists —
+  // avoids presenting a tab that just leads to a "not enough data" dead end.
+  const visibleTabs = TABS.filter(({ key }) => key !== 'trending' || trendingAvailable);
+
   return (
     <div className="flex items-center gap-6 px-2">
-      {TABS.map(({ key, label }) => {
+      {visibleTabs.map(({ key, label }) => {
         const isActive = active === key;
         return (
           <button
