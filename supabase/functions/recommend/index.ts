@@ -2003,15 +2003,16 @@ async function getGroundedVenuesForTab(params: {
   exclude_ids: string[];
   maxRadius: number;
 }): Promise<any[]> {
-  const { tab, lat, lon, location_name, GOOGLE_KEY, sb, exclude_ids, maxRadius } = params;
+  // `tab` is accepted for a future per-tab grounding prompt, but is currently unused:
+  // the Walk-in/Popular/New/Trending tabs are served entirely by the free client-side
+  // fetchTabVenues() query in useDiscoveryFeed.js and never call recommend() with a
+  // non-default tab value, so this only ever runs for the default ambient feed's
+  // cold-start fallback. Confirmed with the team (2026-07) this isn't being wired up
+  // in the near term — removed the four per-tab prompt variants that could never be
+  // reached as a result.
+  const { lat, lon, location_name, GOOGLE_KEY, sb, exclude_ids, maxRadius } = params;
 
-  const TAB_PROMPTS: Record<string, string> = {
-    walkin:   `Best bars, restaurants and cafes in ${location_name} open now with walk-in seating`,
-    popular:  `Most popular and highly rated restaurants and bars in ${location_name}`,
-    new:      `Newest restaurant and bar openings in ${location_name} in the last 12 months`,
-    trending: `Trending restaurants and bars getting buzz in ${location_name} right now`,
-  };
-  const prompt = TAB_PROMPTS[tab] ?? `Best restaurants bars and cafes in ${location_name}`;
+  const prompt = `Best restaurants bars and cafes in ${location_name}`;
 
   const groundingResp = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
