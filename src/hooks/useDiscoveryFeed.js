@@ -3,7 +3,10 @@ import { recommend } from '@/services/api';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { supabase } from '@/integrations/supabase/client';
 
-const TORONTO_ANCHORS = [
+// Used only when the browser's geolocation hasn't resolved (or was denied) — a real
+// fallback location is required to fetch any feed at all. Toronto is the current home
+// market; update if/when the default launch market changes.
+const DEFAULT_MARKET_ANCHORS = [
   { lat: 43.6532, lon: -79.3832 }, // center
   { lat: 43.6622, lon: -79.3832 }, // north
   { lat: 43.6442, lon: -79.3832 }, // south
@@ -674,13 +677,6 @@ export function useDiscoveryFeed() {
     setError(null);
     setCurrentQuery(query);
     setOverflowVenues([]);
-
-    // Read session context
-    let session_context = [];
-    try {
-      const raw = sessionStorage.getItem('whatspot_session_history');
-      if (raw) session_context = JSON.parse(raw);
-    } catch {}
 
     const excludeIds = Array.from(new Set([...allServedIdsRef.current, ..._clientSkippedIds]));
 
