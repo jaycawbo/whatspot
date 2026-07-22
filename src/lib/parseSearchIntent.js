@@ -75,7 +75,7 @@ function intentToVenueTypes(intent) {
   return hints;
 }
 
-function rawKeywordFallback(rawQuery) {
+export function rawKeywordFallback(rawQuery) {
   const STOP_WORDS = new Set(['a', 'an', 'the', 'and', 'or', 'in', 'at', 'to', 'of', 'for', 'with', 'by', 'near', 'nearby', 'around', 'some', 'my', 'me', 'toronto', 'vancouver', 'montreal', 'calgary', 'ottawa', 'best', 'great', 'good', 'top']);
   const words = rawQuery.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !STOP_WORDS.has(w));
   return words.length > 0 ? words : [rawQuery];
