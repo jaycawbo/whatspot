@@ -71,6 +71,7 @@ export async function runConversationalSearch({
       query: rawQuery,
       keywords: intent.keywords,
       venueTypes: intent.venueTypes ?? [],
+      cuisineTypes: intent.cuisineTypes ?? [],
       priceLevel: dbPriceLevel,
       areaOverride: intent.areaOverride,
       lat,
