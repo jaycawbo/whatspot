@@ -107,10 +107,12 @@ const PRICE_CHIP_TO_INT = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
 
 const WALKIN_BAR_TYPES = new Set(['bar', 'pub', 'cocktail_bar', 'wine_bar', 'brewery', 'tavern']);
 
-function getTorontoHourAndDay() {
+// Uses the browser's local timezone rather than a hardcoded city, so the walk-in
+// time-of-day score reflects what time it actually is for the user right now.
+function getLocalHourAndDay() {
   const now = new Date();
-  const dayStr = now.toLocaleDateString('en-US', { timeZone: 'America/Toronto', weekday: 'short' });
-  const hourStr = now.toLocaleTimeString('en-US', { timeZone: 'America/Toronto', hour: '2-digit', hour12: false });
+  const dayStr = now.toLocaleDateString('en-US', { weekday: 'short' });
+  const hourStr = now.toLocaleTimeString('en-US', { hour: '2-digit', hour12: false });
   const weekdayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   let hour = parseInt(hourStr.split(':')[0], 10);
   if (hour === 24) hour = 0;
@@ -118,7 +120,7 @@ function getTorontoHourAndDay() {
 }
 
 function computeInlineWalkinScore(venue) {
-  const { hour, day } = getTorontoHourAndDay();
+  const { hour, day } = getLocalHourAndDay();
   const isWeekday = day >= 1 && day <= 4;
   const isWeekend = day === 5 || day === 6;
   let timeScore;
@@ -498,8 +500,8 @@ export function useDiscoveryFeed() {
       const nextIndex = (anchorIndex + 1) % ANCHOR_OFFSETS.length;
 
       if (!anchorPointRef.current) {
-        const baseLat = loc?.lat ?? TORONTO_ANCHORS[0].lat;
-        const baseLon = loc?.lon ?? TORONTO_ANCHORS[0].lon;
+        const baseLat = loc?.lat ?? DEFAULT_MARKET_ANCHORS[0].lat;
+        const baseLon = loc?.lon ?? DEFAULT_MARKET_ANCHORS[0].lon;
         const off = ANCHOR_OFFSETS[anchorIndex] ?? ANCHOR_OFFSETS[0];
         anchorPointRef.current = { lat: baseLat + off.dlat, lon: baseLon + off.dlon };
       }
@@ -522,8 +524,8 @@ export function useDiscoveryFeed() {
 
     // Guest: random anchor from sessionStorage
     isGuestRef.current = true;
-    const guestBaseLat = loc?.lat ?? TORONTO_ANCHORS[0].lat;
-    const guestBaseLon = loc?.lon ?? TORONTO_ANCHORS[0].lon;
+    const guestBaseLat = loc?.lat ?? DEFAULT_MARKET_ANCHORS[0].lat;
+    const guestBaseLon = loc?.lon ?? DEFAULT_MARKET_ANCHORS[0].lon;
     try {
       const stored = sessionStorage.getItem('whatspot_anchor_index');
       if (stored !== null) {
