@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bookmark, BookmarkCheck, Plus, X } from 'lucide-react';
+import { Bookmark, BookmarkCheck, X } from 'lucide-react';
 import { useBroncoSpotLists } from '@/hooks/useBroncoSpotLists';
 import { useBronco } from '@/context/BroncoContext';
 import { useAuth } from '@/lib/AuthContext';
@@ -122,63 +122,14 @@ function SpotList({ list, onRemove }) {
 
 export default function SpotListsSection() {
   const { user } = useAuth();
-  const { lists, isLoading, createList, removeVenue } = useBroncoSpotLists();
-  const [newListName, setNewListName] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [showInput, setShowInput] = useState(false);
+  const { lists, isLoading, removeVenue } = useBroncoSpotLists();
 
   if (!user) return null;
 
-  const handleCreate = async () => {
-    if (!newListName.trim()) return;
-    setCreating(true);
-    await createList(newListName.trim());
-    setNewListName('');
-    setShowInput(false);
-    setCreating(false);
-  };
-
   return (
     <div className="mt-2 mb-6">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base font-semibold text-foreground">My Spot Lists</h2>
-        <button
-          onClick={() => setShowInput((v) => !v)}
-          className="flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New List
-        </button>
-      </div>
-
-      {showInput && (
-        <div className="flex gap-2 mb-4">
-          <input
-            value={newListName}
-            onChange={(e) => setNewListName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-            placeholder="List name"
-            autoFocus
-            className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-          <button
-            onClick={handleCreate}
-            disabled={creating || !newListName.trim()}
-            className="rounded-lg bg-foreground px-3 py-2 text-xs font-semibold text-background disabled:opacity-50"
-          >
-            {creating ? '…' : 'Add'}
-          </button>
-        </div>
-      )}
-
       {isLoading && (
         <p className="text-sm text-muted-foreground">Loading lists…</p>
-      )}
-
-      {!isLoading && lists.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          Create a list to save venues you want to visit — see their availability at a glance.
-        </p>
       )}
 
       {lists.map((list) => (

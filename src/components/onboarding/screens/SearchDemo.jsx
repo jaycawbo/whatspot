@@ -14,16 +14,13 @@ const RESULTS = [
 ];
 const CHIP_STAGGER_MS = 180;
 const RESULT_STAGGER_MS = 220;
-const BEST_MATCH_DELAY_MS = 250;
 const HOLD_MS = 1400;
-const PEEK_MS = 650;
+const RESET_PAUSE_MS = 1000;
 
 export default function SearchDemo({ active, reducedMotion }) {
   const [typedLength, setTypedLength] = useState(0);
   const [chipsShown, setChipsShown] = useState(0);
   const [resultsShown, setResultsShown] = useState(0);
-  const [bestMatchShown, setBestMatchShown] = useState(false);
-  const [peeking, setPeeking] = useState(false);
   const [cycle, setCycle] = useState(0);
   const timersRef = useRef([]);
 
@@ -35,8 +32,6 @@ export default function SearchDemo({ active, reducedMotion }) {
       setTypedLength(0);
       setChipsShown(0);
       setResultsShown(0);
-      setBestMatchShown(false);
-      setPeeking(false);
       return;
     }
 
@@ -44,8 +39,6 @@ export default function SearchDemo({ active, reducedMotion }) {
       setTypedLength(PHRASE.length);
       setChipsShown(CHIPS.length);
       setResultsShown(RESULTS.length);
-      setBestMatchShown(true);
-      setPeeking(false);
       return;
     }
 
@@ -57,8 +50,6 @@ export default function SearchDemo({ active, reducedMotion }) {
     setTypedLength(0);
     setChipsShown(0);
     setResultsShown(0);
-    setBestMatchShown(false);
-    setPeeking(false);
 
     let t = 0;
     for (let i = 1; i <= PHRASE.length; i++) {
@@ -71,15 +62,9 @@ export default function SearchDemo({ active, reducedMotion }) {
     }
     t += (CHIPS.length - 1) * CHIP_STAGGER_MS + 300;
     for (let i = 1; i <= RESULTS.length; i++) {
-      const delay = t + (i - 1) * RESULT_STAGGER_MS;
-      schedule(() => setResultsShown(i), delay);
-      if (i === 1) schedule(() => setBestMatchShown(true), delay + BEST_MATCH_DELAY_MS);
+      schedule(() => setResultsShown(i), t + (i - 1) * RESULT_STAGGER_MS);
     }
-    t += (RESULTS.length - 1) * RESULT_STAGGER_MS + HOLD_MS;
-    schedule(() => setPeeking(true), t);
-    t += PEEK_MS;
-    schedule(() => setPeeking(false), t);
-    t += 500;
+    t += (RESULTS.length - 1) * RESULT_STAGGER_MS + HOLD_MS + RESET_PAUSE_MS;
     schedule(() => setCycle((c) => c + 1), t);
 
     return () => {
@@ -113,11 +98,7 @@ export default function SearchDemo({ active, reducedMotion }) {
         ))}
       </div>
 
-      <motion.div
-        className="mt-2.5 w-full max-w-[280px]"
-        animate={{ y: peeking ? -20 : 0 }}
-        transition={{ duration: 0.5, ease: 'easeInOut' }}
-      >
+      <div className="mt-2.5 w-full max-w-[280px]">
         {RESULTS.slice(0, resultsShown).map((result, i) => (
           <motion.div
             key={`${cycle}-${i}`}
@@ -131,17 +112,9 @@ export default function SearchDemo({ active, reducedMotion }) {
               <div className="truncate text-[13px] font-bold text-foreground">{result.name}</div>
               <div className="truncate text-[11px] text-muted-foreground">{result.meta}</div>
             </div>
-            {i === 0 && bestMatchShown && (
-              <StampBounce
-                reducedMotion={reducedMotion}
-                className="absolute -top-2 right-2 rounded-full bg-green-600 px-2 py-0.5 text-[9px] font-extrabold text-white"
-              >
-                Best match
-              </StampBounce>
-            )}
           </motion.div>
         ))}
-      </motion.div>
+      </div>
     </div>
   );
 }
