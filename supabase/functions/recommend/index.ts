@@ -1248,10 +1248,10 @@ async function handleSearch(params: {
   // Uses Google Search grounding to find venues the Supabase DB may not have.
   // Extracts CIDs / place IDs from grounding chunk URIs, resolves them via Places API,
   // writes skeleton rows to the DB, and appends to the current result set.
-  if (!isDiscoveryMode && GEMINI_API_KEY && sessionGapFills < 10) {
+  if (!isDiscoveryMode && !servedFromSupabase && GEMINI_API_KEY && sessionGapFills < 10) {
     try {
       const groundingResp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
