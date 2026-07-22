@@ -66,7 +66,7 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
 
   const { data, error } = await sb
     .from('venues')
-    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address, regular_opening_hours, current_hours_cached_at')
+    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, category, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address, regular_opening_hours, current_hours_cached_at')
     .gte('lat', lat - latBuf)
     .lte('lat', lat + latBuf)
     .gte('lng', lon - lngBuf)
@@ -960,19 +960,17 @@ async function handleSearch(params: {
   let effectiveCuisineTypes: string[] | null = null;
 
   if (!isDiscoveryMode && !servedFromSupabase) {
+    const queryWords = (refinedSearchTerm || search_term || '').toLowerCase()
+      .split(/\s+/)
+      .filter((w: string) => w.length > 2)
+      .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have',
+        'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
+
     if (Array.isArray(cuisine_types) && cuisine_types.length > 0) {
       effectiveCuisineTypes = cuisine_types;
-    } else if (refinedSearchTerm) {
-      const queryWords = refinedSearchTerm.toLowerCase()
-        .split(/\s+/)
-        .filter((w: string) => w.length > 2)
-        .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have',
-          'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
-
-      if (queryWords.length > 0) {
-        const expandedTypes = expandQueryToTypes(queryWords);
-        if (expandedTypes.size > 0) effectiveCuisineTypes = [...expandedTypes];
-      }
+    } else if (queryWords.length > 0) {
+      const expandedTypes = expandQueryToTypes(queryWords);
+      if (expandedTypes.size > 0) effectiveCuisineTypes = [...expandedTypes];
     }
 
     let sbSearchVenues = await safe('supabase-search', () =>
@@ -987,6 +985,17 @@ async function handleSearch(params: {
         return effectiveCuisineTypes!.some((ct: string) => v.venue_types.includes(ct));
       });
       console.log(`🔍 After cuisine filter: ${sbSearchVenues.length} venues`);
+    } else if (queryWords.length > 0) {
+      // No curated cuisine-type mapping for this query — fall back to matching query
+      // words against the venue's structured venue_types/category tags (never raw
+      // name text) so admission stays relevance-gated instead of cuisine-blind.
+      const before = sbSearchVenues.length;
+      sbSearchVenues = sbSearchVenues.filter((v: any) => {
+        const tagText = [...(v.venue_types ?? []), v.category ?? ''].join(' ').toLowerCase();
+        if (!tagText.trim()) return false;
+        return queryWords.some((w: string) => tagText.includes(w));
+      });
+      console.log(`🔍 No cuisine mapping — venue_types/category keyword fallback: ${sbSearchVenues.length}/${before} venues`);
     }
 
     if (open_now) {
@@ -1044,6 +1053,13 @@ async function handleSearch(params: {
         const admittedIds = new Set(sbAdmitted.map((v: any) => v.google_place_id));
         nameMatchVenues = allAreaVenues
           .filter((v: any) => hasFoodDrinkType(v.venue_types))
+          // If a cuisine constraint is known, this fallback must still honor it — otherwise
+          // it re-admits cuisine-unrelated venues via name text alone (the exact bug this
+          // fallback existed to route around in the first place).
+          .filter((v: any) => {
+            if (!effectiveCuisineTypes?.length) return true;
+            return v.venue_types?.length && effectiveCuisineTypes!.some((ct: string) => v.venue_types.includes(ct));
+          })
           .filter((v: any) => {
             const nameLower = (v.name || '').toLowerCase();
             return searchWords.some((w: string) => nameLower.includes(w));
