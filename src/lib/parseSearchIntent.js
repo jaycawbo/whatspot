@@ -81,7 +81,7 @@ function rawKeywordFallback(rawQuery) {
   return words.length > 0 ? words : [rawQuery];
 }
 
-export async function parseSearchIntent({ rawQuery, userCoordinates, userId = null }) {
+export async function parseSearchIntent({ rawQuery, userCoordinates, userId = null, locationName = '' }) {
   const fallbackKeywords = rawKeywordFallback(rawQuery);
   const fallback = {
     keywords: fallbackKeywords,
@@ -100,7 +100,7 @@ export async function parseSearchIntent({ rawQuery, userCoordinates, userId = nu
   try {
     const userContext = await buildSearchContext(userId);
     const { data, error } = await supabase.functions.invoke('refine-query', {
-      body: { query: rawQuery, locationName: '', userContext },
+      body: { query: rawQuery, locationName, userContext },
     });
 
     if (error || !data) return fallback;

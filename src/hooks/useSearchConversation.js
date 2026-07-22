@@ -55,7 +55,7 @@ export function useSearchConversation() {
   }, [isAuthenticated])
 
   // Primary search — stateless per call, no history accumulation
-  async function search(rawQuery, userCoordinates, userFilters = {}) {
+  async function search(rawQuery, userCoordinates, userFilters = {}, locationName = '') {
     if (isSearching) return null
     if (isLimitReached) return null
 
@@ -79,6 +79,7 @@ export function useSearchConversation() {
         conversationHistory: [],
         userId: user?.id ?? null,
         userFilters,
+        locationName,
       })
     } catch {
       return null
@@ -88,7 +89,7 @@ export function useSearchConversation() {
   }
 
   // Re-run with new filters — counts against guest quota like any other search
-  async function searchWithFilters(rawQuery, userCoordinates, userFilters) {
+  async function searchWithFilters(rawQuery, userCoordinates, userFilters, locationName = '') {
     if (isSearching) return null
     if (isLimitReached) return null
 
@@ -111,6 +112,7 @@ export function useSearchConversation() {
         conversationHistory: [],
         userId: user?.id ?? null,
         userFilters,
+        locationName,
       })
     } catch {
       return null

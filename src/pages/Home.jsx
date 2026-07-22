@@ -175,7 +175,7 @@ export default function Home() {
       const coords = state.userLocation?.lat
         ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
         : null;
-      const result = await conversation.search(nextQuery, coords, state.filters);
+      const result = await conversation.search(nextQuery, coords, state.filters, state.locationName);
       if (result) {
         setConvResults(result.venues || []);
         setConvResponse(result.conversational_response || '');
@@ -199,7 +199,7 @@ export default function Home() {
       const coords = state.userLocation?.lat
         ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
         : null;
-      const result = await conversation.search(category.prompt, coords, state.filters);
+      const result = await conversation.search(category.prompt, coords, state.filters, state.locationName);
       if (result) {
         setConvResults(result.venues || []);
         setConvResponse(result.conversational_response || '');
@@ -225,7 +225,7 @@ export default function Home() {
       const coords = state.userLocation?.lat
         ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
         : null;
-      const result = await conversation.search(chipText, coords, state.filters);
+      const result = await conversation.search(chipText, coords, state.filters, state.locationName);
       if (result) {
         setConvResults(result.venues || []);
         setConvResponse(result.conversational_response || '');
@@ -233,7 +233,7 @@ export default function Home() {
         setConvQuery(chipText);
       }
     },
-    [conversation, dispatch, state.userLocation, state.filters]
+    [conversation, dispatch, state.userLocation, state.filters, state.locationName]
   );
 
   const handleSearchFromHere = useCallback(
@@ -245,7 +245,7 @@ export default function Home() {
         type: 'SET_LOCATION',
         payload: { name: state.locationName, coords: { lat, lon, isGPS: false, isPinDrop: false, locationType: null } },
       });
-      const searchPromise = conversation.search(state.query, newCoords, state.filters);
+      const searchPromise = conversation.search(state.query, newCoords, state.filters, state.locationName);
       reverseGeocode(lat, lon)
         .then((name) =>
           dispatch({
@@ -372,7 +372,7 @@ export default function Home() {
             const coords = state.userLocation?.lat
               ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
               : null;
-            conversation.searchWithFilters(state.query, coords, f).then((result) => {
+            conversation.searchWithFilters(state.query, coords, f, state.locationName).then((result) => {
               if (result) {
                 setConvResults(result.venues || []);
                 setConvResponse(result.conversational_response || '');
