@@ -218,7 +218,16 @@ export async function queryVenuesFromDb({ query, keywords, venueTypes, cuisineTy
   const { data, error } = await qb;
   if (error) throw error;
 
-  const rows = data || [];
+  let rows = data || [];
+
+  // Prominence gate: .overlaps() matches anywhere in venue_types, so a coffee/cafe tag
+  // buried deep in the array alongside an unrelated, specific primary category (e.g. a
+  // Korean fried chicken restaurant secondarily tagged "cafe") would otherwise pass.
+  // Clean matches empirically cluster in the first 3 entries — require that here since
+  // this DB-level filter can't see position on its own.
+  if (cuisineTypes?.length > 0) {
+    rows = rows.filter((row) => (row.venue_types || []).slice(0, 3).some((t) => cuisineTypes.includes(t)));
+  }
 
   // Attach crow-flies distance to each row if user coords are available.
   if (lat != null && lon != null) {

@@ -234,6 +234,17 @@ function expandQueryToTypes(queryWords: string[]): Set<string> {
 
 // ─── Helpers ───
 
+// Prominence gate: a cuisine tag buried deep in venue_types alongside an unrelated,
+// specific primary category is a common false-positive source (e.g. a Korean fried
+// chicken restaurant secondarily tagged "cafe"). Clean matches empirically cluster in
+// the first 3 entries, so require the match be prominent rather than merely present.
+// Google's own `primaryType` field would be the authoritative signal, but ingestion
+// doesn't currently request it — this is an interim, position-based approximation.
+function matchesCuisineProminently(venueTypes: string[] | undefined, cuisineTypes: string[]): boolean {
+  if (!venueTypes?.length) return false;
+  return venueTypes.slice(0, 3).some((t) => cuisineTypes.includes(t));
+}
+
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -980,10 +991,7 @@ async function handleSearch(params: {
     const allAreaVenues = sbSearchVenues;
 
     if (effectiveCuisineTypes?.length) {
-      sbSearchVenues = sbSearchVenues.filter((v: any) => {
-        if (!v.venue_types?.length) return false;
-        return effectiveCuisineTypes!.some((ct: string) => v.venue_types.includes(ct));
-      });
+      sbSearchVenues = sbSearchVenues.filter((v: any) => matchesCuisineProminently(v.venue_types, effectiveCuisineTypes!));
       console.log(`🔍 After cuisine filter: ${sbSearchVenues.length} venues`);
     } else if (queryWords.length > 0) {
       // No curated cuisine-type mapping for this query — fall back to matching query
@@ -1058,7 +1066,7 @@ async function handleSearch(params: {
           // fallback existed to route around in the first place).
           .filter((v: any) => {
             if (!effectiveCuisineTypes?.length) return true;
-            return v.venue_types?.length && effectiveCuisineTypes!.some((ct: string) => v.venue_types.includes(ct));
+            return matchesCuisineProminently(v.venue_types, effectiveCuisineTypes!);
           })
           .filter((v: any) => {
             const nameLower = (v.name || '').toLowerCase();
