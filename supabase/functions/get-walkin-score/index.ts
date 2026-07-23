@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import tzLookup from 'https://esm.sh/tz-lookup@6.1.25';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,10 +8,23 @@ const corsHeaders = {
 
 const BAR_TYPES = new Set(['bar', 'pub', 'cocktail_bar', 'wine_bar', 'brewery', 'tavern']);
 
-function getTorontoHourAndDay(): { hour: number; day: number } {
+// Walk-in likelihood depends on the time of day *at the venue*, not wherever the
+// requester happens to be (browser) or where this edge function happens to run
+// (server) — so this resolves the venue's own local time from its coordinates.
+// Falls back to America/Toronto only if coordinates are missing or the lookup fails,
+// matching this app's current primary market rather than defaulting to server/UTC time.
+function getVenueLocalHourAndDay(lat: number | null, lng: number | null): { hour: number; day: number } {
   const now = new Date();
-  const dayStr = now.toLocaleDateString('en-US', { timeZone: 'America/Toronto', weekday: 'short' });
-  const hourStr = now.toLocaleTimeString('en-US', { timeZone: 'America/Toronto', hour: '2-digit', hour12: false });
+  let timeZone = 'America/Toronto';
+  if (lat != null && lng != null) {
+    try {
+      timeZone = tzLookup(lat, lng);
+    } catch {
+      // keep fallback
+    }
+  }
+  const dayStr = now.toLocaleDateString('en-US', { timeZone, weekday: 'short' });
+  const hourStr = now.toLocaleTimeString('en-US', { timeZone, hour: '2-digit', hour12: false });
   const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   let hour = parseInt(hourStr.split(':')[0], 10);
   if (hour === 24) hour = 0;
@@ -103,7 +117,7 @@ Deno.serve(async (req) => {
     const [venueResult, signalResult] = await Promise.all([
       supabase
         .from('venues')
-        .select('price_level, rating, review_count, venue_types, category')
+        .select('price_level, rating, review_count, venue_types, category, lat, lng')
         .eq('google_place_id', placeId)
         .single(),
       supabase
@@ -118,7 +132,7 @@ Deno.serve(async (req) => {
     const gotInCount = signals.filter((s) => s.signal_type === 'got_in').length;
     const turnedAwayCount = signals.filter((s) => s.signal_type === 'turned_away').length;
 
-    const { hour, day } = getTorontoHourAndDay();
+    const { hour, day } = getVenueLocalHourAndDay(venue?.lat ?? null, venue?.lng ?? null);
     const timeScore = computeTimeScore(hour, day);
     const priceScore = computePriceScore(venue?.price_level ?? null);
     const seatScore = computeSeatScore(venue?.review_count ?? null);
