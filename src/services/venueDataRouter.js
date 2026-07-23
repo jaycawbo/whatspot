@@ -211,7 +211,7 @@ export async function queryVenuesFromDb({ query, keywords, venueTypes, priceLeve
     qb = qb.not('google_place_id', 'in', `(${excludeIds.join(',')})`);
   }
 
-  qb = qb.limit(limit);
+  qb = qb.order('rating', { ascending: false, nullsFirst: false }).limit(limit);
 
   const { data, error } = await qb;
   if (error) throw error;
