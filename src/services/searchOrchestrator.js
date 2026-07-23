@@ -4,7 +4,7 @@ import { queryVenuesFromDb } from '@/services/venueDataRouter';
 import { scoreVenue } from '@/lib/scoreVenue';
 import { buildResponsePrompt } from '@/lib/buildResponsePrompt';
 
-const DB_THRESHOLD = 3;
+const DB_THRESHOLD = 12;
 
 function toPriceLevelString(level) {
   return (
@@ -30,6 +30,7 @@ export async function runConversationalSearch({
   conversationHistory = [],
   userId = null,
   userFilters = {},
+  locationName = '',
 }) {
   const lat = userCoordinates?.lat ?? null;
   const lon = userCoordinates?.lon ?? userCoordinates?.lng ?? null;
@@ -37,7 +38,7 @@ export async function runConversationalSearch({
   // Step 1: Parse intent — fall back to raw keyword split on failure
   let intent;
   try {
-    intent = await parseSearchIntent({ rawQuery, userCoordinates, userId });
+    intent = await parseSearchIntent({ rawQuery, userCoordinates, userId, locationName });
   } catch {
     intent = {
       keywords: [rawQuery],
@@ -70,6 +71,7 @@ export async function runConversationalSearch({
       query: rawQuery,
       keywords: intent.keywords,
       venueTypes: intent.venueTypes ?? [],
+      cuisineTypes: intent.cuisineTypes ?? [],
       priceLevel: dbPriceLevel,
       areaOverride: intent.areaOverride,
       lat,
@@ -112,13 +114,13 @@ export async function runConversationalSearch({
           query: placesQuery,
           lat,
           lon,
+          location_name: locationName,
           radius_km: effectiveRadius,
           open_now: effectiveOpenNow || undefined,
           price_levels: placesPrice,
           exclude_ids: venues.map(v => v.place_id),
           cuisine_types: intent.cuisineTypes?.length > 0 ? intent.cuisineTypes : undefined,
           intent: { vibe: intent.vibeKeywords },
-          session_context: [],
         },
       });
       const fallbackVenues = (data?.results ?? []).filter(v => (v.rating ?? 0) >= 3.8);

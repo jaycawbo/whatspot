@@ -75,13 +75,13 @@ function intentToVenueTypes(intent) {
   return hints;
 }
 
-function rawKeywordFallback(rawQuery) {
-  const STOP_WORDS = new Set(['a', 'an', 'the', 'and', 'or', 'in', 'at', 'to', 'of', 'for', 'with', 'by', 'near', 'nearby', 'around', 'some', 'my', 'me']);
+export function rawKeywordFallback(rawQuery) {
+  const STOP_WORDS = new Set(['a', 'an', 'the', 'and', 'or', 'in', 'at', 'to', 'of', 'for', 'with', 'by', 'near', 'nearby', 'around', 'some', 'my', 'me', 'toronto', 'vancouver', 'montreal', 'calgary', 'ottawa', 'best', 'great', 'good', 'top']);
   const words = rawQuery.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !STOP_WORDS.has(w));
   return words.length > 0 ? words : [rawQuery];
 }
 
-export async function parseSearchIntent({ rawQuery, userCoordinates, userId = null }) {
+export async function parseSearchIntent({ rawQuery, userCoordinates, userId = null, locationName = '' }) {
   const fallbackKeywords = rawKeywordFallback(rawQuery);
   const fallback = {
     keywords: fallbackKeywords,
@@ -100,7 +100,7 @@ export async function parseSearchIntent({ rawQuery, userCoordinates, userId = nu
   try {
     const userContext = await buildSearchContext(userId);
     const { data, error } = await supabase.functions.invoke('refine-query', {
-      body: { query: rawQuery, locationName: '', userContext },
+      body: { query: rawQuery, locationName, userContext },
     });
 
     if (error || !data) return fallback;

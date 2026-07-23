@@ -25,7 +25,8 @@ async function getSuppressedVenueIds(userId: string): Promise<Set<string>> {
   const { data, error } = await sb
     .from('skip_history')
     .select('venue_id, interaction_type, created_at')
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .gte('created_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
 
   if (error || !data) return new Set();
 
@@ -46,6 +47,11 @@ async function getSuppressedVenueIds(userId: string): Promise<Set<string>> {
     }
   }
 
+  sb.from('skip_history')
+    .delete()
+    .eq('user_id', userId)
+    .lt('created_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
+
   return suppressed;
 }
 
@@ -60,7 +66,7 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
 
   const { data, error } = await sb
     .from('venues')
-    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address, regular_opening_hours, current_hours_cached_at')
+    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, category, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address, regular_opening_hours, current_hours_cached_at')
     .gte('lat', lat - latBuf)
     .lte('lat', lat + latBuf)
     .gte('lng', lon - lngBuf)
@@ -68,6 +74,7 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
     .or('business_status.eq.OPERATIONAL,business_status.is.null')
     .eq('is_chain', false)
     .not('google_place_id', 'is', null)
+    .order('rating', { ascending: false })
     .limit(5000);
 
   if (error || !data) return [];
@@ -81,31 +88,6 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
   });
 }
 
-async function getSupabaseVenuesByType(expandedTypes: string[], lat: number, lon: number): Promise<any[]> {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const sb = createClient(supabaseUrl, supabaseKey);
-
-  // Build OR filter: match any expanded type keyword in the venue_types array
-  const typeFilter = expandedTypes
-    .map((t: string) => `venue_types.cs.{${t}}`)
-    .join(',');
-
-  const { data, error } = await sb
-    .from('venues')
-    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address, regular_opening_hours, current_hours_cached_at')
-    .or(typeFilter)
-    .or('business_status.eq.OPERATIONAL,business_status.is.null')
-    .order('rating', { ascending: false })
-    .order('review_count', { ascending: false })
-    .limit(100);
-
-  if (error) throw error;
-  return (data || []).map((v: any) => ({
-    ...v,
-    distance_km: calculateDistance(lat, lon, v.lat, v.lng),
-  }));
-}
 
 // ─── Fixed scoring constants — never modified by relaxation level ───
 const SCORING = {
@@ -178,25 +160,6 @@ function hasFoodDrinkType(types: string[] | undefined): boolean {
   return types?.some(t => FOOD_DRINK_TYPES.has(t)) ?? false;
 }
 
-// ─── Cuisine filter map — label → Google Places venue_types ───
-const CUISINE_FILTER_MAP: Record<string, string[]> = {
-  "Italian":            ["italian_restaurant", "pizza_restaurant", "pizza_delivery"],
-  "Japanese":           ["japanese_restaurant", "japanese_izakaya_restaurant", "sushi_restaurant", "ramen_restaurant", "yakitori_restaurant", "yakiniku_restaurant"],
-  "Mexican":            ["mexican_restaurant", "taco_restaurant", "burrito_restaurant", "tex_mex_restaurant"],
-  "Chinese":            ["chinese_restaurant", "cantonese_restaurant", "chinese_noodle_restaurant", "dim_sum_restaurant", "dumpling_restaurant", "hot_pot_restaurant"],
-  "American":           ["american_restaurant", "hamburger_restaurant", "hot_dog_restaurant", "hot_dog_stand", "chicken_wings_restaurant", "soul_food_restaurant", "cajun_restaurant", "californian_restaurant", "western_restaurant"],
-  "Thai":               ["thai_restaurant"],
-  "Indian":             ["indian_restaurant", "north_indian_restaurant", "south_indian_restaurant"],
-  "Korean":             ["korean_restaurant", "korean_barbecue_restaurant"],
-  "French":             ["french_restaurant", "bistro"],
-  "Vietnamese":         ["vietnamese_restaurant"],
-  "Spanish":            ["spanish_restaurant", "tapas_restaurant", "basque_restaurant"],
-  "Breakfast & Brunch": ["breakfast_restaurant", "brunch_restaurant", "bagel_shop", "diner"],
-  "Latin American":     ["latin_american_restaurant", "brazilian_restaurant", "argentinian_restaurant", "peruvian_restaurant", "colombian_restaurant", "chilean_restaurant", "south_american_restaurant", "caribbean_restaurant"],
-  "African":            ["african_restaurant", "ethiopian_restaurant"],
-  "Seafood":            ["seafood_restaurant", "oyster_bar_restaurant", "fish_and_chips_restaurant"],
-  "Mediterranean & Middle Eastern": ["mediterranean_restaurant", "greek_restaurant", "turkish_restaurant", "lebanese_restaurant", "israeli_restaurant", "falafel_restaurant", "gyro_restaurant", "shawarma_restaurant", "kebab_shop", "moroccan_restaurant", "persian_restaurant", "middle_eastern_restaurant", "afghani_restaurant", "pakistani_restaurant"],
-};
 
 // ─── Discovery mode threshold ladder ───
 const DISCOVERY_CRITERIA = [
@@ -236,7 +199,7 @@ function expandQueryToTypes(queryWords: string[]): Set<string> {
     if (word === 'seafood') { expandedTypes.add('seafood_restaurant'); }
     if (word === 'cocktail') { expandedTypes.add('cocktail_bar'); expandedTypes.add('bar'); }
     if (word === 'wine') { expandedTypes.add('wine_bar'); }
-    if (word === 'coffee') { expandedTypes.add('coffee_shop'); expandedTypes.add('cafe'); expandedTypes.add('coffee_roastery'); expandedTypes.add('coffee_stand'); }
+    if (word === 'coffee') { expandedTypes.add('coffee_shop'); expandedTypes.add('coffee_roastery'); expandedTypes.add('coffee_stand'); }
     if (word === 'cafe') { expandedTypes.add('cafe'); expandedTypes.add('coffee_shop'); expandedTypes.add('bakery'); }
     if (word === 'tapas') { expandedTypes.add('tapas_restaurant'); expandedTypes.add('spanish_restaurant'); }
     if (word === 'diner') { expandedTypes.add('diner'); expandedTypes.add('breakfast_restaurant'); }
@@ -270,6 +233,17 @@ function expandQueryToTypes(queryWords: string[]): Set<string> {
 }
 
 // ─── Helpers ───
+
+// Prominence gate: a cuisine tag buried deep in venue_types alongside an unrelated,
+// specific primary category is a common false-positive source (e.g. a Korean fried
+// chicken restaurant secondarily tagged "cafe"). Clean matches empirically cluster in
+// the first 3 entries, so require the match be prominent rather than merely present.
+// Google's own `primaryType` field would be the authoritative signal, but ingestion
+// doesn't currently request it — this is an interim, position-based approximation.
+function matchesCuisineProminently(venueTypes: string[] | undefined, cuisineTypes: string[]): boolean {
+  if (!venueTypes?.length) return false;
+  return venueTypes.slice(0, 3).some((t) => cuisineTypes.includes(t));
+}
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -351,18 +325,6 @@ function calculateVenueScore(rating: number, reviewCount: number, isRelaxedAdmis
   return isRelaxedAdmission ? rawScore * 0.85 : rawScore;
 }
 
-function isSimpleQuery(originalTerm: string, refinedTerm: string): boolean {
-  if (refinedTerm.toLowerCase() === originalTerm.toLowerCase()) return true;
-  const words = originalTerm.trim().split(/\s+/);
-  if (
-    words.length <= 3 &&
-    !/(for|with|near|group|party|date|romantic|quiet|outdoor|large|private|vegan|gluten)/i.test(originalTerm)
-  ) {
-    return true;
-  }
-  if (originalTerm.toLowerCase().includes('best')) return false;
-  return false;
-}
 
 async function safe<T>(label: string, fn: () => Promise<T>, fallback: T): Promise<T> {
   try {
@@ -373,26 +335,13 @@ async function safe<T>(label: string, fn: () => Promise<T>, fallback: T): Promis
   }
 }
 
-async function fetchWithConcurrency<T, R>(items: T[], fn: (item: T) => Promise<R>, limit = 3): Promise<R[]> {
-  const results: R[] = [];
-  const queue = [...items];
-  async function processNext() {
-    if (queue.length === 0) return;
-    const item = queue.shift()!;
-    const result = await fn(item);
-    results.push(result);
-    await processNext();
-  }
-  await Promise.all(Array(limit).fill(null).map(() => processNext()));
-  return results;
-}
 
 // ─── LLM helper ───
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') ?? '';
 let sessionGapFills = 0;
 
-async function callLLM(model: string, systemPrompt: string, userPrompt: string, tools?: any[], toolChoice?: any, options?: { max_tokens?: number; temperature?: number }): Promise<any> {
+async function callLLM(model: string, systemPrompt: string, userPrompt: string, tools?: any[], toolChoice?: any, options?: { max_tokens?: number; temperature?: number; thinkingBudget?: number }): Promise<any> {
   const body: any = {
     system_instruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
@@ -416,10 +365,11 @@ async function callLLM(model: string, systemPrompt: string, userPrompt: string, 
     }
   }
 
-  if (options?.temperature !== undefined || options?.max_tokens !== undefined) {
+  if (options?.temperature !== undefined || options?.max_tokens !== undefined || options?.thinkingBudget !== undefined) {
     body.generationConfig = {};
     if (options.temperature !== undefined) body.generationConfig.temperature = options.temperature;
     if (options.max_tokens !== undefined) body.generationConfig.maxOutputTokens = options.max_tokens;
+    if (options.thinkingBudget !== undefined) body.generationConfig.thinkingConfig = { thinkingBudget: options.thinkingBudget };
   }
 
   const resp = await fetch(
@@ -872,6 +822,1507 @@ async function getGoogleVenues(params: {
   return venueRows;
 }
 
+// ─── Shared dedup helper ───
+
+function dedup(venues: any[]): any[] {
+  const seen = new Set();
+  return venues.filter((v) => {
+    const key = v.name.toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// ─── Search pipeline ───
+
+async function handleSearch(params: {
+  search_term:      string;
+  lat:              number;
+  lon:              number;
+  location_name:    string;
+  admission:        any;
+  exclude_ids:      string[];
+  price_levels:     string[];
+  cuisine_types:    string[];
+  open_now:         boolean;
+  relaxation_level: number;
+  intent:           any;
+  authUserId:       string | null;
+  GOOGLE_KEY:       string;
+}): Promise<{
+  finalVenues:        any[];
+  reserveVenues:      any[];
+  servedFromSupabase: boolean;
+  wasGoogleFallback:  boolean;
+  gated:              boolean;
+  search_summary:     any;
+  suggested_chips:    string[];
+}> {
+  const {
+    search_term, exclude_ids, price_levels, cuisine_types,
+    open_now, relaxation_level, intent, authUserId, GOOGLE_KEY,
+  } = params;
+
+  let lat = params.lat;
+  let lon = params.lon;
+  let location_name = params.location_name;
+  const admission = { ...params.admission };
+  const isDiscoveryMode = false;
+
+  let refinedSearchTerm = search_term;
+
+  // ─── STEPS 1 & 1b: Query refinement + location detection ───
+  console.log('🤖 STEPS 1 & 1b: Running in parallel...');
+  let refinedSearchTermResult = search_term;
+
+  const [refinementResult, locationDetectionResult] = await Promise.all([
+    safe('step1-refinement', () => callLLM(
+      'gemini-2.5-flash',
+      'You extract cuisine keywords from search queries for Google Places API. IMPORTANT: Do NOT include any location names, street names, city names, or neighbourhood names in your output. Only return food/cuisine/dining keywords.',
+      `The user is searching for "${search_term}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "Toronto", etc.).\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise cuisine/food keywords suitable for a Google Places search.`,
+      [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'] } } }],
+      { type: 'function', function: { name: 'refine_query' } },
+      { max_tokens: 100, temperature: 0 },
+    ), null),
+    safe('step1b-location', () => callLLM(
+      'gemini-2.5-flash',
+      'You detect neighbourhood, district, or city names in search queries.',
+      `Given the search query "${search_term}" and current location "${location_name}", identify if the query mentions a specific neighbourhood, district, or city name that is different from or more specific than the current location. Return the detected location string or "NONE" if no specific location is mentioned.`,
+      [{ type: 'function', function: { name: 'detect_location', description: 'Return detected location or NONE', parameters: { type: 'object', properties: { detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' } }, required: ['detected_location'] } } }],
+      { type: 'function', function: { name: 'detect_location' } },
+      { max_tokens: 100, temperature: 0 },
+    ), null),
+  ]);
+
+  if (refinementResult?.keywords && refinementResult.keywords.toLowerCase() !== search_term.toLowerCase()) {
+    refinedSearchTermResult = refinementResult.keywords;
+    console.log(`✅ STEP 1: Refined to: "${refinedSearchTermResult}"`);
+  }
+  refinedSearchTerm = refinedSearchTermResult;
+
+  if (locationDetectionResult?.detected_location && locationDetectionResult.detected_location !== 'NONE') {
+    const detectedLocation = locationDetectionResult.detected_location;
+    const geocodeQuery = location_name ? `${detectedLocation}, ${location_name}` : detectedLocation;
+    console.log(`📍 STEP 1b: Detected location: "${detectedLocation}", geocoding as "${geocodeQuery}"...`);
+    try {
+      const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+      const geocodeResp = await fetch(`${SUPABASE_URL}/functions/v1/geocode-address`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: geocodeQuery, city_name: location_name || undefined }),
+      });
+      if (geocodeResp.ok) {
+        const geocodeData = await geocodeResp.json();
+        if (geocodeData.lat && geocodeData.lon) {
+          const dLat = (geocodeData.lat - lat) * Math.PI / 180;
+          const dLon = (geocodeData.lon - lon) * Math.PI / 180;
+          const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180) * Math.cos(geocodeData.lat*Math.PI/180) * Math.sin(dLon/2)**2;
+          const distKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          if (distKm > 100) {
+            console.warn(`⚠️ STEP 1b: Geocode result too far from user location (${distKm.toFixed(1)}km), discarding override`);
+          } else {
+            lat = geocodeData.lat;
+            lon = geocodeData.lon;
+            location_name = detectedLocation;
+            admission.maxRadius = 2;
+            console.log(`📍 STEP 1b: Location override: ${detectedLocation} (${lat}, ${lon}), ${distKm.toFixed(1)}km from user`);
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn('⚠️ STEP 1b: Geocoding failed:', e.message);
+    }
+  }
+  console.log('✅ STEPS 1 & 1b complete');
+
+  // ─── Street detection ───
+  const STREET_IDENTIFIERS = /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i;
+  const PROXIMITY_WORDS = /\b(near|around|by|close\s+to|nearby|near\s+me|off\s+of|around\s+the\s+corner)\b/i;
+  let isOnStreetSearch = false;
+  let detectedStreetName = '';
+  let detectedStreetBase = '';
+
+  const hasProximityWords = PROXIMITY_WORDS.test(search_term || '');
+  const streetSourceText = `${search_term || ''} ${location_name || ''} ${refinedSearchTerm || ''}`;
+
+  if (!hasProximityWords && STREET_IDENTIFIERS.test(streetSourceText)) {
+    isOnStreetSearch = true;
+    let streetSource = '';
+    if (STREET_IDENTIFIERS.test(location_name || '')) {
+      streetSource = (location_name || '').split(',')[0].trim();
+    } else {
+      const match = streetSourceText.match(/(\w+)\s+(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i);
+      if (match) {
+        streetSource = `${match[1]} ${match[2]}`;
+      }
+    }
+    detectedStreetName = streetSource;
+    detectedStreetBase = streetSource.replace(/\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/gi, '').trim().toLowerCase();
+    console.log(`📍 On-street search detected: "${detectedStreetName}" (base: "${detectedStreetBase}") — strict address filtering applied`);
+    admission.maxRadius = 3;
+  } else if (hasProximityWords) {
+    console.log(`📍 Proximity words detected in query — using standard radius logic`);
+  }
+
+  // ─── Supabase search track ───
+  let filteredVenues: any[] = [];
+  let servedFromSupabase = false;
+
+  let effectiveCuisineTypes: string[] | null = null;
+
+  if (!isDiscoveryMode && !servedFromSupabase) {
+    // STEP1's refine_query tool returns keywords as a comma-separated string (schema
+    // requires a string, not an array), so commas must be normalized to whitespace
+    // before splitting — otherwise a token like "peruvian," fails the exact-match
+    // check below and effectiveCuisineTypes silently resolves empty.
+    const queryWords = (refinedSearchTerm || search_term || '').toLowerCase()
+      .replace(/,/g, ' ')
+      .split(/\s+/)
+      .filter((w: string) => w.length > 2)
+      .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have',
+        'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
+
+    if (Array.isArray(cuisine_types) && cuisine_types.length > 0) {
+      effectiveCuisineTypes = cuisine_types;
+    } else if (queryWords.length > 0) {
+      const expandedTypes = expandQueryToTypes(queryWords);
+      if (expandedTypes.size > 0) effectiveCuisineTypes = [...expandedTypes];
+    }
+
+    let sbSearchVenues = await safe('supabase-search', () =>
+      getSupabaseVenuesForArea(lat, lon, admission.maxRadius, exclude_ids), []);
+
+    console.log(`🗄️ Supabase-search: ${sbSearchVenues.length} raw venues found`);
+    const allAreaVenues = sbSearchVenues;
+
+    if (effectiveCuisineTypes?.length) {
+      sbSearchVenues = sbSearchVenues.filter((v: any) => matchesCuisineProminently(v.venue_types, effectiveCuisineTypes!));
+      console.log(`🔍 After cuisine filter: ${sbSearchVenues.length} venues`);
+    } else if (queryWords.length > 0) {
+      // No curated cuisine-type mapping for this query — fall back to matching query
+      // words against the venue's structured venue_types/category tags (never raw
+      // name text) so admission stays relevance-gated instead of cuisine-blind.
+      const before = sbSearchVenues.length;
+      sbSearchVenues = sbSearchVenues.filter((v: any) => {
+        const tagText = [...(v.venue_types ?? []), v.category ?? ''].join(' ').toLowerCase();
+        if (!tagText.trim()) return false;
+        return queryWords.some((w: string) => tagText.includes(w));
+      });
+      console.log(`🔍 No cuisine mapping — venue_types/category keyword fallback: ${sbSearchVenues.length}/${before} venues`);
+    }
+
+    if (open_now) {
+      sbSearchVenues = sbSearchVenues.filter((v: any) => isOpenNow(v.regular_opening_hours));
+    }
+
+    const sbAdmitted = sbSearchVenues.filter((v: any) =>
+      (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount
+    );
+
+    const threshold = (Array.isArray(cuisine_types) && cuisine_types.length > 0) || !GOOGLE_KEY ? 1 : 5;
+    if (sbAdmitted.length >= threshold) {
+      servedFromSupabase = true;
+      filteredVenues = sbAdmitted
+        .map((v: any) => {
+          const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
+          const isRelaxedAdmission = v.rating < SCORING.RATING_FLOOR || v.review_count < SCORING.REVIEW_FLOOR;
+          return {
+            name: v.name,
+            address: v.address || '',
+            lat: v.lat,
+            lon: v.lng,
+            distance_km,
+            rating: v.rating,
+            review_count: v.review_count,
+            price_level: mapIntPriceLevel(v.price_level),
+            place_id: `places/${v.google_place_id}`,
+            category: (v.venue_types ?? []).find((t: string) =>
+              t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+            cuisine_type: (v.venue_types ?? []).find((t: string) =>
+              t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+            isRelaxedAdmission,
+            unknownPrice: false,
+            _rawTypes: v.venue_types ?? [],
+            _photoUrls: v.photo_urls ?? [],
+            photos_complete: v.photos_complete ?? false,
+            photos_fetched_count: v.photos_fetched_count ?? 0,
+          };
+        })
+        .filter((v: any) => {
+          if (!price_levels?.length) return true;
+          if (v.price_level == null) return true;
+          return price_levels.includes(v.price_level);
+        });
+      console.log(`✅ Search served from Supabase: ${filteredVenues.length} venues after filters`);
+    } else {
+      let nameMatchVenues: any[] = [];
+      const searchTermLower = (refinedSearchTerm || search_term || '').toLowerCase().trim();
+      // See comma-normalization note above — same STEP1 comma-separated-string issue applies here.
+      const searchWords = searchTermLower.replace(/,/g, ' ').split(/\s+/)
+        .filter((w: string) => w.length > 2)
+        .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have',
+          'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
+
+      if (searchWords.length > 0) {
+        const admittedIds = new Set(sbAdmitted.map((v: any) => v.google_place_id));
+        nameMatchVenues = allAreaVenues
+          .filter((v: any) => hasFoodDrinkType(v.venue_types))
+          // If a cuisine constraint is known, this fallback must still honor it — otherwise
+          // it re-admits cuisine-unrelated venues via name text alone (the exact bug this
+          // fallback existed to route around in the first place).
+          .filter((v: any) => {
+            if (!effectiveCuisineTypes?.length) return true;
+            return matchesCuisineProminently(v.venue_types, effectiveCuisineTypes!);
+          })
+          .filter((v: any) => {
+            const nameLower = (v.name || '').toLowerCase();
+            return searchWords.some((w: string) => nameLower.includes(w));
+          })
+          .filter((v: any) => !admittedIds.has(v.google_place_id))
+          .filter((v: any) =>
+            (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount
+          );
+        if (open_now) {
+          nameMatchVenues = nameMatchVenues.filter((v: any) => isOpenNow(v.regular_opening_hours));
+        }
+        console.log(`🔤 Name search fallback: ${nameMatchVenues.length} additional venues matched`);
+      }
+
+      const combined = [...sbAdmitted, ...nameMatchVenues];
+      if (combined.length >= 5) {
+        servedFromSupabase = true;
+        filteredVenues = combined
+          .map((v: any) => {
+            const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
+            const isRelaxedAdmission = v.rating < SCORING.RATING_FLOOR || v.review_count < SCORING.REVIEW_FLOOR;
+            return {
+              name: v.name,
+              address: v.address || '',
+              lat: v.lat,
+              lon: v.lng,
+              distance_km,
+              rating: v.rating,
+              review_count: v.review_count,
+              price_level: mapIntPriceLevel(v.price_level),
+              place_id: `places/${v.google_place_id}`,
+              category: (v.venue_types ?? []).find((t: string) =>
+                t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+              cuisine_type: (v.venue_types ?? []).find((t: string) =>
+                t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+              isRelaxedAdmission,
+              unknownPrice: false,
+              _rawTypes: v.venue_types ?? [],
+              _photoUrls: v.photo_urls ?? [],
+              photos_complete: v.photos_complete ?? false,
+              photos_fetched_count: v.photos_fetched_count ?? 0,
+            };
+          })
+          .filter((v: any) => {
+            if (!price_levels?.length) return true;
+            if (v.price_level == null) return true;
+            return price_levels.includes(v.price_level);
+          });
+        console.log(`✅ Search served from Supabase (with name fallback): ${filteredVenues.length} venues`);
+      } else {
+        console.log(`⚠️ Supabase search returned ${combined.length} combined venues — falling through to Google`);
+      }
+    }
+  }
+
+  // ─── Mechanism 1: Gemini gap detection (search mode only) ───
+  // Fires when Supabase served results; asks Gemini for top venue names and checks
+  // whether any are missing from the DB. Confirmed gaps are fetched from Places API,
+  // written as skeleton rows, and appended to the current result set.
+  if (!isDiscoveryMode && GEMINI_API_KEY && servedFromSupabase && sessionGapFills < 10) {
+    try {
+      const gapRaw = await callLLM(
+        'gemini-2.5-flash',
+        `You are a ${location_name} restaurant and venue expert.`,
+        `A user searched for: "${refinedSearchTerm}". List the top 5 real venues in ${location_name} that best match this search intent. Return ONLY a JSON array of venue names, nothing else. Example: ["Alo", "Canoe", "Edulis"]. Only include venues you are confident exist in ${location_name}.`,
+        undefined, undefined,
+        { max_tokens: 200, temperature: 0 },
+      );
+
+      let geminiNames: string[] = [];
+      try {
+        geminiNames = JSON.parse(gapRaw);
+        if (!Array.isArray(geminiNames)) geminiNames = [];
+      } catch { /* parse failed — skip */ }
+
+      if (geminiNames.length > 0 && GOOGLE_KEY) {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sbGap = createClient(supabaseUrl, supabaseKey);
+        const { checkAndLog } = await import('../_shared/apiCallLog.ts');
+        let gapFillsThisSearch = 0;
+
+        for (const name of geminiNames.slice(0, 5)) {
+          if (sessionGapFills >= 10 || gapFillsThisSearch >= 3) break;
+
+          // Check if name already exists in Supabase
+          const { data: existingByName } = await sbGap
+            .from('venues')
+            .select('google_place_id')
+            .ilike('name', `%${name}%`)
+            .limit(1);
+
+          if (existingByName && existingByName.length > 0) continue;
+
+          console.log(`🔍 Gap detected: "${name}" not in DB — fetching from Places API`);
+
+          // Spend guard before each Places API call
+          const allowed = await checkAndLog(sbGap, 'enrich', `gap_${name}`);
+          if (!allowed) continue;
+
+          // Places API text search
+          let searchResults: any[] = [];
+          try {
+            searchResults = await googlePlacesBroadSearch(
+              GOOGLE_KEY, `${name}, Toronto`, lat, lon, admission.maxRadius, undefined, [],
+            );
+          } catch { continue; }
+
+          if (!searchResults.length) continue;
+
+          const firstResult = searchResults[0];
+          const rawPlaceId = (firstResult.place_id || '').replace(/^places\//, '');
+          if (!rawPlaceId) continue;
+
+          // Check if google_place_id already exists in Supabase (name mismatch but venue exists)
+          const { data: existingById } = await sbGap
+            .from('venues')
+            .select('google_place_id')
+            .eq('google_place_id', rawPlaceId)
+            .maybeSingle();
+
+          if (existingById) continue;
+
+          // Distance check
+          const gapDist = calculateDistance(lat, lon, firstResult.lat, firstResult.lon);
+          if (gapDist > admission.maxRadius) continue;
+
+          // Write skeleton row
+          const gapPriceToInt: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
+          const gapMappedPL = priceLevelMap[firstResult.price_level] || null;
+          await sbGap.from('venues').upsert([{
+            google_place_id: rawPlaceId,
+            name:            firstResult.name,
+            lat:             firstResult.lat,
+            lng:             firstResult.lon,
+            rating:          firstResult.rating,
+            review_count:    firstResult.user_ratings_total,
+            price_level:     gapMappedPL ? (gapPriceToInt[gapMappedPL] ?? null) : null,
+            venue_types:     firstResult.types || [],
+            business_status: null,
+            address:         firstResult.address,
+            enriched:        false,
+            is_chain:        false,
+          }], { onConflict: 'google_place_id', ignoreDuplicates: true });
+
+          // Add to current results
+          const gapRelaxed = (firstResult.rating || 0) < SCORING.RATING_FLOOR || (firstResult.user_ratings_total || 0) < SCORING.REVIEW_FLOOR;
+          filteredVenues.push({
+            name:              firstResult.name,
+            address:           firstResult.address || '',
+            lat:               firstResult.lat,
+            lon:               firstResult.lon,
+            distance_km:       gapDist,
+            rating:            firstResult.rating,
+            review_count:      firstResult.user_ratings_total,
+            price_level:       gapMappedPL,
+            place_id:          `places/${rawPlaceId}`,
+            category:          (firstResult.types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+            cuisine_type:      (firstResult.types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+            isRelaxedAdmission: gapRelaxed,
+            unknownPrice:      false,
+            _rawTypes:         firstResult.types || [],
+            _photoUrls:        [],
+          });
+
+          sessionGapFills++;
+          gapFillsThisSearch++;
+          console.log(`✅ Gap filled: "${name}" added to DB and current results`);
+        }
+      }
+    } catch (e: any) {
+      console.warn('⚠️ Gap detection failed silently:', e.message);
+    }
+  }
+
+  // ─── Mechanism 2: Gemini Maps Grounding (search mode only) ───
+  // Uses Google Search grounding to find venues the Supabase DB may not have.
+  // Extracts CIDs / place IDs from grounding chunk URIs, resolves them via Places API,
+  // writes skeleton rows to the DB, and appends to the current result set.
+  if (!isDiscoveryMode && !servedFromSupabase && GEMINI_API_KEY && sessionGapFills < 10) {
+    try {
+      const groundingResp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: `Find venues in ${location_name} matching: ${refinedSearchTerm}` }] }],
+            tools: [{ googleSearch: {} }],
+            toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+          }),
+        },
+      );
+
+      if (groundingResp.ok) {
+        const groundingData = await groundingResp.json();
+        const chunks: any[] = groundingData.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+        console.log('🗺️ Maps Grounding chunks:', JSON.stringify(chunks));
+
+        // Extract CIDs and any place_id= references from chunk URIs
+        const extractedIds: Array<{ cid?: string; placeId?: string; title: string }> = [];
+        for (const chunk of chunks) {
+          const uri: string  = chunk.web?.uri   || '';
+          const title: string = chunk.web?.title || '';
+          const cidMatch   = uri.match(/[?&]cid=(\d+)/);
+          const placeMatch = uri.match(/place_id=(ChIJ[^&]+)/);
+          if (cidMatch)   { extractedIds.push({ cid:     cidMatch[1],   title }); continue; }
+          if (placeMatch) { extractedIds.push({ placeId: placeMatch[1], title }); }
+        }
+
+        if (extractedIds.length === 0) {
+          console.log('🗺️ Maps Grounding: no placeIds extracted from response');
+        } else if (GOOGLE_KEY) {
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          const sbM2 = createClient(supabaseUrl, supabaseKey);
+          const { checkAndLog } = await import('../_shared/apiCallLog.ts');
+          let m2FillsThisSearch = 0;
+
+          for (const item of extractedIds.slice(0, 5)) {
+            if (sessionGapFills >= 10 || m2FillsThisSearch >= 3) break;
+
+            // Spend guard before any Places API call
+            const guardKey = item.cid ? `m2_cid_${item.cid}` : `m2_${item.placeId}`;
+            const allowed = await checkAndLog(sbM2, 'enrich', guardKey);
+            if (!allowed) continue;
+
+            let cleanId: string | null = null;
+            let resolvedDetails: any = null;
+
+            if (item.cid) {
+              // CID → place details in one call via legacy Places Details endpoint
+              const legacyResp = await fetch(
+                `https://maps.googleapis.com/maps/api/place/details/json?cid=${item.cid}&fields=place_id,name,formatted_address,geometry,rating,user_ratings_total,price_level,types,business_status&key=${GOOGLE_KEY}`,
+              );
+              if (!legacyResp.ok) continue;
+              const legacyData = await legacyResp.json();
+              if (!legacyData.result?.place_id) continue;
+              cleanId = legacyData.result.place_id.replace(/^places\//, '');
+              resolvedDetails = legacyData.result;
+            } else if (item.placeId) {
+              cleanId = item.placeId.replace(/^places\//, '');
+            }
+
+            if (!cleanId) continue;
+
+            // Check if already in Supabase
+            const { data: existingById } = await sbM2
+              .from('venues')
+              .select('google_place_id')
+              .eq('google_place_id', cleanId)
+              .maybeSingle();
+
+            if (existingById) continue;
+
+            // Fetch full details via new Places API if not already resolved via CID
+            if (!resolvedDetails) {
+              const newDetailsResp = await fetch(
+                `https://places.googleapis.com/v1/places/${cleanId}`,
+                {
+                  headers: {
+                    'X-Goog-Api-Key': GOOGLE_KEY,
+                    'X-Goog-FieldMask': 'displayName,formattedAddress,location,rating,userRatingCount,priceLevel,types,businessStatus',
+                  },
+                },
+              );
+              if (!newDetailsResp.ok) continue;
+              const nd = await newDetailsResp.json();
+              // Normalise to legacy-style shape so the write-back below works for both paths
+              resolvedDetails = {
+                name:               nd.displayName?.text    || '',
+                formatted_address:  nd.formattedAddress     || '',
+                geometry:           { location: { lat: nd.location?.latitude, lng: nd.location?.longitude } },
+                rating:             nd.rating               ?? null,
+                user_ratings_total: nd.userRatingCount      ?? null,
+                price_level:        nd.priceLevel           ?? null,
+                types:              nd.types                || [],
+                business_status:    nd.businessStatus       || null,
+              };
+            }
+
+            const vLat = resolvedDetails.geometry?.location?.lat;
+            const vLon = resolvedDetails.geometry?.location?.lng;
+            if (!vLat || !vLon) continue;
+
+            // Distance check
+            const m2Dist = calculateDistance(lat, lon, vLat, vLon);
+            if (m2Dist > admission.maxRadius) continue;
+
+            // Normalise price level → DB integer (1–4)
+            const m2PLRaw = resolvedDetails.price_level;
+            let m2PLInt: number | null = null;
+            if (m2PLRaw != null) {
+              if (typeof m2PLRaw === 'number') {
+                m2PLInt = m2PLRaw === 0 ? 1 : Math.min(m2PLRaw, 4);
+              } else {
+                const m2PLMap: Record<string, number> = {
+                  PRICE_LEVEL_FREE: 1, PRICE_LEVEL_INEXPENSIVE: 1,
+                  PRICE_LEVEL_MODERATE: 2, PRICE_LEVEL_EXPENSIVE: 3, PRICE_LEVEL_VERY_EXPENSIVE: 4,
+                };
+                m2PLInt = m2PLMap[m2PLRaw] ?? null;
+              }
+            }
+            const m2PLStrs = ['$', '$', '$$', '$$$', '$$$$'];
+            const m2MappedPL = m2PLInt != null ? (m2PLStrs[m2PLInt] || null) : null;
+
+            // Write skeleton row
+            await sbM2.from('venues').upsert([{
+              google_place_id: cleanId,
+              name:            resolvedDetails.name || item.title || '',
+              lat:             vLat,
+              lng:             vLon,
+              rating:          resolvedDetails.rating,
+              review_count:    resolvedDetails.user_ratings_total,
+              price_level:     m2PLInt,
+              venue_types:     resolvedDetails.types || [],
+              business_status: null,
+              address:         resolvedDetails.formatted_address || '',
+              enriched:        false,
+              is_chain:        false,
+            }], { onConflict: 'google_place_id', ignoreDuplicates: true });
+
+            // Add to current results
+            const m2Relaxed = (resolvedDetails.rating || 0) < SCORING.RATING_FLOOR || (resolvedDetails.user_ratings_total || 0) < SCORING.REVIEW_FLOOR;
+            filteredVenues.push({
+              name:               resolvedDetails.name || item.title || '',
+              address:            resolvedDetails.formatted_address || '',
+              lat:                vLat,
+              lon:                vLon,
+              distance_km:        m2Dist,
+              rating:             resolvedDetails.rating,
+              review_count:       resolvedDetails.user_ratings_total,
+              price_level:        m2MappedPL,
+              place_id:           `places/${cleanId}`,
+              category:           (resolvedDetails.types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+              cuisine_type:       (resolvedDetails.types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+              isRelaxedAdmission: m2Relaxed,
+              unknownPrice:       false,
+              _rawTypes:          resolvedDetails.types || [],
+              _photoUrls:         [],
+            });
+
+            sessionGapFills++;
+            m2FillsThisSearch++;
+            console.log(`✅ Gap filled (Maps Grounding): "${resolvedDetails.name || item.title}" added to DB and current results`);
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn('⚠️ Maps Grounding failed silently:', e.message);
+    }
+  }
+
+  // ─── Completeness pass: fill obvious gaps when Supabase already served enough venues ───
+  if (!isDiscoveryMode && GEMINI_API_KEY && servedFromSupabase) {
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const sbGround = createClient(supabaseUrl, supabaseKey);
+      const { checkAndLog } = await import('../_shared/apiCallLog.ts');
+
+      // Circuit breaker on the Gemini call itself — cheap per-call, but uncapped would
+      // otherwise scale linearly with search volume. Separate budget from the Places-call guard below.
+      const llmAllowed = await checkAndLog(sbGround, 'completeness_llm', location_name, 1, 'gemini');
+      if (!llmAllowed) {
+        console.warn('⚠️ Completeness pass: monthly Gemini call cap reached, skipping');
+      } else {
+        const groundingRaw = await callLLM(
+          'gemini-2.5-flash',
+          'You are a knowledgeable local venue expert.',
+          `List the 8 best ${refinedSearchTerm} venues in ${location_name}. Return only a JSON array of venue names, nothing else. Example: ["Venue Name 1", "Venue Name 2"]. Only include well-known, highly regarded venues.`,
+          undefined, undefined,
+          { max_tokens: 500, temperature: 0, thinkingBudget: 0 },
+        );
+
+        let venueNames: string[] = [];
+        try {
+          const cleaned = groundingRaw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+          venueNames = JSON.parse(cleaned);
+          if (!Array.isArray(venueNames)) venueNames = [];
+        } catch { console.warn(`⚠️ Completeness pass: failed to parse Gemini response (length=${groundingRaw.length}): ${groundingRaw.slice(0, 200)}`); }
+
+        console.log(`🔍 Completeness pass: ${venueNames.length} venue names from Gemini`);
+        console.log(`🔍 Completeness pass names: ${venueNames.join(', ')}`);
+
+        if (venueNames.length > 0 && GOOGLE_KEY) {
+          const existingPlaceIds = new Set(filteredVenues.map((v: any) => (v.place_id || '').replace(/^places\//, '')));
+          const groundingBiasRadius = (isOnStreetSearch || admission.maxRadius <= 3) ? 2000 : 25000;
+          let completenessApiCalls = 0;
+          let completenessAdded = 0;
+
+          for (const venueName of venueNames.slice(0, 10)) {
+            if (completenessApiCalls >= 5) break;
+
+            // Supabase name-based cache check — serve for free if already in DB
+            const { data: nameMatch } = await sbGround
+              .from('venues')
+              .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, address')
+              .ilike('name', `%${venueName}%`)
+              .not('google_place_id', 'is', null)
+              .order('review_count', { ascending: false, nullsFirst: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (nameMatch) {
+              if (!hasFoodDrinkType(nameMatch.venue_types || [])) continue;
+              const existingDist = calculateDistance(lat, lon, nameMatch.lat, nameMatch.lng);
+              if (existingDist > admission.maxRadius) continue;
+              if (existingPlaceIds.has(nameMatch.google_place_id)) continue;
+              if (effectiveCuisineTypes?.length && !(nameMatch.venue_types || []).some((t: string) => effectiveCuisineTypes!.includes(t))) continue;
+              filteredVenues.push({
+                name:               nameMatch.name,
+                address:            nameMatch.address || '',
+                lat:                nameMatch.lat,
+                lon:                nameMatch.lng,
+                distance_km:        existingDist,
+                rating:             nameMatch.rating,
+                review_count:       nameMatch.review_count,
+                price_level:        mapIntPriceLevel(nameMatch.price_level),
+                place_id:           `places/${nameMatch.google_place_id}`,
+                category:           (nameMatch.venue_types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+                cuisine_type:       (nameMatch.venue_types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+                isRelaxedAdmission: (nameMatch.rating || 0) < SCORING.RATING_FLOOR || (nameMatch.review_count || 0) < SCORING.REVIEW_FLOOR,
+                unknownPrice:       false,
+                _rawTypes:          nameMatch.venue_types || [],
+                _photoUrls:         [],
+                _fromGrounding:     true,
+              });
+              completenessAdded++;
+              existingPlaceIds.add(nameMatch.google_place_id);
+              console.log(`✅ Completeness pass: "${nameMatch.name}" served from Supabase cache`);
+              continue;
+            }
+
+            // Not in Supabase — spend-guarded Places Text Search
+            const allowed = await checkAndLog(sbGround, 'search_grounding', venueName);
+            if (!allowed) continue;
+
+            const textSearchResp = await fetch(
+              'https://places.googleapis.com/v1/places:searchText',
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Goog-Api-Key': GOOGLE_KEY,
+                  'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.businessStatus',
+                },
+                body: JSON.stringify({
+                  textQuery: `${venueName} ${location_name}`,
+                  locationBias: {
+                    circle: {
+                      center: { latitude: lat, longitude: lon },
+                      radius: groundingBiasRadius,
+                    },
+                  },
+                  maxResultCount: 1,
+                }),
+              },
+            );
+
+            if (!textSearchResp.ok) continue;
+            const textSearchData = await textSearchResp.json();
+            const place = textSearchData.places?.[0];
+            if (!place) continue;
+
+            const cleanId = place.id || '';
+            if (!cleanId) continue;
+            if (existingPlaceIds.has(cleanId)) continue;
+            if (!hasFoodDrinkType(place.types || [])) continue;
+            if (effectiveCuisineTypes?.length && !(place.types || []).some((t: string) => effectiveCuisineTypes!.includes(t))) continue;
+
+            const vLat = place.location?.latitude;
+            const vLon = place.location?.longitude;
+            if (!vLat || !vLon) continue;
+
+            const sgDist = calculateDistance(lat, lon, vLat, vLon);
+            if (sgDist > admission.maxRadius) continue;
+
+            const sgPLRaw = place.priceLevel;
+            let sgPLInt: number | null = null;
+            if (sgPLRaw != null) {
+              if (typeof sgPLRaw === 'number') {
+                sgPLInt = sgPLRaw === 0 ? 1 : Math.min(sgPLRaw, 4);
+              } else {
+                const sgPLMap: Record<string, number> = {
+                  PRICE_LEVEL_FREE: 1, PRICE_LEVEL_INEXPENSIVE: 1,
+                  PRICE_LEVEL_MODERATE: 2, PRICE_LEVEL_EXPENSIVE: 3, PRICE_LEVEL_VERY_EXPENSIVE: 4,
+                };
+                sgPLInt = sgPLMap[sgPLRaw] ?? null;
+              }
+            }
+            const sgPLStrs = ['$', '$', '$$', '$$$', '$$$$'];
+            const sgMappedPL = sgPLInt != null ? (sgPLStrs[sgPLInt] || null) : null;
+
+            await sbGround.from('venues').upsert([{
+              google_place_id: cleanId,
+              name:            place.displayName?.text || venueName,
+              lat:             vLat,
+              lng:             vLon,
+              rating:          place.rating ?? null,
+              review_count:    place.userRatingCount ?? null,
+              price_level:     sgPLInt,
+              venue_types:     place.types || [],
+              business_status: place.businessStatus || null,
+              address:         place.formattedAddress || '',
+              enriched:        false,
+              is_chain:        false,
+            }], { onConflict: 'google_place_id', ignoreDuplicates: true });
+
+            filteredVenues.push({
+              name:               place.displayName?.text || venueName,
+              address:            place.formattedAddress || '',
+              lat:                vLat,
+              lon:                vLon,
+              distance_km:        sgDist,
+              rating:             place.rating ?? null,
+              review_count:       place.userRatingCount ?? null,
+              price_level:        sgMappedPL,
+              place_id:           `places/${cleanId}`,
+              category:           (place.types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+              cuisine_type:       (place.types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+              isRelaxedAdmission: (place.rating || 0) < SCORING.RATING_FLOOR || (place.userRatingCount || 0) < SCORING.REVIEW_FLOOR,
+              unknownPrice:       false,
+              _rawTypes:          place.types || [],
+              _photoUrls:         [],
+              _fromGrounding:     true,
+            });
+            completenessAdded++;
+            existingPlaceIds.add(cleanId);
+            completenessApiCalls++;
+            console.log(`✅ Completeness pass: "${place.displayName?.text || venueName}" added via Text Search`);
+          }
+          console.log(`🔍 Completeness pass total: ${completenessAdded} venues added to filteredVenues`);
+        }
+      }
+    } catch (e: any) {
+      console.warn('⚠️ Completeness pass failed silently:', e.message);
+    }
+  }
+
+  // ─── Google fallback ───
+  let wasGoogleFallback = false;
+
+  if (!servedFromSupabase) {
+    if (!GOOGLE_KEY) {
+      console.warn('⚠️ Google Places API key not configured — no fallback available, returning empty results');
+      throw new Error('GOOGLE_PLACES_API_KEY not configured');
+    }
+    if (!isDiscoveryMode && !GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
+
+    // Spend guard — tracks all Google fallback calls against monthly cap
+    const { checkAndLog } = await import('../_shared/apiCallLog.ts');
+    const sbGuard = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const locationKey = `disc_${Math.round(lat * 10) / 10}_${Math.round(lon * 10) / 10}`;
+    const allowed = await checkAndLog(sbGuard, 'discovery_fallback', locationKey);
+    if (!allowed) {
+      return { gated: true, finalVenues: [], reserveVenues: [], servedFromSupabase: false, wasGoogleFallback: false, search_summary: null, suggested_chips: [] };
+    }
+
+    const googleVenues = await getGoogleVenues({
+      GOOGLE_KEY, refinedSearchTerm, location_name, lat, lon, admission,
+      open_now, price_levels, cuisine_types, isDiscoveryMode,
+      isOnStreetSearch, detectedStreetName, detectedStreetBase,
+      exclude_ids, relaxation_level,
+    });
+
+    if (googleVenues === null) {
+      return { gated: false, finalVenues: [], reserveVenues: [], servedFromSupabase: false, wasGoogleFallback: false, search_summary: null, suggested_chips: [] };
+    }
+    filteredVenues = googleVenues;
+    wasGoogleFallback = true;
+
+    // ─── Live-grounding pass: real Google Search-grounded results, appended on top of the plain fallback ───
+    // Runs after filteredVenues is populated above so results are appended/deduped, never overwritten.
+    if (GEMINI_API_KEY) {
+      try {
+        const groundingResp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: `Find venues in ${location_name} matching: ${refinedSearchTerm}` }] }],
+              tools: [{ googleSearch: {} }],
+              toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+            }),
+          },
+        );
+
+        if (groundingResp.ok) {
+          const groundingData = await groundingResp.json();
+          const chunks: any[] = groundingData.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+          console.log('🗺️ Live grounding chunks:', JSON.stringify(chunks));
+
+          const extractedIds: Array<{ cid?: string; placeId?: string; title: string }> = [];
+          for (const chunk of chunks) {
+            const uri: string  = chunk.web?.uri   || '';
+            const title: string = chunk.web?.title || '';
+            const cidMatch   = uri.match(/[?&]cid=(\d+)/);
+            const placeMatch = uri.match(/place_id=(ChIJ[^&]+)/);
+            if (cidMatch)   { extractedIds.push({ cid:     cidMatch[1],   title }); continue; }
+            if (placeMatch) { extractedIds.push({ placeId: placeMatch[1], title }); }
+          }
+
+          if (extractedIds.length === 0) {
+            console.log('🗺️ Live grounding: no placeIds extracted from response');
+          } else if (GOOGLE_KEY) {
+            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+            const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+            const sbLive = createClient(supabaseUrl, supabaseKey);
+            const { checkAndLog } = await import('../_shared/apiCallLog.ts');
+            const existingPlaceIds = new Set(filteredVenues.map((v: any) => (v.place_id || '').replace(/^places\//, '')));
+            let liveGroundingApiCalls = 0;
+            let liveGroundingAdded = 0;
+
+            for (const item of extractedIds.slice(0, 5)) {
+              if (liveGroundingApiCalls >= 5) break;
+
+              // Supabase name-based cache check — serve for free if already in DB, before spending on resolution
+              if (item.title) {
+                const { data: nameMatch } = await sbLive
+                  .from('venues')
+                  .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, address')
+                  .ilike('name', `%${item.title}%`)
+                  .not('google_place_id', 'is', null)
+                  .limit(1)
+                  .maybeSingle();
+
+                if (
+                  nameMatch &&
+                  hasFoodDrinkType(nameMatch.venue_types || []) &&
+                  !existingPlaceIds.has(nameMatch.google_place_id) &&
+                  (!effectiveCuisineTypes?.length || (nameMatch.venue_types || []).some((t: string) => effectiveCuisineTypes!.includes(t)))
+                ) {
+                  const cacheDist = calculateDistance(lat, lon, nameMatch.lat, nameMatch.lng);
+                  if (cacheDist <= admission.maxRadius) {
+                    filteredVenues.push({
+                      name:               nameMatch.name,
+                      address:            nameMatch.address || '',
+                      lat:                nameMatch.lat,
+                      lon:                nameMatch.lng,
+                      distance_km:        cacheDist,
+                      rating:             nameMatch.rating,
+                      review_count:       nameMatch.review_count,
+                      price_level:        mapIntPriceLevel(nameMatch.price_level),
+                      place_id:           `places/${nameMatch.google_place_id}`,
+                      category:           (nameMatch.venue_types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+                      cuisine_type:       (nameMatch.venue_types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+                      isRelaxedAdmission: (nameMatch.rating || 0) < SCORING.RATING_FLOOR || (nameMatch.review_count || 0) < SCORING.REVIEW_FLOOR,
+                      unknownPrice:       false,
+                      _rawTypes:          nameMatch.venue_types || [],
+                      _photoUrls:         [],
+                      _fromGrounding:     true,
+                    });
+                    existingPlaceIds.add(nameMatch.google_place_id);
+                    liveGroundingAdded++;
+                    console.log(`✅ Live grounding: "${nameMatch.name}" served from Supabase cache`);
+                    continue;
+                  }
+                }
+              }
+
+              // Spend guard before any Places API call
+              const guardKey = item.cid ? `live_cid_${item.cid}` : `live_${item.placeId}`;
+              const allowed = await checkAndLog(sbLive, 'live_grounding', guardKey);
+              if (!allowed) continue;
+
+              let cleanId: string | null = null;
+              let resolvedDetails: any = null;
+
+              if (item.cid) {
+                // CID → place details in one call via legacy Places Details endpoint
+                const legacyResp = await fetch(
+                  `https://maps.googleapis.com/maps/api/place/details/json?cid=${item.cid}&fields=place_id,name,formatted_address,geometry,rating,user_ratings_total,price_level,types,business_status&key=${GOOGLE_KEY}`,
+                );
+                if (!legacyResp.ok) continue;
+                const legacyData = await legacyResp.json();
+                if (!legacyData.result?.place_id) continue;
+                cleanId = legacyData.result.place_id.replace(/^places\//, '');
+                resolvedDetails = legacyData.result;
+              } else if (item.placeId) {
+                cleanId = item.placeId.replace(/^places\//, '');
+              }
+
+              if (!cleanId) continue;
+              if (existingPlaceIds.has(cleanId)) continue;
+
+              const { data: existingById } = await sbLive
+                .from('venues')
+                .select('google_place_id')
+                .eq('google_place_id', cleanId)
+                .maybeSingle();
+
+              if (existingById) continue;
+
+              // Fetch full details via new Places API if not already resolved via CID
+              if (!resolvedDetails) {
+                const newDetailsResp = await fetch(
+                  `https://places.googleapis.com/v1/places/${cleanId}`,
+                  {
+                    headers: {
+                      'X-Goog-Api-Key': GOOGLE_KEY,
+                      'X-Goog-FieldMask': 'displayName,formattedAddress,location,rating,userRatingCount,priceLevel,types,businessStatus',
+                    },
+                  },
+                );
+                if (!newDetailsResp.ok) continue;
+                const nd = await newDetailsResp.json();
+                // Normalise to legacy-style shape so the write-back below works for both paths
+                resolvedDetails = {
+                  name:               nd.displayName?.text    || '',
+                  formatted_address:  nd.formattedAddress     || '',
+                  geometry:           { location: { lat: nd.location?.latitude, lng: nd.location?.longitude } },
+                  rating:             nd.rating               ?? null,
+                  user_ratings_total: nd.userRatingCount      ?? null,
+                  price_level:        nd.priceLevel           ?? null,
+                  types:              nd.types                || [],
+                  business_status:    nd.businessStatus       || null,
+                };
+              }
+
+              const vLat = resolvedDetails.geometry?.location?.lat;
+              const vLon = resolvedDetails.geometry?.location?.lng;
+              if (!vLat || !vLon) continue;
+
+              const liveDist = calculateDistance(lat, lon, vLat, vLon);
+              if (liveDist > admission.maxRadius) continue;
+
+              if (!hasFoodDrinkType(resolvedDetails.types || [])) continue;
+              if (effectiveCuisineTypes?.length && !(resolvedDetails.types || []).some((t: string) => effectiveCuisineTypes!.includes(t))) continue;
+
+              const livePLRaw = resolvedDetails.price_level;
+              let livePLInt: number | null = null;
+              if (livePLRaw != null) {
+                if (typeof livePLRaw === 'number') {
+                  livePLInt = livePLRaw === 0 ? 1 : Math.min(livePLRaw, 4);
+                } else {
+                  const livePLMap: Record<string, number> = {
+                    PRICE_LEVEL_FREE: 1, PRICE_LEVEL_INEXPENSIVE: 1,
+                    PRICE_LEVEL_MODERATE: 2, PRICE_LEVEL_EXPENSIVE: 3, PRICE_LEVEL_VERY_EXPENSIVE: 4,
+                  };
+                  livePLInt = livePLMap[livePLRaw] ?? null;
+                }
+              }
+              const livePLStrs = ['$', '$', '$$', '$$$', '$$$$'];
+              const liveMappedPL = livePLInt != null ? (livePLStrs[livePLInt] || null) : null;
+
+              // Write skeleton row
+              await sbLive.from('venues').upsert([{
+                google_place_id: cleanId,
+                name:            resolvedDetails.name || item.title || '',
+                lat:             vLat,
+                lng:             vLon,
+                rating:          resolvedDetails.rating,
+                review_count:    resolvedDetails.user_ratings_total,
+                price_level:     livePLInt,
+                venue_types:     resolvedDetails.types || [],
+                business_status: null,
+                address:         resolvedDetails.formatted_address || '',
+                enriched:        false,
+                is_chain:        false,
+              }], { onConflict: 'google_place_id', ignoreDuplicates: true });
+
+              const liveRelaxed = (resolvedDetails.rating || 0) < SCORING.RATING_FLOOR || (resolvedDetails.user_ratings_total || 0) < SCORING.REVIEW_FLOOR;
+              filteredVenues.push({
+                name:               resolvedDetails.name || item.title || '',
+                address:            resolvedDetails.formatted_address || '',
+                lat:                vLat,
+                lon:                vLon,
+                distance_km:        liveDist,
+                rating:             resolvedDetails.rating,
+                review_count:       resolvedDetails.user_ratings_total,
+                price_level:        liveMappedPL,
+                place_id:           `places/${cleanId}`,
+                category:           (resolvedDetails.types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+                cuisine_type:       (resolvedDetails.types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+                isRelaxedAdmission: liveRelaxed,
+                unknownPrice:       false,
+                _rawTypes:          resolvedDetails.types || [],
+                _photoUrls:         [],
+                _fromGrounding:     true,
+              });
+
+              existingPlaceIds.add(cleanId);
+              liveGroundingApiCalls++;
+              liveGroundingAdded++;
+              console.log(`✅ Live grounding: "${resolvedDetails.name || item.title}" added to DB and current results`);
+            }
+            console.log(`🗺️ Live grounding total: ${liveGroundingAdded} venues added to filteredVenues`);
+          }
+        }
+      } catch (e: any) {
+        console.warn('⚠️ Live grounding failed silently:', e.message);
+      }
+    }
+  }
+  console.log(`✅ ${filteredVenues.length} passed filters`);
+
+  // ─── STEP 3a: Skip history suppression ───
+  if (authUserId) {
+    const suppressedIds = await getSuppressedVenueIds(authUserId);
+    if (suppressedIds.size > 0) {
+      const beforeSuppression = filteredVenues.length;
+      filteredVenues = filteredVenues.filter((v: any) => {
+        const placeId = (v.place_id || '').replace(/^places\//, '');
+        return !suppressedIds.has(placeId);
+      });
+      console.log(`🚫 Skip history suppressed ${beforeSuppression - filteredVenues.length} venues (${suppressedIds.size} in history)`);
+    }
+  }
+
+  // ─── STEP 3b: Street-level address validation ───
+  let streetFilteredVenues = filteredVenues;
+
+  if (isOnStreetSearch && filteredVenues.length > 0 && detectedStreetBase) {
+    const streetNameLower = detectedStreetName.toLowerCase();
+    const baseLower = detectedStreetBase.toLowerCase();
+
+    const streetValidated = filteredVenues.map((v: any) => {
+      const addrLower = (v.address || '').toLowerCase();
+
+      // Tier 1 — Address match: venue address contains the detected street name
+      const streetVariants = [
+        streetNameLower,
+        `${baseLower} street`, `${baseLower} st`,
+        `${baseLower} avenue`, `${baseLower} ave`,
+        `${baseLower} road`, `${baseLower} rd`,
+        `${baseLower} boulevard`, `${baseLower} blvd`,
+        `${baseLower} drive`, `${baseLower} dr`,
+        `${baseLower} lane`, `${baseLower} ln`,
+      ];
+      if (streetVariants.some(variant => addrLower.includes(variant))) {
+        console.log(`  ✅ Tier 1 (address match): "${v.name}" — ${v.address}`);
+        return { ...v, streetTier: 1 };
+      }
+
+      // Tier 2 — Proximity match: within 50m of geocoded street centerline
+      const distFromStreet = calculateDistance(lat, lon, v.lat, v.lon);
+      if (distFromStreet <= 0.05) {
+        console.log(`  ✅ Tier 2 (proximity ${(distFromStreet * 1000).toFixed(0)}m): "${v.name}" — ${v.address}`);
+        return { ...v, streetTier: 2 };
+      }
+
+      console.log(`  ❌ Failed both tiers: "${v.name}" — ${v.address} (dist: ${(distFromStreet * 1000).toFixed(0)}m)`);
+      return null;
+    }).filter((v: any) => v !== null);
+
+    if (streetValidated.length >= 3) {
+      streetFilteredVenues = streetValidated;
+      console.log(`📍 Street filter kept ${streetFilteredVenues.length}/${filteredVenues.length} venues on "${detectedStreetName}"`);
+    } else {
+      console.warn(`⚠️ Street filter returned too few results (${streetValidated.length}), falling back to radius search`);
+      const nonStreet = filteredVenues.filter((v: any) => !streetValidated.find((sv: any) => sv.place_id === v.place_id));
+      streetFilteredVenues = [...streetValidated, ...nonStreet];
+    }
+  }
+
+  if (streetFilteredVenues.length === 0) {
+    return { gated: false, finalVenues: [], reserveVenues: [], servedFromSupabase, wasGoogleFallback, search_summary: null, suggested_chips: [] };
+  }
+
+  // ─── STEP 4: Score + sort ───
+  const intentPriceLevels: Record<string, number[]> = {
+    budget: [0, 1],
+    mid: [2],
+    upscale: [3, 4],
+  };
+  const intentPriceTarget = intent?.price_signal ? intentPriceLevels[intent.price_signal] : null;
+
+  const scoredMapped = streetFilteredVenues
+    .map((venue: any) => {
+      let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
+      if (venue.unknownPrice) score *= 0.7; // Down-rank venues with unknown price when price filter is active
+
+      // Soft intent boost — never hard-filters, only nudges ranking
+      if (!isDiscoveryMode && intent) {
+        const priceNum = typeof venue.price_level === 'number'
+          ? venue.price_level
+          : { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 }[venue.price_level as string] ?? null;
+        if (intentPriceTarget && priceNum !== null && intentPriceTarget.includes(priceNum)) {
+          score *= 1.15;
+        }
+      }
+
+      const display_weight = isDiscoveryMode ? score + (Math.random() * 0.3) : score;
+      return { ...venue, score, display_weight };
+    });
+
+  const groundingInStep4 = scoredMapped.filter((v: any) => v._fromGrounding);
+  const groundingWouldDrop = groundingInStep4.filter((v: any) => v.score <= admission.minScore).length;
+  if (groundingInStep4.length > 0) {
+    console.log(`🔍 STEP 4 grounding: ${groundingInStep4.length - groundingWouldDrop} passed score filter naturally, ${groundingWouldDrop} exempted (score ≤ ${admission.minScore})`);
+  }
+
+  const scoredVenues = scoredMapped
+    .filter((v: any) => v._fromGrounding || v.score > admission.minScore)
+    .sort((a: any, b: any) => b.display_weight - a.display_weight);
+
+  console.log(`📊 STEP 4: ${scoredVenues.length} scored above ${admission.minScore}`);
+
+  const candidates = dedup(scoredVenues).slice(0, 20);
+
+  // ─── Query-intent pre-filter ───
+  const isSearchMode = !!search_term;
+  let filteredCandidates = candidates;
+  let typeMatchedIds = new Set<string>();
+
+  if (isSearchMode && refinedSearchTerm) {
+    // See comma-normalization note above — same STEP1 comma-separated-string issue applies here.
+    const queryWords = refinedSearchTerm.toLowerCase()
+      .replace(/,/g, ' ')
+      .split(/\s+/)
+      .filter((w: string) => w.length > 2)
+      .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have', 'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
+
+    if (queryWords.length > 0) {
+      const expandedTypes = expandQueryToTypes(queryWords);
+
+      const typeMatched = candidates.filter((v: any) => {
+        const rawTypes: string[] = (v._rawTypes || []).map((t: string) => t.toLowerCase());
+        const cat = (v.category || '').toLowerCase();
+        const restaurantTypes = rawTypes.filter((t: string) => t.endsWith('_restaurant'));
+        const hasContradiction = restaurantTypes.length > 0 && !restaurantTypes.some((t: string) => expandedTypes.has(t));
+        if (hasContradiction) return false;
+        return rawTypes.some((t: string) => expandedTypes.has(t)) || expandedTypes.has(cat);
+      });
+
+      typeMatchedIds = new Set(typeMatched.map((v: any) => v.place_id));
+      const unmatched = candidates.filter((v: any) => !typeMatchedIds.has(v.place_id));
+      const unmatchedFiltered = unmatched.filter((v: any) =>
+        !(v._rawTypes || []).some((t: string) => t.endsWith('_restaurant'))
+      );
+
+      // Priority order: type-matched first, then contradiction-filtered unmatched to fill up to 20
+      filteredCandidates = [...typeMatched, ...unmatchedFiltered].slice(0, 20);
+      console.log(`🎯 Query-intent pre-filter: ${typeMatched.length} type-matched + ${Math.min(unmatchedFiltered.length, 20 - typeMatched.length)} unmatched = ${filteredCandidates.length} candidates`);
+    }
+  }
+
+  // ─── Comprehensive LLM ───
+  console.log('🤖 COMPREHENSIVE LLM: Scoring, descriptors, summary & chips...');
+  const llmCallStart = Date.now();
+
+  const candidateList = filteredCandidates.map((v: any, i: number) => {
+    const displayName = v.name.split(/[|–—:]/).at(0).trim();
+    const typeHints = (v._rawTypes || []).slice(0, 2).join(', ');
+    return `${i + 1}. ${displayName} | PRIMARY TYPE: ${v.cuisine_type || 'restaurant'} | also tagged: ${typeHints || 'none'} | ${v.rating}★, ${v.review_count} reviews, ${v.price_level || 'price unknown'}, ${v.distance_km?.toFixed(1)}km`;
+  }).join('\n');
+
+  let finalVenues: any[] = [];
+  let search_summary: any = null;
+  let suggested_chips: string[] = [];
+
+  const comprehensiveResult = await safe('comprehensive-llm', () => callLLM(
+    'gemini-2.5-flash',
+    `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues and only include genuinely suitable matches. Venue types reflect what the place actually serves — use them as the primary relevance signal. A venue is NOT relevant if its primary purpose does not match the query intent. Examples of venues to exclude with confidence 0: an Italian restaurant for a coffee query, a shisha lounge for a coffee query, a sushi restaurant for a wine bar query, a gym for any food or drink query. A venue's PRIMARY TYPE is the strongest signal. If the PRIMARY TYPE is a cuisine category (italian, vegan, french, japanese, etc.) and the query is for a different category (coffee, wine bar, etc.), assign confidence 0 regardless of secondary tags. A venue scores below 0.5 only if the queried item is incidental to its primary activity. Only include venues where the queried item is a core part of what the venue is known for.`,
+    `The user searched for "${search_term}" in ${location_name}.\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for EVERY candidate venue listed above, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits or doesn't) }. Score honestly: venues that are primarily what the query is about score 0.7-1.0. Venues where the queried item is incidental to a different primary purpose (e.g. a vegan restaurant or bakery that also happens to serve coffee, for a coffee query) score 0.2-0.4. Venues completely unrelated to the query score 0.0-0.1. Order by confidence descending.\n- "descriptors": array of arrays, one per rankings entry with confidence >= 0.5 only (in that same relative order — do not generate descriptors for venues scored below 0.5), each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
+    [
+      {
+        type: 'function',
+        function: {
+          name: 'comprehensive_venue_analysis',
+          description: 'Score venues, generate descriptors, summary and chips',
+          parameters: {
+            type: 'object',
+            properties: {
+              rankings: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    index: { type: 'number' },
+                    confidence: { type: 'number' },
+                    reasoning: { type: 'string' }
+                  },
+                  required: ['index', 'confidence', 'reasoning']
+                }
+              },
+              descriptors: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
+              summary: {
+                type: 'object',
+                properties: {
+                  intro: { type: 'string' },
+                  bullets: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: { name: { type: 'string' }, note: { type: 'string' } },
+                      required: ['name', 'note']
+                    }
+                  }
+                },
+                required: ['intro', 'bullets']
+              },
+              chips: { type: 'array', items: { type: 'string' } }
+            },
+            required: ['rankings', 'descriptors', 'chips'],
+          }
+        }
+      }
+    ],
+    { type: 'function', function: { name: 'comprehensive_venue_analysis' } },
+    { max_tokens: 4000, temperature: 0, thinkingBudget: 0 }
+  ), { rankings: [], descriptors: [], summary: null, chips: [] });
+
+  const rankings = comprehensiveResult.rankings || [];
+  finalVenues = rankings
+    .filter((r: any) => r.confidence >= 0.5)
+    .slice(0, 8)
+    .map((r: any, i: number) => {
+      const venue = filteredCandidates[r.index - 1];
+      if (!venue) return null;
+      return {
+        ...venue,
+        descriptors: comprehensiveResult.descriptors?.[i] || [],
+        llm_confidence: r.confidence,
+        reasoning_explanation: r.reasoning,
+      };
+    })
+    .filter(Boolean);
+
+
+  // Backfill to guarantee 8 results — pool is type-matched only when typeMatchedIds is populated.
+  if (finalVenues.length < 8) {
+    const usedPlaceIds = new Set(
+      rankings
+        .filter((r: any) => r.confidence >= 0.5)
+        .map((r: any) => filteredCandidates[r.index - 1]?.place_id)
+        .filter(Boolean)
+    );
+    const rejectedPlaceIds = new Set(
+      rankings
+        .filter((r: any) => r.confidence < 0.1)
+        .map((r: any) => filteredCandidates[r.index - 1]?.place_id)
+        .filter(Boolean)
+    );
+    const confidenceByPlaceId = new Map(
+      rankings
+        .map((r: any) => [filteredCandidates[r.index - 1]?.place_id, r.confidence])
+        .filter(([id]: any) => Boolean(id))
+    );
+    const backfillPool = typeMatchedIds.size > 0
+      ? filteredCandidates.filter((v: any) => typeMatchedIds.has(v.place_id))
+      : filteredCandidates;
+    const backfill = backfillPool
+      .filter((v: any) => !usedPlaceIds.has(v.place_id) && !rejectedPlaceIds.has(v.place_id))
+      .map((v: any) => ({ ...v, descriptors: [], reasoning_explanation: '', llm_confidence: confidenceByPlaceId.get(v.place_id) ?? 0 }))
+      .sort((a: any, b: any) => (b.llm_confidence || 0) - (a.llm_confidence || 0))
+      .slice(0, 8 - finalVenues.length);
+    finalVenues.push(...backfill);
+  }
+
+  search_summary = comprehensiveResult.summary || null;
+  suggested_chips = comprehensiveResult.chips || [];
+
+  console.log(`⏱️ Comprehensive LLM duration: ${Date.now() - llmCallStart}ms`);
+  console.log(`✅ COMPREHENSIVE LLM complete — ${finalVenues.length} venues selected`);
+
+  // ─── Reserve venues ───
+  const finalVenueIds = new Set(finalVenues.map((v: any) => v.place_id));
+  const reserveVenues = candidates
+    .filter((v: any) => !finalVenueIds.has(v.place_id))
+    .slice(0, 10);
+
+  return {
+    gated: false,
+    finalVenues,
+    reserveVenues,
+    servedFromSupabase,
+    wasGoogleFallback,
+    search_summary,
+    suggested_chips,
+  };
+}
+
+// ─── Per-tab Gemini grounding for unseeded cities ────────────────────────────
+
+async function getGroundedVenuesForTab(params: {
+  tab: string;
+  lat: number;
+  lon: number;
+  location_name: string;
+  GOOGLE_KEY: string;
+  sb: any;
+  exclude_ids: string[];
+  maxRadius: number;
+}): Promise<any[]> {
+  // `tab` is accepted for a future per-tab grounding prompt, but is currently unused:
+  // the Walk-in/Popular/New/Trending tabs are served entirely by the free client-side
+  // fetchTabVenues() query in useDiscoveryFeed.js and never call recommend() with a
+  // non-default tab value, so this only ever runs for the default ambient feed's
+  // cold-start fallback. Confirmed with the team (2026-07) this isn't being wired up
+  // in the near term — removed the four per-tab prompt variants that could never be
+  // reached as a result.
+  const { lat, lon, location_name, GOOGLE_KEY, sb, exclude_ids, maxRadius } = params;
+
+  const prompt = `Best restaurants bars and cafes in ${location_name}`;
+
+  const groundingResp = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ googleSearch: {} }],
+        toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+      }),
+    },
+  );
+
+  if (!groundingResp.ok) {
+    console.warn(`[getGroundedVenuesForTab] Gemini grounding failed: ${groundingResp.status}`);
+    return [];
+  }
+
+  const groundingData = await groundingResp.json();
+  const chunks: any[] = groundingData.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  console.log(`🗺️ Grounded discovery (${tab}): ${chunks.length} chunks`);
+
+  const extractedIds: Array<{ cid?: string; placeId?: string; title: string }> = [];
+  for (const chunk of chunks) {
+    const uri: string   = chunk.web?.uri   || '';
+    const title: string = chunk.web?.title || '';
+    const cidMatch   = uri.match(/[?&]cid=(\d+)/);
+    const placeMatch = uri.match(/place_id=(ChIJ[^&]+)/);
+    if (cidMatch)   { extractedIds.push({ cid: cidMatch[1], title }); continue; }
+    if (placeMatch) { extractedIds.push({ placeId: placeMatch[1], title }); }
+  }
+
+  if (extractedIds.length === 0) return [];
+
+  const { checkAndLog } = await import('../_shared/apiCallLog.ts');
+  const excludeSet = new Set(exclude_ids.map((id: string) => id.replace(/^places\//, '')));
+  const PLMap: Record<string, number> = {
+    PRICE_LEVEL_FREE: 1, PRICE_LEVEL_INEXPENSIVE: 1,
+    PRICE_LEVEL_MODERATE: 2, PRICE_LEVEL_EXPENSIVE: 3, PRICE_LEVEL_VERY_EXPENSIVE: 4,
+  };
+  const PLStrs = ['$', '$', '$$', '$$$', '$$$$'];
+  const results: any[] = [];
+
+  for (const item of extractedIds.slice(0, 10)) {
+    const guardKey = item.cid ? `gdisc_cid_${item.cid}` : `gdisc_${item.placeId}`;
+    const allowed = await checkAndLog(sb, 'grounded_discovery', guardKey);
+    if (!allowed) continue;
+
+    let cleanId: string | null = null;
+    let resolvedDetails: any = null;
+
+    if (item.cid) {
+      const legacyResp = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?cid=${item.cid}&fields=place_id,name,formatted_address,geometry,rating,user_ratings_total,price_level,types,business_status&key=${GOOGLE_KEY}`,
+      );
+      if (!legacyResp.ok) continue;
+      const legacyData = await legacyResp.json();
+      if (!legacyData.result?.place_id) continue;
+      cleanId = legacyData.result.place_id.replace(/^places\//, '');
+      resolvedDetails = legacyData.result;
+    } else if (item.placeId) {
+      cleanId = item.placeId.replace(/^places\//, '');
+    }
+
+    if (!cleanId || excludeSet.has(cleanId)) continue;
+
+    const { data: existing } = await sb.from('venues').select('google_place_id').eq('google_place_id', cleanId).maybeSingle();
+    if (existing) continue;
+
+    if (!resolvedDetails) {
+      const newDetailsResp = await fetch(
+        `https://places.googleapis.com/v1/places/${cleanId}`,
+        {
+          headers: {
+            'X-Goog-Api-Key': GOOGLE_KEY,
+            'X-Goog-FieldMask': 'displayName,formattedAddress,location,rating,userRatingCount,priceLevel,types,businessStatus',
+          },
+        },
+      );
+      if (!newDetailsResp.ok) continue;
+      const nd = await newDetailsResp.json();
+      resolvedDetails = {
+        name:               nd.displayName?.text    || '',
+        formatted_address:  nd.formattedAddress     || '',
+        geometry:           { location: { lat: nd.location?.latitude, lng: nd.location?.longitude } },
+        rating:             nd.rating               ?? null,
+        user_ratings_total: nd.userRatingCount      ?? null,
+        price_level:        nd.priceLevel           ?? null,
+        types:              nd.types                || [],
+        business_status:    nd.businessStatus       || null,
+      };
+    }
+
+    const vLat = resolvedDetails.geometry?.location?.lat;
+    const vLon = resolvedDetails.geometry?.location?.lng;
+    if (!vLat || !vLon) continue;
+
+    const dist = calculateDistance(lat, lon, vLat, vLon);
+    if (dist > maxRadius) continue;
+
+    if (!hasFoodDrinkType(resolvedDetails.types || [])) continue;
+
+    const plRaw = resolvedDetails.price_level;
+    let plInt: number | null = null;
+    if (plRaw != null) {
+      plInt = typeof plRaw === 'number'
+        ? (plRaw === 0 ? 1 : Math.min(plRaw, 4))
+        : (PLMap[plRaw] ?? null);
+    }
+    const mappedPL = plInt != null ? (PLStrs[plInt] || null) : null;
+
+    await sb.from('venues').upsert([{
+      google_place_id: cleanId,
+      name:            resolvedDetails.name || item.title || '',
+      lat:             vLat,
+      lng:             vLon,
+      rating:          resolvedDetails.rating,
+      review_count:    resolvedDetails.user_ratings_total,
+      price_level:     plInt,
+      venue_types:     resolvedDetails.types || [],
+      business_status: null,
+      address:         resolvedDetails.formatted_address || '',
+      enriched:        false,
+      is_chain:        false,
+    }], { onConflict: 'google_place_id', ignoreDuplicates: true });
+
+    results.push({
+      name:               resolvedDetails.name || item.title || '',
+      address:            resolvedDetails.formatted_address || '',
+      lat:                vLat,
+      lon:                vLon,
+      distance_km:        dist,
+      rating:             resolvedDetails.rating,
+      review_count:       resolvedDetails.user_ratings_total,
+      price_level:        mappedPL,
+      place_id:           `places/${cleanId}`,
+      category:           (resolvedDetails.types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
+      cuisine_type:       (resolvedDetails.types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+      isRelaxedAdmission: false,
+      unknownPrice:       false,
+      _rawTypes:          resolvedDetails.types || [],
+      _photoUrls:         [],
+    });
+
+    console.log(`✅ Grounded discovery (${tab}): "${resolvedDetails.name || item.title}" added`);
+  }
+
+  return results;
+}
+
 // ─── Main handler ───
 
 Deno.serve(async (req) => {
@@ -884,8 +2335,8 @@ Deno.serve(async (req) => {
       mode,
       category,
       query,
+      tab = 'discovery',
       radius_km,
-      tile_radius_km,
       lat: originalLat,
       lon: originalLon,
       location_name: originalLocationName,
@@ -893,20 +2344,10 @@ Deno.serve(async (req) => {
       open_now,
       price_levels,
       cuisine_types,
-      session_context = [],
       exclude_ids = [],
       criteria_pass,
       intent,
     } = await req.json();
-
-    // Build session context string for LLM prompts
-    let sessionContextString = '';
-    if (Array.isArray(session_context) && session_context.length > 0) {
-      sessionContextString = '\n\nPrevious searches this session:\n' + session_context.map((s: any) =>
-        `- Query: "${s.query}"\n  Top results: ${(s.results || []).map((r: any) => `${r.name}${r.cuisine_type ? ` (${r.cuisine_type})` : ''}`).join(', ')}${s.search_summary ? `\n  Summary: ${typeof s.search_summary === 'string' ? s.search_summary : s.search_summary?.intro || ''}` : ''}`
-      ).join('\n');
-      console.log(`📝 Session context: ${session_context.length} previous searches`);
-    }
 
     let lat = originalLat;
     let lon = originalLon;
@@ -971,606 +2412,65 @@ Deno.serve(async (req) => {
 
     let refinedSearchTerm = searchTerm;
 
-    // ─── STEPS 1, 1b, 1c: Skip entirely for discovery mode ───
     if (!isDiscoveryMode) {
-    console.log('🤖 STEPS 1 & 1b: Running in parallel...');
-    let refinedSearchTermResult = searchTerm;
+      const searchResult = await handleSearch({
+        search_term: searchTerm,
+        lat,
+        lon,
+        location_name,
+        admission,
+        exclude_ids,
+        price_levels: price_levels || [],
+        cuisine_types: cuisine_types || [],
+        open_now: open_now || false,
+        relaxation_level,
+        intent: intent || null,
+        authUserId,
+        GOOGLE_KEY: GOOGLE_KEY || '',
+      });
 
-    const [refinementResult, locationDetectionResult] = await Promise.all([
-      safe('step1-refinement', () => callLLM(
-        'gemini-2.5-flash',
-        'You extract cuisine keywords from search queries for Google Places API. IMPORTANT: Do NOT include any location names, street names, city names, or neighbourhood names in your output. Only return food/cuisine/dining keywords. PRESERVE specific culinary sub-types and styles (e.g. "neapolitan pizza", "omakase sushi", "dim sum") — do not collapse them to a generic parent term.',
-        `The user is searching for "${searchTerm}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query includes a specific sub-type or style (e.g. "neapolitan", "omakase", "wood-fired"), preserve it in your keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "Toronto", etc.).\nReturn ONLY a comma-separated list of 1-4 highly relevant and concise cuisine/food keywords suitable for a Google Places search.${sessionContextString}`,
-        [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'] } } }],
-        { type: 'function', function: { name: 'refine_query' } },
-        { max_tokens: 100, temperature: 0 },
-      ), null),
-      safe('step1b-location', () => callLLM(
-        'gemini-2.5-flash',
-        'You detect neighbourhood, district, or city names in search queries.',
-        `Given the search query "${searchTerm}" and current location "${location_name}", identify if the query mentions a specific neighbourhood, district, or city name that is different from or more specific than the current location. Return the detected location string or "NONE" if no specific location is mentioned.`,
-        [{ type: 'function', function: { name: 'detect_location', description: 'Return detected location or NONE', parameters: { type: 'object', properties: { detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' } }, required: ['detected_location'] } } }],
-        { type: 'function', function: { name: 'detect_location' } },
-        { max_tokens: 100, temperature: 0 },
-      ), null),
-    ]);
-
-    // Apply Step 1 result
-    if (refinementResult?.keywords && refinementResult.keywords.toLowerCase() !== searchTerm.toLowerCase()) {
-      refinedSearchTermResult = refinementResult.keywords;
-      console.log(`✅ STEP 1: Refined to: "${refinedSearchTermResult}"`);
-    }
-    refinedSearchTerm = refinedSearchTermResult;
-
-    // Apply Step 1b result
-    if (locationDetectionResult?.detected_location && locationDetectionResult.detected_location !== 'NONE') {
-      const detectedLocation = locationDetectionResult.detected_location;
-      const geocodeQuery = location_name ? `${detectedLocation}, ${location_name}` : detectedLocation;
-      console.log(`📍 STEP 1b: Detected location: "${detectedLocation}", geocoding as "${geocodeQuery}"...`);
-      try {
-        const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
-        const geocodeResp = await fetch(`${SUPABASE_URL}/functions/v1/geocode-address`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ address: geocodeQuery, city_name: location_name || undefined }),
-        });
-        if (geocodeResp.ok) {
-          const geocodeData = await geocodeResp.json();
-          if (geocodeData.lat && geocodeData.lon) {
-            // Sanity check: distance between geocoded result and original user location
-            const dLat = (geocodeData.lat - lat) * Math.PI / 180;
-            const dLon = (geocodeData.lon - lon) * Math.PI / 180;
-            const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180) * Math.cos(geocodeData.lat*Math.PI/180) * Math.sin(dLon/2)**2;
-            const distKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            if (distKm > 100) {
-              console.warn(`⚠️ STEP 1b: Geocode result too far from user location (${distKm.toFixed(1)}km), discarding override`);
-            } else {
-              lat = geocodeData.lat;
-              lon = geocodeData.lon;
-              location_name = detectedLocation;
-              admission.maxRadius = 2;
-              console.log(`📍 STEP 1b: Location override: ${detectedLocation} (${lat}, ${lon}), ${distKm.toFixed(1)}km from user`);
-            }
-          }
-        }
-      } catch (e: any) {
-        console.warn('⚠️ STEP 1b: Geocoding failed:', e.message);
-      }
-    }
-    console.log('✅ STEPS 1 & 1b complete');
-    } else {
-      console.log('⏩ DISCOVERY MODE: Skipping Steps 1, 1b (no query refinement needed)');
-    }
-
-    // ─── Street-level precision detection + Step 1c (skip for discovery) ───
-    const STREET_IDENTIFIERS = /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i;
-    const PROXIMITY_WORDS = /\b(near|around|by|close\s+to|nearby|near\s+me|off\s+of|around\s+the\s+corner)\b/i;
-    let isOnStreetSearch = false;
-    let detectedStreetName = '';
-    let detectedStreetBase = '';
-    let refinementIntent: { is_refinement: boolean; keep_results: string[]; replace_count: number; refined_query: string } | null = null;
-
-    if (!isDiscoveryMode) {
-    // Check both searchTerm AND location_name for street identifiers
-    const hasProximityWords = PROXIMITY_WORDS.test(searchTerm || '');
-    const streetSourceText = `${searchTerm || ''} ${location_name || ''} ${refinedSearchTerm || ''}`;
-
-    if (!hasProximityWords && STREET_IDENTIFIERS.test(streetSourceText)) {
-      isOnStreetSearch = true;
-      let streetSource = '';
-      if (STREET_IDENTIFIERS.test(location_name || '')) {
-        streetSource = (location_name || '').split(',')[0].trim();
-      } else {
-        const match = streetSourceText.match(/(\w+)\s+(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i);
-        if (match) {
-          streetSource = `${match[1]} ${match[2]}`;
-        }
-      }
-      detectedStreetName = streetSource;
-      detectedStreetBase = streetSource.replace(/\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/gi, '').trim().toLowerCase();
-      console.log(`📍 On-street search detected: "${detectedStreetName}" (base: "${detectedStreetBase}") — strict address filtering applied`);
-      admission.maxRadius = 3;
-    } else if (hasProximityWords) {
-      console.log(`📍 Proximity words detected in query — using standard radius logic`);
-    }
-
-    // ─── STEP 1c: Refinement intent detection ───
-    if (Array.isArray(session_context) && session_context.length > 0) {
-      console.log('🔄 STEP 1c: Checking for refinement intent...');
-      try {
-        const lastSearch = session_context[session_context.length - 1];
-        const previousResultNames = (lastSearch?.results || []).map((r: any) => r.name);
-
-        refinementIntent = await callLLM(
-          'gemini-2.5-flash',
-          'You detect whether a search query is asking to modify/replace specific results from a previous search, or is a fresh new search.',
-          `Given the query "${searchTerm}" and the session history, determine if this query is asking to modify previous results rather than start a fresh search. Specifically detect phrases like "replace", "swap", "different option", "something else", "instead of", "change #[number]", or "not that one".\n\nPrevious search query: "${lastSearch?.query || ''}"\nPrevious results: ${previousResultNames.map((n: string, i: number) => `#${i + 1} ${n}`).join(', ')}\n\nReturn a JSON object.${sessionContextString}`,
-          [{
-            type: 'function',
-            function: {
-              name: 'detect_refinement',
-              description: 'Detect if query is a refinement of previous results',
-              parameters: {
-                type: 'object',
-                properties: {
-                  is_refinement: { type: 'boolean', description: 'True if the query asks to modify/replace previous results' },
-                  keep_results: { type: 'array', items: { type: 'string' }, description: 'Venue names from previous search to keep unchanged' },
-                  replace_count: { type: 'number', description: 'Number of venues to replace' },
-                  refined_query: { type: 'string', description: 'The underlying search intent stripped of refinement language' },
-                },
-                required: ['is_refinement', 'keep_results', 'replace_count', 'refined_query'],
-              },
-            },
-          }],
-          { type: 'function', function: { name: 'detect_refinement' } },
-          { max_tokens: 100, temperature: 0 },
+      if (searchResult.gated) {
+        return new Response(
+          JSON.stringify({
+            results: [], suggested_chips: [], search_summary: null,
+            pagination: { has_more: false },
+            relaxation_applied: relaxation_level > 0, relaxation_level,
+            gated: true, nearby_overflow: [], reserve_venues: [], staged_venues: [],
+            was_google_fallback: false,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
-
-        if (refinementIntent?.is_refinement) {
-          console.log(`✅ STEP 1c: Refinement detected — keep ${refinementIntent.keep_results.length} venues, replace ${refinementIntent.replace_count}, refined query: "${refinementIntent.refined_query}"`);
-          refinedSearchTerm = refinementIntent.refined_query;
-        } else {
-          console.log('⏩ STEP 1c: Not a refinement, proceeding normally');
-          refinementIntent = null;
-        }
-      } catch (e: any) {
-        console.warn('⚠️ STEP 1c: Refinement detection failed:', e.message);
-        refinementIntent = null;
       }
-    }
-    } // end !isDiscoveryMode for street detection + step 1c
 
-    // ─── SUPABASE-FIRST DISCOVERY TRACK ───
+      const { finalVenues, reserveVenues, wasGoogleFallback: searchGoogleFallback, search_summary, suggested_chips } = searchResult;
+      const enrichedSearch = finalVenues.map((venue: any) => ({ ...venue, image_urls: venue._photoUrls || [] }));
+      const searchResultsForFrontend = enrichedSearch.map(({ isRelaxedAdmission, unknownPrice, ...rest }: any) => rest);
+      reserveVenues.forEach((venue: any) => { venue.image_urls = venue._photoUrls || []; });
+
+      return new Response(
+        JSON.stringify({
+          results: searchResultsForFrontend,
+          suggested_chips,
+          search_summary,
+          pagination: { has_more: false },
+          relaxation_applied: relaxation_level > 0,
+          relaxation_level,
+          gated: false,
+          nearby_overflow: [],
+          reserve_venues: reserveVenues,
+          staged_venues: [],
+          was_google_fallback: searchGoogleFallback,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // ─── Discovery: Supabase-first ───
     let filteredVenues: any[] = [];
     let servedFromSupabase = false;
-    if (isDiscoveryMode) {
-      const result = await getSupabaseVenues({ lat, lon, admission, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY, isDiscoveryMode });
-      filteredVenues = result.filteredVenues;
-      servedFromSupabase = result.servedFromSupabase;
-    }
-
-    // ─── SUPABASE-FIRST SEARCH TRACK ───
-    // Explicit cuisine_types (from filter chips) take priority; fall back to
-    // keyword expansion from the refined query text. Uses getSupabaseVenuesForArea
-    // so that regular_opening_hours is available for open_now filtering.
-    if (!isDiscoveryMode && !servedFromSupabase) {
-      let effectiveCuisineTypes: string[] | null = null;
-
-      if (Array.isArray(cuisine_types) && cuisine_types.length > 0) {
-        effectiveCuisineTypes = cuisine_types;
-      } else if (refinedSearchTerm) {
-        const queryWords = refinedSearchTerm.toLowerCase()
-          .split(/\s+/)
-          .filter((w: string) => w.length > 2)
-          .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have',
-            'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
-
-        if (queryWords.length > 0) {
-          const expandedTypes = expandQueryToTypes(queryWords);
-          if (expandedTypes.size > 0) effectiveCuisineTypes = [...expandedTypes];
-        }
-      }
-
-      let sbSearchVenues = await safe('supabase-search', () =>
-        getSupabaseVenuesForArea(lat, lon, admission.maxRadius, exclude_ids), []);
-
-      console.log(`🗄️ Supabase-search: ${sbSearchVenues.length} raw venues found`);
-      const allAreaVenues = sbSearchVenues; // pre-filter snapshot for name fallback
-
-      if (effectiveCuisineTypes?.length) {
-        sbSearchVenues = sbSearchVenues.filter((v: any) => {
-          if (!v.venue_types?.length) return false;
-          return effectiveCuisineTypes!.some((ct: string) => v.venue_types.includes(ct));
-        });
-        console.log(`🔍 After cuisine filter: ${sbSearchVenues.length} venues`);
-      }
-
-      if (open_now) {
-        sbSearchVenues = sbSearchVenues.filter((v: any) => isOpenNow(v.regular_opening_hours));
-      }
-
-      const sbAdmitted = sbSearchVenues.filter((v: any) =>
-        (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount
-      );
-
-      // Explicit filter: serve with 1+ results. Text-derived: require 5+ when Google is available
-      // to ensure relevance; drop to 1 when Google is disabled so Supabase results always surface.
-      const threshold = (Array.isArray(cuisine_types) && cuisine_types.length > 0) || !GOOGLE_KEY ? 1 : 5;
-      if (sbAdmitted.length >= threshold) {
-        servedFromSupabase = true;
-        filteredVenues = sbAdmitted
-          .map((v: any) => {
-            const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
-            const isRelaxedAdmission = v.rating < SCORING.RATING_FLOOR || v.review_count < SCORING.REVIEW_FLOOR;
-            return {
-              name: v.name,
-              address: v.address || '',
-              lat: v.lat,
-              lon: v.lng,
-              distance_km,
-              rating: v.rating,
-              review_count: v.review_count,
-              price_level: mapIntPriceLevel(v.price_level),
-              place_id: `places/${v.google_place_id}`,
-              category: (v.venue_types ?? []).find((t: string) =>
-                t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
-              cuisine_type: (v.venue_types ?? []).find((t: string) =>
-                t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
-              isRelaxedAdmission,
-              unknownPrice: false,
-              _rawTypes: v.venue_types ?? [],
-              _photoUrls: v.photo_urls ?? [],
-              photos_complete: v.photos_complete ?? false,
-              photos_fetched_count: v.photos_fetched_count ?? 0,
-            };
-          })
-          .filter((v: any) => {
-            if (!price_levels?.length) return true;
-            if (v.price_level == null) return true;
-            return price_levels.includes(v.price_level);
-          });
-        console.log(`✅ Search served from Supabase: ${filteredVenues.length} venues after filters`);
-      } else {
-        // Name text search fallback — catches venues tagged generically (e.g. steakhouse tagged only as "restaurant")
-        let nameMatchVenues: any[] = [];
-        const searchTermLower = (refinedSearchTerm || searchTerm || '').toLowerCase().trim();
-        const searchWords = searchTermLower.split(/\s+/).filter((w: string) => w.length > 2);
-
-        if (searchWords.length > 0) {
-          const admittedIds = new Set(sbAdmitted.map((v: any) => v.google_place_id));
-          nameMatchVenues = allAreaVenues
-            .filter((v: any) => {
-              const nameLower = (v.name || '').toLowerCase();
-              return searchWords.some((w: string) => nameLower.includes(w));
-            })
-            .filter((v: any) => !admittedIds.has(v.google_place_id))
-            .filter((v: any) =>
-              (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount
-            );
-          if (open_now) {
-            nameMatchVenues = nameMatchVenues.filter((v: any) => isOpenNow(v.regular_opening_hours));
-          }
-          console.log(`🔤 Name search fallback: ${nameMatchVenues.length} additional venues matched`);
-        }
-
-        const combined = [...sbAdmitted, ...nameMatchVenues];
-        if (combined.length >= 5) {
-          servedFromSupabase = true;
-          filteredVenues = combined
-            .map((v: any) => {
-              const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
-              const isRelaxedAdmission = v.rating < SCORING.RATING_FLOOR || v.review_count < SCORING.REVIEW_FLOOR;
-              return {
-                name: v.name,
-                address: v.address || '',
-                lat: v.lat,
-                lon: v.lng,
-                distance_km,
-                rating: v.rating,
-                review_count: v.review_count,
-                price_level: mapIntPriceLevel(v.price_level),
-                place_id: `places/${v.google_place_id}`,
-                category: (v.venue_types ?? []).find((t: string) =>
-                  t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
-                cuisine_type: (v.venue_types ?? []).find((t: string) =>
-                  t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
-                isRelaxedAdmission,
-                unknownPrice: false,
-                _rawTypes: v.venue_types ?? [],
-                _photoUrls: v.photo_urls ?? [],
-                photos_complete: v.photos_complete ?? false,
-                photos_fetched_count: v.photos_fetched_count ?? 0,
-              };
-            })
-            .filter((v: any) => {
-              if (!price_levels?.length) return true;
-              if (v.price_level == null) return true;
-              return price_levels.includes(v.price_level);
-            });
-          console.log(`✅ Search served from Supabase (with name fallback): ${filteredVenues.length} venues`);
-        } else {
-          console.log(`⚠️ Supabase search returned ${combined.length} combined venues — falling through to Google`);
-        }
-      }
-    }
-
-    // ─── Mechanism 1: Gemini gap detection (search mode only) ───
-    // Fires when Supabase served results; asks Gemini for top venue names and checks
-    // whether any are missing from the DB. Confirmed gaps are fetched from Places API,
-    // written as skeleton rows, and appended to the current result set.
-    if (!isDiscoveryMode && GEMINI_API_KEY && servedFromSupabase && sessionGapFills < 10) {
-      try {
-        const gapRaw = await callLLM(
-          'gemini-2.5-flash',
-          'You are a Toronto restaurant and venue expert.',
-          `A user searched for: "${refinedSearchTerm}". List the top 5 real venues in Toronto that best match this search intent. Return ONLY a JSON array of venue names, nothing else. Example: ["Alo", "Canoe", "Edulis"]. Only include venues you are confident exist in Toronto.`,
-          undefined, undefined,
-          { max_tokens: 200, temperature: 0 },
-        );
-
-        let geminiNames: string[] = [];
-        try {
-          geminiNames = JSON.parse(gapRaw);
-          if (!Array.isArray(geminiNames)) geminiNames = [];
-        } catch { /* parse failed — skip */ }
-
-        if (geminiNames.length > 0 && GOOGLE_KEY) {
-          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-          const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-          const sbGap = createClient(supabaseUrl, supabaseKey);
-          const { checkAndLog } = await import('../_shared/apiCallLog.ts');
-          let gapFillsThisSearch = 0;
-
-          for (const name of geminiNames.slice(0, 5)) {
-            if (sessionGapFills >= 10 || gapFillsThisSearch >= 3) break;
-
-            // Check if name already exists in Supabase
-            const { data: existingByName } = await sbGap
-              .from('venues')
-              .select('google_place_id')
-              .ilike('name', `%${name}%`)
-              .limit(1);
-
-            if (existingByName && existingByName.length > 0) continue;
-
-            console.log(`🔍 Gap detected: "${name}" not in DB — fetching from Places API`);
-
-            // Spend guard before each Places API call
-            const allowed = await checkAndLog(sbGap, 'enrich', `gap_${name}`);
-            if (!allowed) continue;
-
-            // Places API text search
-            let searchResults: any[] = [];
-            try {
-              searchResults = await googlePlacesBroadSearch(
-                GOOGLE_KEY, `${name}, Toronto`, lat, lon, admission.maxRadius, undefined, [],
-              );
-            } catch { continue; }
-
-            if (!searchResults.length) continue;
-
-            const firstResult = searchResults[0];
-            const rawPlaceId = (firstResult.place_id || '').replace(/^places\//, '');
-            if (!rawPlaceId) continue;
-
-            // Check if google_place_id already exists in Supabase (name mismatch but venue exists)
-            const { data: existingById } = await sbGap
-              .from('venues')
-              .select('google_place_id')
-              .eq('google_place_id', rawPlaceId)
-              .maybeSingle();
-
-            if (existingById) continue;
-
-            // Distance check
-            const gapDist = calculateDistance(lat, lon, firstResult.lat, firstResult.lon);
-            if (gapDist > admission.maxRadius) continue;
-
-            // Write skeleton row
-            const gapPriceToInt: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
-            const gapMappedPL = priceLevelMap[firstResult.price_level] || null;
-            await sbGap.from('venues').upsert([{
-              google_place_id: rawPlaceId,
-              name:            firstResult.name,
-              lat:             firstResult.lat,
-              lng:             firstResult.lon,
-              rating:          firstResult.rating,
-              review_count:    firstResult.user_ratings_total,
-              price_level:     gapMappedPL ? (gapPriceToInt[gapMappedPL] ?? null) : null,
-              venue_types:     firstResult.types || [],
-              business_status: null,
-              address:         firstResult.address,
-              enriched:        false,
-              is_chain:        false,
-            }], { onConflict: 'google_place_id', ignoreDuplicates: true });
-
-            // Add to current results
-            const gapRelaxed = (firstResult.rating || 0) < SCORING.RATING_FLOOR || (firstResult.user_ratings_total || 0) < SCORING.REVIEW_FLOOR;
-            filteredVenues.push({
-              name:              firstResult.name,
-              address:           firstResult.address || '',
-              lat:               firstResult.lat,
-              lon:               firstResult.lon,
-              distance_km:       gapDist,
-              rating:            firstResult.rating,
-              review_count:      firstResult.user_ratings_total,
-              price_level:       gapMappedPL,
-              place_id:          `places/${rawPlaceId}`,
-              category:          (firstResult.types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
-              cuisine_type:      (firstResult.types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
-              isRelaxedAdmission: gapRelaxed,
-              unknownPrice:      false,
-              _rawTypes:         firstResult.types || [],
-              _photoUrls:        [],
-            });
-
-            sessionGapFills++;
-            gapFillsThisSearch++;
-            console.log(`✅ Gap filled: "${name}" added to DB and current results`);
-          }
-        }
-      } catch (e: any) {
-        console.warn('⚠️ Gap detection failed silently:', e.message);
-      }
-    }
-
-    // ─── Mechanism 2: Gemini Maps Grounding (search mode only) ───
-    // Uses Google Search grounding to find venues the Supabase DB may not have.
-    // Extracts CIDs / place IDs from grounding chunk URIs, resolves them via Places API,
-    // writes skeleton rows to the DB, and appends to the current result set.
-    if (!isDiscoveryMode && GEMINI_API_KEY && sessionGapFills < 10) {
-      try {
-        const groundingResp = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: `Find venues in Toronto matching: ${refinedSearchTerm}` }] }],
-              tools: [{ googleSearch: {} }],
-              toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
-            }),
-          },
-        );
-
-        if (groundingResp.ok) {
-          const groundingData = await groundingResp.json();
-          const chunks: any[] = groundingData.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-          console.log('🗺️ Maps Grounding chunks:', JSON.stringify(chunks));
-
-          // Extract CIDs and any place_id= references from chunk URIs
-          const extractedIds: Array<{ cid?: string; placeId?: string; title: string }> = [];
-          for (const chunk of chunks) {
-            const uri: string  = chunk.web?.uri   || '';
-            const title: string = chunk.web?.title || '';
-            const cidMatch   = uri.match(/[?&]cid=(\d+)/);
-            const placeMatch = uri.match(/place_id=(ChIJ[^&]+)/);
-            if (cidMatch)   { extractedIds.push({ cid:     cidMatch[1],   title }); continue; }
-            if (placeMatch) { extractedIds.push({ placeId: placeMatch[1], title }); }
-          }
-
-          if (extractedIds.length === 0) {
-            console.log('🗺️ Maps Grounding: no placeIds extracted from response');
-          } else if (GOOGLE_KEY) {
-            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-            const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-            const sbM2 = createClient(supabaseUrl, supabaseKey);
-            const { checkAndLog } = await import('../_shared/apiCallLog.ts');
-            let m2FillsThisSearch = 0;
-
-            for (const item of extractedIds.slice(0, 5)) {
-              if (sessionGapFills >= 10 || m2FillsThisSearch >= 3) break;
-
-              // Spend guard before any Places API call
-              const guardKey = item.cid ? `m2_cid_${item.cid}` : `m2_${item.placeId}`;
-              const allowed = await checkAndLog(sbM2, 'enrich', guardKey);
-              if (!allowed) continue;
-
-              let cleanId: string | null = null;
-              let resolvedDetails: any = null;
-
-              if (item.cid) {
-                // CID → place details in one call via legacy Places Details endpoint
-                const legacyResp = await fetch(
-                  `https://maps.googleapis.com/maps/api/place/details/json?cid=${item.cid}&fields=place_id,name,formatted_address,geometry,rating,user_ratings_total,price_level,types,business_status&key=${GOOGLE_KEY}`,
-                );
-                if (!legacyResp.ok) continue;
-                const legacyData = await legacyResp.json();
-                if (!legacyData.result?.place_id) continue;
-                cleanId = legacyData.result.place_id.replace(/^places\//, '');
-                resolvedDetails = legacyData.result;
-              } else if (item.placeId) {
-                cleanId = item.placeId.replace(/^places\//, '');
-              }
-
-              if (!cleanId) continue;
-
-              // Check if already in Supabase
-              const { data: existingById } = await sbM2
-                .from('venues')
-                .select('google_place_id')
-                .eq('google_place_id', cleanId)
-                .maybeSingle();
-
-              if (existingById) continue;
-
-              // Fetch full details via new Places API if not already resolved via CID
-              if (!resolvedDetails) {
-                const newDetailsResp = await fetch(
-                  `https://places.googleapis.com/v1/places/${cleanId}`,
-                  {
-                    headers: {
-                      'X-Goog-Api-Key': GOOGLE_KEY,
-                      'X-Goog-FieldMask': 'displayName,formattedAddress,location,rating,userRatingCount,priceLevel,types,businessStatus',
-                    },
-                  },
-                );
-                if (!newDetailsResp.ok) continue;
-                const nd = await newDetailsResp.json();
-                // Normalise to legacy-style shape so the write-back below works for both paths
-                resolvedDetails = {
-                  name:               nd.displayName?.text    || '',
-                  formatted_address:  nd.formattedAddress     || '',
-                  geometry:           { location: { lat: nd.location?.latitude, lng: nd.location?.longitude } },
-                  rating:             nd.rating               ?? null,
-                  user_ratings_total: nd.userRatingCount      ?? null,
-                  price_level:        nd.priceLevel           ?? null,
-                  types:              nd.types                || [],
-                  business_status:    nd.businessStatus       || null,
-                };
-              }
-
-              const vLat = resolvedDetails.geometry?.location?.lat;
-              const vLon = resolvedDetails.geometry?.location?.lng;
-              if (!vLat || !vLon) continue;
-
-              // Distance check
-              const m2Dist = calculateDistance(lat, lon, vLat, vLon);
-              if (m2Dist > admission.maxRadius) continue;
-
-              // Normalise price level → DB integer (1–4)
-              const m2PLRaw = resolvedDetails.price_level;
-              let m2PLInt: number | null = null;
-              if (m2PLRaw != null) {
-                if (typeof m2PLRaw === 'number') {
-                  m2PLInt = m2PLRaw === 0 ? 1 : Math.min(m2PLRaw, 4);
-                } else {
-                  const m2PLMap: Record<string, number> = {
-                    PRICE_LEVEL_FREE: 1, PRICE_LEVEL_INEXPENSIVE: 1,
-                    PRICE_LEVEL_MODERATE: 2, PRICE_LEVEL_EXPENSIVE: 3, PRICE_LEVEL_VERY_EXPENSIVE: 4,
-                  };
-                  m2PLInt = m2PLMap[m2PLRaw] ?? null;
-                }
-              }
-              const m2PLStrs = ['$', '$', '$$', '$$$', '$$$$'];
-              const m2MappedPL = m2PLInt != null ? (m2PLStrs[m2PLInt] || null) : null;
-
-              // Write skeleton row
-              await sbM2.from('venues').upsert([{
-                google_place_id: cleanId,
-                name:            resolvedDetails.name || item.title || '',
-                lat:             vLat,
-                lng:             vLon,
-                rating:          resolvedDetails.rating,
-                review_count:    resolvedDetails.user_ratings_total,
-                price_level:     m2PLInt,
-                venue_types:     resolvedDetails.types || [],
-                business_status: null,
-                address:         resolvedDetails.formatted_address || '',
-                enriched:        false,
-                is_chain:        false,
-              }], { onConflict: 'google_place_id', ignoreDuplicates: true });
-
-              // Add to current results
-              const m2Relaxed = (resolvedDetails.rating || 0) < SCORING.RATING_FLOOR || (resolvedDetails.user_ratings_total || 0) < SCORING.REVIEW_FLOOR;
-              filteredVenues.push({
-                name:               resolvedDetails.name || item.title || '',
-                address:            resolvedDetails.formatted_address || '',
-                lat:                vLat,
-                lon:                vLon,
-                distance_km:        m2Dist,
-                rating:             resolvedDetails.rating,
-                review_count:       resolvedDetails.user_ratings_total,
-                price_level:        m2MappedPL,
-                place_id:           `places/${cleanId}`,
-                category:           (resolvedDetails.types || []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
-                cuisine_type:       (resolvedDetails.types || []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
-                isRelaxedAdmission: m2Relaxed,
-                unknownPrice:       false,
-                _rawTypes:          resolvedDetails.types || [],
-                _photoUrls:         [],
-              });
-
-              sessionGapFills++;
-              m2FillsThisSearch++;
-              console.log(`✅ Gap filled (Maps Grounding): "${resolvedDetails.name || item.title}" added to DB and current results`);
-            }
-          }
-        }
-      } catch (e: any) {
-        console.warn('⚠️ Maps Grounding failed silently:', e.message);
-      }
-    }
+    const discResult = await getSupabaseVenues({ lat, lon, admission, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY, isDiscoveryMode: true });
+    filteredVenues = discResult.filteredVenues;
+    servedFromSupabase = discResult.servedFromSupabase;
 
     let wasGoogleFallback = false;
 
@@ -1579,9 +2479,7 @@ Deno.serve(async (req) => {
         console.warn('⚠️ Google Places API key not configured — no fallback available, returning empty results');
         throw new Error('GOOGLE_PLACES_API_KEY not configured');
       }
-      if (!isDiscoveryMode && !GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
-
-      // Spend guard — tracks all Google fallback calls against monthly cap
+      // Spend guard — location-level circuit breaker for all discovery fallback paths
       const { checkAndLog } = await import('../_shared/apiCallLog.ts');
       const sbGuard = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
       const locationKey = `disc_${Math.round(lat * 10) / 10}_${Math.round(lon * 10) / 10}`;
@@ -1599,27 +2497,44 @@ Deno.serve(async (req) => {
         );
       }
 
-      const googleVenues = await getGoogleVenues({
-        GOOGLE_KEY, refinedSearchTerm, location_name, lat, lon, admission,
-        open_now, price_levels, cuisine_types, isDiscoveryMode,
-        isOnStreetSearch, detectedStreetName, detectedStreetBase,
-        exclude_ids, relaxation_level,
-      });
-
-      if (googleVenues === null) {
-        return new Response(
-          JSON.stringify({
-            results: [], suggested_chips: [], search_summary: null,
-            pagination: { has_more: false },
-            relaxation_applied: relaxation_level > 0, relaxation_level,
-            gated: false, nearby_overflow: [], reserve_venues: [], staged_venues: [],
-            was_google_fallback: false,
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
+      let groundedVenues: any[] | null = null;
+      if (GEMINI_API_KEY) {
+        try {
+          groundedVenues = await getGroundedVenuesForTab({
+            tab, lat, lon, location_name, GOOGLE_KEY,
+            sb: sbGuard, exclude_ids, maxRadius: admission.maxRadius,
+          });
+        } catch (e: any) {
+          console.warn('[getGroundedVenuesForTab] failed silently:', e.message);
+          groundedVenues = null;
+        }
       }
-      filteredVenues = googleVenues;
-      wasGoogleFallback = true;
+
+      if (!groundedVenues || groundedVenues.length === 0) {
+        const googleVenues = await getGoogleVenues({
+          GOOGLE_KEY, refinedSearchTerm, location_name, lat, lon, admission,
+          open_now, price_levels, cuisine_types, isDiscoveryMode: true,
+          isOnStreetSearch: false, detectedStreetName: '', detectedStreetBase: '',
+          exclude_ids, relaxation_level,
+        });
+        if (googleVenues === null) {
+          return new Response(
+            JSON.stringify({
+              results: [], suggested_chips: [], search_summary: null,
+              pagination: { has_more: false },
+              relaxation_applied: relaxation_level > 0, relaxation_level,
+              gated: false, nearby_overflow: [], reserve_venues: [], staged_venues: [],
+              was_google_fallback: false,
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+        filteredVenues = googleVenues;
+        wasGoogleFallback = true;
+      } else {
+        filteredVenues = groundedVenues;
+        wasGoogleFallback = false;
+      }
     }
     console.log(`✅ ${filteredVenues.length} passed filters`);
 
@@ -1636,56 +2551,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ─── STEP 3b: Street-level address validation (STRICT) ───
-    let streetFilterApplied = false;
-    let streetFilteredVenues = filteredVenues;
-
-    if (isOnStreetSearch && filteredVenues.length > 0 && detectedStreetBase) {
-      const streetNameLower = detectedStreetName.toLowerCase();
-      const baseLower = detectedStreetBase.toLowerCase();
-
-      const streetValidated = filteredVenues.map((v: any) => {
-        const addrLower = (v.address || '').toLowerCase();
-
-        // Tier 1 — Address match: venue address contains the detected street name
-        const streetVariants = [
-          streetNameLower,
-          `${baseLower} street`, `${baseLower} st`,
-          `${baseLower} avenue`, `${baseLower} ave`,
-          `${baseLower} road`, `${baseLower} rd`,
-          `${baseLower} boulevard`, `${baseLower} blvd`,
-          `${baseLower} drive`, `${baseLower} dr`,
-          `${baseLower} lane`, `${baseLower} ln`,
-        ];
-        if (streetVariants.some(variant => addrLower.includes(variant))) {
-          console.log(`  ✅ Tier 1 (address match): "${v.name}" — ${v.address}`);
-          return { ...v, streetTier: 1 };
-        }
-
-        // Tier 2 — Proximity match: within 50m of geocoded street centerline
-        const distFromStreet = calculateDistance(lat, lon, v.lat, v.lon);
-        if (distFromStreet <= 0.05) {
-          console.log(`  ✅ Tier 2 (proximity ${(distFromStreet * 1000).toFixed(0)}m): "${v.name}" — ${v.address}`);
-          return { ...v, streetTier: 2 };
-        }
-
-        console.log(`  ❌ Failed both tiers: "${v.name}" — ${v.address} (dist: ${(distFromStreet * 1000).toFixed(0)}m)`);
-        return null;
-      }).filter((v: any) => v !== null);
-
-      if (streetValidated.length >= 3) {
-        streetFilteredVenues = streetValidated;
-        streetFilterApplied = true;
-        console.log(`📍 Street filter kept ${streetFilteredVenues.length}/${filteredVenues.length} venues on "${detectedStreetName}"`);
-      } else {
-        console.warn(`⚠️ Street filter returned too few results (${streetValidated.length}), falling back to radius search`);
-        // Put street-validated venues first, then others
-        const nonStreet = filteredVenues.filter((v: any) => !streetValidated.find((sv: any) => sv.place_id === v.place_id));
-        streetFilteredVenues = [...streetValidated, ...nonStreet];
-      }
-    }
-
-    if (streetFilteredVenues.length === 0) {
+    if (filteredVenues.length === 0) {
       return new Response(
         JSON.stringify({
           results: [],
@@ -1703,31 +2569,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ─── STEP 4: Score + sort ───
-    // Map intent price_signal to numeric price levels for soft boost
-    const intentPriceLevels: Record<string, number[]> = {
-      budget: [0, 1],
-      mid: [2],
-      upscale: [3, 4],
-    };
-    const intentPriceTarget = intent?.price_signal ? intentPriceLevels[intent.price_signal] : null;
-
-    const scoredVenues = streetFilteredVenues
+    // ─── STEP 4: Score + sort (discovery) ───
+    const scoredVenues = filteredVenues
       .map((venue: any) => {
-        let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
-        if (venue.unknownPrice) score *= 0.7; // Down-rank venues with unknown price when price filter is active
-
-        // Soft intent boost — never hard-filters, only nudges ranking
-        if (!isDiscoveryMode && intent) {
-          const priceNum = typeof venue.price_level === 'number'
-            ? venue.price_level
-            : { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 }[venue.price_level as string] ?? null;
-          if (intentPriceTarget && priceNum !== null && intentPriceTarget.includes(priceNum)) {
-            score *= 1.15;
-          }
-        }
-
-        const display_weight = isDiscoveryMode ? score + (Math.random() * 0.3) : score;
+        const score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
+        const display_weight = score + (Math.random() * 0.3);
         return { ...venue, score, display_weight };
       })
       .filter((v: any) => v.score > admission.minScore)
@@ -1735,70 +2581,17 @@ Deno.serve(async (req) => {
 
     console.log(`📊 STEP 4: ${scoredVenues.length} scored above ${admission.minScore}`);
 
-    const dedup = (venues: any[]) => {
-      const seen = new Set();
-      return venues.filter((v) => {
-        const key = v.name.toLowerCase().trim();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    };
+    const candidates = dedup(scoredVenues).slice(0, 30);
 
-    // ─── STEP 4c: Apply refinement post-processing (needs finalResults, set below) ───
-    // First, select initial candidates for the comprehensive LLM or discovery path
-    const candidatePoolSize = isDiscoveryMode ? 30 : 20;
-    const candidates = dedup(scoredVenues).slice(0, candidatePoolSize);
-
-    // ─── Query-intent pre-filter (search mode only) ───
-    // Type-matched venues appear first so the LLM scores them higher.
-    // Unmatched venues (e.g. unclassified gems) fill the remainder so they
-    // can still be selected if the LLM judges them relevant.
-    const isSearchMode = !!searchTerm;
-    let filteredCandidates = candidates;
-    let typeMatchedIds = new Set<string>();
-
-    if (isSearchMode && refinedSearchTerm) {
-      const queryWords = refinedSearchTerm.toLowerCase()
-        .split(/\s+/)
-        .filter((w: string) => w.length > 2)
-        .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have', 'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
-
-      if (queryWords.length > 0) {
-        const expandedTypes = expandQueryToTypes(queryWords);
-
-        const typeMatched = candidates.filter((v: any) => {
-          const types = (v._rawTypes || []).join(' ').toLowerCase();
-          const cat = (v.category || '').toLowerCase();
-          return [...expandedTypes].some((t: string) => types.includes(t) || cat.includes(t));
-        });
-
-        typeMatchedIds = new Set(typeMatched.map((v: any) => v.place_id));
-        const unmatched = candidates.filter((v: any) => !typeMatchedIds.has(v.place_id));
-
-        // Priority order: type-matched first, then unmatched to fill up to 20
-        filteredCandidates = [...typeMatched, ...unmatched].slice(0, 20);
-        console.log(`🎯 Query-intent pre-filter: ${typeMatched.length} type-matched + ${Math.min(unmatched.length, 20 - typeMatched.length)} unmatched = ${filteredCandidates.length} candidates`);
-      }
-    }
-
-    // ─── COMPREHENSIVE LLM: Confidence scoring, descriptors, summary & chips ───
-    console.log('🤖 COMPREHENSIVE LLM: Scoring, descriptors, summary & chips...');
+    // ─── Discovery LLM: descriptors & chips ───
+    console.log('🤖 Discovery LLM: descriptors & chips...');
     const llmCallStart = Date.now();
-
-    const candidateList = filteredCandidates.map((v: any, i: number) => {
-      const displayName = v.name.split(/[|\u2013\u2014:]/).at(0).trim();
-      const typeHints = (v._rawTypes || []).slice(0, 2).join(', ');
-      return `${i + 1}. ${displayName} (${v.cuisine_type || 'restaurant'}${typeHints ? `, types: ${typeHints}` : ''}, ${v.rating}★, ${v.review_count} reviews, ${v.price_level || 'price unknown'}, ${v.distance_km?.toFixed(1)}km)`;
-    }).join('\n');
 
     let finalVenues: any[] = [];
     let search_summary: any = null;
     let suggested_chips: string[] = [];
-    let overflowVenues: any[] = [];
-
-    if (isDiscoveryMode) {
-      // ─── Descriptor cache lookup ───
+    // ─── Descriptor cache lookup ───
+    {
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const sbDesc = createClient(supabaseUrl, supabaseKey);
@@ -1908,180 +2701,28 @@ Deno.serve(async (req) => {
         return { ...v, descriptors: newDescriptors[llmIdx++] || [] };
       });
       suggested_chips = chips;
-
-    } else {
-      // Normal search mode — full confidence scoring, descriptors, summary and chips
-      const comprehensiveResult = await safe('comprehensive-llm', () => callLLM(
-        'gemini-2.5-flash',
-        `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues honestly and only include genuinely suitable matches. Venue types reflect what the place actually serves — use them as the primary relevance signal. A venue is NOT relevant if its types don't match the query intent even if keywords coincide in the name.`,
-        `The user searched for "${searchTerm}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for venues that genuinely match the query, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits) }. Only include venues with confidence >= 0.5. Order by confidence descending. Maximum 5 entries.\n- "descriptors": array of arrays, one per entry in rankings in the same order, each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
-        [
-          {
-            type: 'function',
-            function: {
-              name: 'comprehensive_venue_analysis',
-              description: 'Score venues, generate descriptors, summary and chips',
-              parameters: {
-                type: 'object',
-                properties: {
-                  rankings: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        index: { type: 'number' },
-                        confidence: { type: 'number' },
-                        reasoning: { type: 'string' }
-                      },
-                      required: ['index', 'confidence', 'reasoning']
-                    }
-                  },
-                  descriptors: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
-                  summary: {
-                    type: 'object',
-                    properties: {
-                      intro: { type: 'string' },
-                      bullets: {
-                        type: 'array',
-                        items: {
-                          type: 'object',
-                          properties: { name: { type: 'string' }, note: { type: 'string' } },
-                          required: ['name', 'note']
-                        }
-                      }
-                    },
-                    required: ['intro', 'bullets']
-                  },
-                  chips: { type: 'array', items: { type: 'string' } }
-                },
-                required: ['rankings', 'descriptors', 'chips'],
-              }
-            }
-          }
-        ],
-        { type: 'function', function: { name: 'comprehensive_venue_analysis' } },
-        { max_tokens: 1500, temperature: 0 }
-      ), { rankings: [], descriptors: [], summary: null, chips: [] });
-
-      const rankings = comprehensiveResult.rankings || [];
-      finalVenues = rankings
-        .filter((r: any) => r.confidence >= 0.5)
-        .slice(0, 8)
-        .map((r: any, i: number) => {
-          const venue = filteredCandidates[r.index - 1];
-          if (!venue) return null;
-          return {
-            ...venue,
-            descriptors: comprehensiveResult.descriptors?.[i] || [],
-            llm_confidence: r.confidence,
-            reasoning_explanation: r.reasoning,
-          };
-        })
-        .filter(Boolean);
-
-      // Backfill to guarantee 8 results.
-      // When cuisine-type matching was applied, restrict backfill to type-matched
-      // candidates so high-scored but cuisine-irrelevant venues don't slip in.
-      if (finalVenues.length < 8) {
-        const usedPlaceIds = new Set(
-          rankings
-            .filter((r: any) => r.confidence >= 0.5)
-            .map((r: any) => filteredCandidates[r.index - 1]?.place_id)
-            .filter(Boolean)
-        );
-        const backfillPool = typeMatchedIds.size > 0
-          ? filteredCandidates.filter((v: any) => typeMatchedIds.has(v.place_id))
-          : filteredCandidates;
-        const backfill = backfillPool
-          .filter((v: any) => !usedPlaceIds.has(v.place_id))
-          .slice(0, 8 - finalVenues.length)
-          .map((v: any) => ({ ...v, descriptors: [], reasoning_explanation: '' }));
-        finalVenues.push(...backfill);
-      }
-
-      search_summary = comprehensiveResult.summary || null;
-      suggested_chips = comprehensiveResult.chips || [];
     }
 
-    console.log(`⏱️ Comprehensive LLM duration: ${Date.now() - llmCallStart}ms`);
-    console.log(`✅ COMPREHENSIVE LLM complete — ${finalVenues.length} venues selected`);
+    console.log(`⏱️ Discovery LLM duration: ${Date.now() - llmCallStart}ms`);
+    console.log(`✅ Discovery LLM complete — ${finalVenues.length} venues selected`);
 
-    // ─── STEP 4c: Apply refinement post-processing ───
-    if (refinementIntent) {
-      console.log('🔄 STEP 4c: Applying refinement post-processing...');
-
-      const allPreviousNames = new Set<string>();
-      for (const s of session_context) {
-        for (const r of (s.results || [])) {
-          allPreviousNames.add(r.name.toLowerCase().trim());
-        }
-      }
-
-      const keepNamesLower = new Set(refinementIntent.keep_results.map((n: string) => n.toLowerCase().trim()));
-      const newCandidates = finalVenues.filter((v: any) => {
-        const nameLower = v.name.toLowerCase().trim();
-        return !allPreviousNames.has(nameLower) && !keepNamesLower.has(nameLower);
-      });
-
-      const replacements = newCandidates.slice(0, refinementIntent.replace_count);
-
-      const lastSearch = session_context[session_context.length - 1];
-      const previousResults = lastSearch?.results || [];
-      const keptVenues: any[] = [];
-      for (const prev of previousResults) {
-        if (keepNamesLower.has(prev.name.toLowerCase().trim())) {
-          const matchInCurrent = finalVenues.find((v: any) => v.name.toLowerCase().trim() === prev.name.toLowerCase().trim());
-          if (matchInCurrent) {
-            keptVenues.push(matchInCurrent);
-          } else {
-            keptVenues.push({
-              name: prev.name,
-              address: prev.address || '',
-              lat: prev.lat,
-              lon: prev.lon,
-              distance_km: prev.distance_km,
-              rating: prev.rating,
-              review_count: prev.review_count,
-              price_level: prev.price_level,
-              place_id: prev.place_id,
-              category: prev.category,
-              cuisine_type: prev.cuisine_type,
-              descriptors: prev.descriptors || [],
-              reasoning_explanation: prev.reasoning_explanation,
-              image_urls: prev.image_urls || [],
-              score: prev.score,
-            });
-          }
-        }
-      }
-
-      finalVenues = [...keptVenues, ...replacements];
-      console.log(`✅ STEP 4c: Kept ${keptVenues.length} venues, added ${replacements.length} replacements`);
-    }
-
-    // ─── Build reserve venues from remaining candidates ───
+    // ─── Build reserve + staged venues ───
     const finalVenueIds = new Set(finalVenues.map((v: any) => v.place_id));
     const reserveVenues = candidates
       .filter((v: any) => !finalVenueIds.has(v.place_id))
       .slice(0, 10);
 
-    // ─── Build staged venues (below current criteria but scored) for discovery ───
-    let stagedVenues: any[] = [];
-    if (isDiscoveryMode) {
-      const allSelectedIds = new Set([...finalVenueIds, ...reserveVenues.map((v: any) => v.place_id)]);
-      // Venues that passed Google but failed criteria thresholds — score them anyway
-      const belowCriteria = dedup(streetFilteredVenues)
-        .filter((v: any) => !allSelectedIds.has(v.place_id))
-        .map((v: any) => {
-          const score = calculateVenueScore(v.rating, v.review_count, v.isRelaxedAdmission);
-          return { ...v, score, staged_for_relaxation: true };
-        })
-        .filter((v: any) => v.score > 0)
-        .sort((a: any, b: any) => b.score - a.score)
-        .slice(0, 30);
-      stagedVenues = belowCriteria;
-      console.log(`📦 Staged venues (for future relaxation): ${stagedVenues.length}`);
-    }
+    const allSelectedIds = new Set([...finalVenueIds, ...reserveVenues.map((v: any) => v.place_id)]);
+    const stagedVenues = dedup(filteredVenues)
+      .filter((v: any) => !allSelectedIds.has(v.place_id))
+      .map((v: any) => {
+        const score = calculateVenueScore(v.rating, v.review_count, v.isRelaxedAdmission);
+        return { ...v, score, staged_for_relaxation: true };
+      })
+      .filter((v: any) => v.score > 0)
+      .sort((a: any, b: any) => b.score - a.score)
+      .slice(0, 30);
+    console.log(`📦 Staged venues: ${stagedVenues.length}`);
     console.log(`📦 Reserve venues: ${reserveVenues.length}`);
 
     // ─── Reserve venues — photos served from Supabase cache ───
@@ -2109,7 +2750,7 @@ Deno.serve(async (req) => {
         relaxation_applied: relaxation_level > 0,
         relaxation_level,
         gated: false,
-        nearby_overflow: overflowVenues || [],
+        nearby_overflow: [],
         reserve_venues: reserveVenues,
         staged_venues: stagedVenues || [],
         was_google_fallback: wasGoogleFallback,

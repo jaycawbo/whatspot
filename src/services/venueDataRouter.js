@@ -23,6 +23,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { buildSearchContext } from '@/lib/buildSearchContext';
+import { rawKeywordFallback } from '@/lib/parseSearchIntent';
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -126,7 +127,7 @@ function isWeeklyStale(row) {
  * @param {boolean} [params.bypassCorrection] - skip autocorrect for this call
  * @param {string} [params.userId] - user id for building search context
  */
-export async function queryVenuesFromDb({ query, keywords, venueTypes, priceLevel, areaOverride, excludeIds = [], limit = 22, lat, lon, radiusKm = 5, locationName = '', bypassCorrection = false, userId = null } = {}) {
+export async function queryVenuesFromDb({ query, keywords, venueTypes, cuisineTypes, priceLevel, areaOverride, excludeIds = [], limit = 22, lat, lon, radiusKm = 5, locationName = '', bypassCorrection = false, userId = null } = {}) {
   let qb = supabase.from('venues').select('*');
   let correctionInfo = null;
   let intentSummary = null;
@@ -165,25 +166,26 @@ export async function queryVenuesFromDb({ query, keywords, venueTypes, priceLeve
     }
 
     if (!searchTerms) {
-      // Fallback: split into meaningful keywords, strip stop words and short tokens
-      const STOP_WORDS = new Set([
-        'a', 'an', 'the', 'and', 'or', 'in', 'at', 'to', 'of', 'for',
-        'with', 'by', 'near', 'nearby', 'around', 'some', 'my', 'me',
-      ]);
-      const splitKeywords = searchQuery
-        .toLowerCase()
-        .split(/\s+/)
-        .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
-      searchTerms = splitKeywords.length > 0 ? splitKeywords : [searchQuery];
+      // Fallback: split into meaningful keywords, strip stop words and short tokens.
+      // Shares parseSearchIntent's stopword list so the two can't drift out of sync.
+      searchTerms = rawKeywordFallback(searchQuery);
     }
 
-    // Name-only: address matching causes false positives when cuisine keywords
-    // (e.g. "italian") match neighbourhood names (e.g. "Little Italy, Toronto").
-    // Location-scoped searches use areaOverride, not this keyword path.
-    const conditions = searchTerms
-      .flatMap((kw) => [`name.ilike.%${kw}%`])
-      .join(',');
-    qb = qb.or(conditions);
+    if (cuisineTypes?.length > 0) {
+      // Real cuisine signal available — match the structured venue_types column
+      // (any overlap) instead of guessing off venue name text.
+      qb = qb.overlaps('venue_types', cuisineTypes);
+    } else {
+      // No recognized cuisine for this query (e.g. a specific venue name, or a
+      // cuisine word we don't have a mapping for) — name is the only signal we have.
+      // Name-only: address matching causes false positives when cuisine keywords
+      // (e.g. "italian") match neighbourhood names (e.g. "Little Italy, Toronto").
+      // Location-scoped searches use areaOverride, not this keyword path.
+      const conditions = searchTerms
+        .flatMap((kw) => [`name.ilike.%${kw}%`])
+        .join(',');
+      qb = qb.or(conditions);
+    }
   }
 
   // Apply bounding box when coords are available
@@ -211,12 +213,21 @@ export async function queryVenuesFromDb({ query, keywords, venueTypes, priceLeve
     qb = qb.not('google_place_id', 'in', `(${excludeIds.join(',')})`);
   }
 
-  qb = qb.limit(limit);
+  qb = qb.order('rating', { ascending: false, nullsFirst: false }).limit(limit);
 
   const { data, error } = await qb;
   if (error) throw error;
 
-  const rows = data || [];
+  let rows = data || [];
+
+  // Prominence gate: .overlaps() matches anywhere in venue_types, so a coffee/cafe tag
+  // buried deep in the array alongside an unrelated, specific primary category (e.g. a
+  // Korean fried chicken restaurant secondarily tagged "cafe") would otherwise pass.
+  // Clean matches empirically cluster in the first 3 entries — require that here since
+  // this DB-level filter can't see position on its own.
+  if (cuisineTypes?.length > 0) {
+    rows = rows.filter((row) => (row.venue_types || []).slice(0, 3).some((t) => cuisineTypes.includes(t)));
+  }
 
   // Attach crow-flies distance to each row if user coords are available.
   if (lat != null && lon != null) {
