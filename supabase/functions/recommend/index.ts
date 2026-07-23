@@ -972,7 +972,12 @@ async function handleSearch(params: {
   let effectiveCuisineTypes: string[] | null = null;
 
   if (!isDiscoveryMode && !servedFromSupabase) {
+    // STEP1's refine_query tool returns keywords as a comma-separated string (schema
+    // requires a string, not an array), so commas must be normalized to whitespace
+    // before splitting — otherwise a token like "peruvian," fails the exact-match
+    // check below and effectiveCuisineTypes silently resolves empty.
     const queryWords = (refinedSearchTerm || search_term || '').toLowerCase()
+      .replace(/,/g, ' ')
       .split(/\s+/)
       .filter((w: string) => w.length > 2)
       .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have',
@@ -1053,7 +1058,8 @@ async function handleSearch(params: {
     } else {
       let nameMatchVenues: any[] = [];
       const searchTermLower = (refinedSearchTerm || search_term || '').toLowerCase().trim();
-      const searchWords = searchTermLower.split(/\s+/)
+      // See comma-normalization note above — same STEP1 comma-separated-string issue applies here.
+      const searchWords = searchTermLower.replace(/,/g, ' ').split(/\s+/)
         .filter((w: string) => w.length > 2)
         .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have',
           'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
@@ -1977,7 +1983,9 @@ async function handleSearch(params: {
   let typeMatchedIds = new Set<string>();
 
   if (isSearchMode && refinedSearchTerm) {
+    // See comma-normalization note above — same STEP1 comma-separated-string issue applies here.
     const queryWords = refinedSearchTerm.toLowerCase()
+      .replace(/,/g, ' ')
       .split(/\s+/)
       .filter((w: string) => w.length > 2)
       .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have', 'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
