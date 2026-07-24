@@ -85,7 +85,8 @@ async function getStructuredOutputFromGemini(query: string, cityName: string, us
     }],
     generationConfig: {
       temperature: 0,
-      maxOutputTokens: 400,
+      maxOutputTokens: 1000,
+      thinkingConfig: { thinkingBudget: 0 },
       responseMimeType: 'application/json',
       responseSchema: {
         type: 'object',
@@ -112,7 +113,7 @@ async function getStructuredOutputFromGemini(query: string, cityName: string, us
   };
 
   const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
