@@ -24,27 +24,14 @@
 import { supabase } from '@/integrations/supabase/client';
 import { buildSearchContext } from '@/lib/buildSearchContext';
 
-// ─── Utilities ────────────────────────────────────────────────────────────────
-
-function haversineKm(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
-    Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 export const DATA_SOURCE = import.meta.env.VITE_VENUE_DATA_SOURCE || 'live_fallback';
 export const isDbOnly = () => DATA_SOURCE === 'db_only';
 
-const WEEKLY_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-
 // ─── Shape helpers ────────────────────────────────────────────────────────────
+// rowToVenue is kept here (rather than deleted alongside the DB query it used to
+// support) because src/services/placesSearch.js still imports it directly.
 
 /**
  * Map a venues table row to the venue object shape the rest of the frontend expects.
@@ -75,46 +62,15 @@ export function rowToVenue(row) {
   };
 }
 
-function buildResponse(rows, correctionInfo = null, intentSummary = null) {
-  const venues = rows.map(rowToVenue);
-  return {
-    results:         venues.slice(0, 12),
-    reserve_venues:  venues.slice(12, 22),
-    nearby_overflow: [],
-    suggested_chips: [],
-    search_summary:  null,
-    pagination:      { has_more: false },
-    correction_info: correctionInfo,
-    intent_summary:  intentSummary,
-  };
-}
-
-// ─── Staleness / background refresh ──────────────────────────────────────────
-
-/**
- * Fire-and-forget: queue a weekly Enterprise refresh for a single venue.
- * Refreshes rating, review_count, hours, phone, website in one call.
- * Only runs in live_fallback mode — db_only never makes API calls.
- * Photos are deliberately excluded; they run on the quarterly cron only.
- */
-function queueWeeklyRefresh(googlePlaceId) {
-  if (isDbOnly()) return;
-  supabase.functions
-    .invoke('refresh-venue-weekly', { body: { place_ids: [googlePlaceId] } })
-    .catch(() => {}); // best-effort, never throws
-}
-
-function isWeeklyStale(row) {
-  // Use rating_last_updated as the canonical staleness marker for the weekly bundle.
-  // Both rating_last_updated and hours_last_updated are stamped together by refresh-venue-weekly.
-  if (!row.rating_last_updated) return true;
-  return Date.now() - new Date(row.rating_last_updated).getTime() > WEEKLY_STALE_MS;
-}
-
 // ─── DB query ─────────────────────────────────────────────────────────────────
 
 /**
- * Query venues from the DB.
+ * Query venues from the DB via the search-venues-db edge function. Keyword
+ * resolution (Gemini refine-query + its userContext/session caching) stays
+ * here client-side since it's already routed through its own edge-function
+ * boundary and has no server-side session equivalent; the actual venues-table
+ * query, distance filtering, and weekly-refresh staleness check now live
+ * server-side in search-venues-db.
  *
  * @param {object} params
  * @param {string} [params.query]            - freetext search string
@@ -127,14 +83,14 @@ function isWeeklyStale(row) {
  * @param {string} [params.userId] - user id for building search context
  */
 export async function queryVenuesFromDb({ query, keywords, venueTypes, priceLevel, areaOverride, excludeIds = [], limit = 22, lat, lon, radiusKm = 5, locationName = '', bypassCorrection = false, userId = null } = {}) {
-  let qb = supabase.from('venues').select('*');
   let correctionInfo = null;
   let intentSummary = null;
+  let searchTerms = null;
 
   if (query) {
     // When pre-parsed keywords are supplied (e.g. from searchOrchestrator), skip the
     // refine-query round-trip — intent has already been parsed upstream.
-    let searchTerms = keywords?.length > 0 ? keywords : null;
+    searchTerms = keywords?.length > 0 ? keywords : null;
     let searchQuery = query;
 
     if (!searchTerms) {
@@ -176,66 +132,25 @@ export async function queryVenuesFromDb({ query, keywords, venueTypes, priceLeve
         .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
       searchTerms = splitKeywords.length > 0 ? splitKeywords : [searchQuery];
     }
-
-    // Name-only: address matching causes false positives when cuisine keywords
-    // (e.g. "italian") match neighbourhood names (e.g. "Little Italy, Toronto").
-    // Location-scoped searches use areaOverride, not this keyword path.
-    const conditions = searchTerms
-      .flatMap((kw) => [`name.ilike.%${kw}%`])
-      .join(',');
-    qb = qb.or(conditions);
   }
 
-  // Apply bounding box when coords are available
-  if (lat != null && lon != null) {
-    const latBuf = (radiusKm * 1.5) / 111;
-    const lngBuf = (radiusKm * 1.5) / (111 * Math.cos(lat * Math.PI / 180));
-    qb = qb
-      .gte('lat', lat - latBuf)
-      .lte('lat', lat + latBuf)
-      .gte('lng', lon - lngBuf)
-      .lte('lng', lon + lngBuf);
-  }
-
-  if (venueTypes?.length > 0) {
-    qb = qb.contains('venue_types', venueTypes);
-  }
-  if (priceLevel != null) {
-    qb = qb.eq('price_level', priceLevel);
-  }
-  if (areaOverride) {
-    qb = qb.ilike('neighbourhood', `%${areaOverride}%`);
-  }
-
-  if (excludeIds.length > 0) {
-    qb = qb.not('google_place_id', 'in', `(${excludeIds.join(',')})`);
-  }
-
-  qb = qb.order('rating', { ascending: false, nullsFirst: false }).limit(limit);
-
-  const { data, error } = await qb;
+  const { data, error } = await supabase.functions.invoke('search-venues-db', {
+    body: {
+      keywords: searchTerms,
+      venue_types: venueTypes,
+      price_level: priceLevel,
+      area_override: areaOverride,
+      exclude_ids: excludeIds,
+      limit,
+      lat,
+      lon,
+      radius_km: radiusKm,
+      is_db_only: isDbOnly(),
+    },
+  });
   if (error) throw error;
 
-  const rows = data || [];
-
-  // Attach crow-flies distance to each row if user coords are available.
-  if (lat != null && lon != null) {
-    rows.forEach((row) => {
-      if (row.lat != null && row.lng != null) {
-        row._distance_km = haversineKm(lat, lon, row.lat, row.lng);
-      }
-    });
-  }
-
-  // Queue background weekly refresh for any stale venues (live_fallback only).
-  // Photos are never queued on-demand.
-  if (!isDbOnly()) {
-    rows.forEach((row) => {
-      if (isWeeklyStale(row)) queueWeeklyRefresh(row.google_place_id);
-    });
-  }
-
-  return buildResponse(rows, correctionInfo, intentSummary);
+  return { ...data, correction_info: correctionInfo, intent_summary: intentSummary };
 }
 
 // ─── Main router entry point ──────────────────────────────────────────────────
