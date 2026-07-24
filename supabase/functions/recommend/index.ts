@@ -463,7 +463,7 @@ async function getSupabaseVenues(params: {
   GOOGLE_KEY?: string;
   isDiscoveryMode?: boolean;
 }): Promise<{ filteredVenues: any[]; reserve_venues: any[]; staged_venues: any[]; servedFromSupabase: boolean; relaxation_applied: boolean; relaxation_level: number }> {
-  const { lat, lon, admission, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY, isDiscoveryMode } = params;
+  const { lat, lon, admission, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY } = params;
 
   // Never ripple past the caller's selected radius — a user-set distance filter takes
   // priority over progressive widening. If maxRadius falls between/below the standard
@@ -547,14 +547,13 @@ async function getSupabaseVenues(params: {
     admittedPool = admittedPool.sort((a: any, b: any) => b.score - a.score).slice(0, 200);
   }
 
-  // ─── Weighted shuffle (feed mode only — search results are always deterministic) ───
-  const shuffled = isDiscoveryMode
-    ? admittedPool
-        .map((v: any) => ({ ...v, display_weight: v.score + (Math.random() * 0.3) }))
-        .sort((a: any, b: any) => b.display_weight - a.display_weight)
-    : admittedPool
-        .map((v: any) => ({ ...v, display_weight: v.score }))
-        .sort((a: any, b: any) => b.display_weight - a.display_weight);
+  // ─── Deterministic sort by score ───
+  // No jitter here: the caller's STEP 4 always recomputes score + display_weight (with its
+  // own fresh randomization for discovery mode) for every venue before the final response is
+  // built, so a randomized shuffle at this stage has no effect on what the user actually sees.
+  const shuffled = admittedPool
+    .map((v: any) => ({ ...v, display_weight: v.score }))
+    .sort((a: any, b: any) => b.display_weight - a.display_weight);
 
   // ─── Shared venue shape mapper ───
   const toShape = (v: any, extra: Record<string, any> = {}) => ({
