@@ -690,7 +690,8 @@ async function getGoogleVenues(params: {
   let googleSearchQuery = disambiguateClub(refinedSearchTerm);
   if (isOnStreetSearch && detectedStreetBase) {
     const streetWords = detectedStreetBase.split(/\s+/);
-    const locationWords = [...streetWords, 'street', 'st', 'avenue', 'ave', 'road', 'rd', 'boulevard', 'blvd', 'drive', 'dr', 'lane', 'ln', 'toronto', 'ontario', 'canada'];
+    const locationNameWords = location_name.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+    const locationWords = [...streetWords, 'street', 'st', 'avenue', 'ave', 'road', 'rd', 'boulevard', 'blvd', 'drive', 'dr', 'lane', 'ln', ...locationNameWords];
     googleSearchQuery = refinedSearchTerm
       .split(/[\s,]+/)
       .filter(w => !locationWords.includes(w.toLowerCase()))
@@ -886,7 +887,7 @@ async function handleSearch(params: {
     safe('step1-refinement', () => callLLM(
       'gemini-2.5-flash',
       'You extract cuisine keywords from search queries for Google Places API. IMPORTANT: Do NOT include any location names, street names, city names, or neighbourhood names in your output. Only return food/cuisine/dining keywords.',
-      `The user is searching for "${search_term}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "Toronto", etc.).\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise cuisine/food keywords suitable for a Google Places search.${sessionContextString}`,
+      `The user is searching for "${search_term}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "${location_name}", etc.).\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise cuisine/food keywords suitable for a Google Places search.${sessionContextString}`,
       [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'] } } }],
       { type: 'function', function: { name: 'refine_query' } },
       { max_tokens: 100, temperature: 0 },
@@ -941,6 +942,8 @@ async function handleSearch(params: {
     }
   }
   console.log('✅ STEPS 1 & 1b complete');
+
+  const locationNameWords = (location_name || '').toLowerCase().split(/[^a-z]+/).filter(Boolean);
 
   // ─── Street detection ───
   const STREET_IDENTIFIERS = /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i;
@@ -1032,7 +1035,7 @@ async function handleSearch(params: {
         .split(/\s+/)
         .filter((w: string) => w.length > 2)
         .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have',
-          'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
+          'find', 'show', 'want', 'restaurants', 'restaurant'].includes(w) && !locationNameWords.includes(w));
 
       if (queryWords.length > 0) {
         const expandedTypes = expandQueryToTypes(queryWords);
@@ -1103,7 +1106,7 @@ async function handleSearch(params: {
       const searchWords = searchTermLower.split(/\s+/)
         .filter((w: string) => w.length > 2)
         .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have',
-          'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
+          'find', 'show', 'want', 'restaurants', 'restaurant'].includes(w) && !locationNameWords.includes(w));
 
       if (searchWords.length > 0) {
         const admittedIds = new Set(sbAdmitted.map((v: any) => v.google_place_id));
@@ -1722,7 +1725,7 @@ async function handleSearch(params: {
     const queryWords = refinedSearchTerm.toLowerCase()
       .split(/\s+/)
       .filter((w: string) => w.length > 2)
-      .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have', 'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
+      .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have', 'find', 'show', 'want', 'restaurants', 'restaurant'].includes(w) && !locationNameWords.includes(w));
 
     if (queryWords.length > 0) {
       const expandedTypes = expandQueryToTypes(queryWords);
