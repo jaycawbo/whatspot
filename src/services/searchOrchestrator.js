@@ -89,9 +89,11 @@ export async function runConversationalSearch({
     );
   }
 
-  // Apply user price filter post-query (DB stores price_level as a number)
+  // Apply user price filter post-query (DB stores price_level as a number).
+  // Unknown price_level is kept rather than excluded — a missing data point
+  // shouldn't read the same as "doesn't match the filter".
   if (userPriceLevels.length > 0) {
-    venues = venues.filter(v => v.price_level != null && userPriceLevels.includes(Number(v.price_level)));
+    venues = venues.filter(v => v.price_level == null || userPriceLevels.includes(Number(v.price_level)));
   }
 
   // Step 2b: Places API fallback when DB results are below threshold.
@@ -124,8 +126,10 @@ export async function runConversationalSearch({
       // Cuisine is already embedded in the placesQuery sent to recommend, so we don't
       // re-filter by type here — the edge function's venue types don't reliably include
       // the specific cuisine type string. Only apply the explicit user price filter.
+      // Google Places frequently omits price_level entirely — treat unknown as a pass
+      // rather than excluding it, same as the DB-results filter above.
       const filteredFallback = userPriceLevels.length > 0
-        ? fallbackVenues.filter(v => v.price_level != null && userPriceLevels.includes(Number(v.price_level)))
+        ? fallbackVenues.filter(v => v.price_level == null || userPriceLevels.includes(Number(v.price_level)))
         : fallbackVenues;
       const seen = new Set(venues.map(v => v.place_id));
       venues = [...venues, ...filteredFallback.filter(v => !seen.has(v.place_id))];

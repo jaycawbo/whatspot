@@ -100,15 +100,14 @@ export function addClientSkippedId(id) {
 // ─── Tab feed helpers ──────────────────────────────────────────────────────────
 
 /**
- * Cuisine type → price_level integer map for filter queries.
- * Maps FilterDialog price chips ('$' etc.) to the integer stored in the DB.
+ * Fetch venues for a given tab. Querying/filtering/scoring now lives server-side
+ * in the feed-tabs edge function — this is a thin wrapper preserving the same
+ * { venues, isEmpty } contract callers already rely on.
  */
-const PRICE_CHIP_TO_INT = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
-
-const WALKIN_BAR_TYPES = new Set(['bar', 'pub', 'cocktail_bar', 'wine_bar', 'brewery', 'tavern']);
 
 // Uses the browser's local timezone rather than a hardcoded city, so the walk-in
-// time-of-day score reflects what time it actually is for the user right now.
+// time-of-day score (computed server-side in feed-tabs) reflects what time it
+// actually is for the user right now, not the server's or a hardcoded market's.
 function getLocalHourAndDay() {
   const now = new Date();
   const dayStr = now.toLocaleDateString('en-US', { weekday: 'short' });
@@ -119,282 +118,27 @@ function getLocalHourAndDay() {
   return { hour, day: weekdayMap[dayStr] ?? 1 };
 }
 
-function computeInlineWalkinScore(venue) {
-  const { hour, day } = getLocalHourAndDay();
-  const isWeekday = day >= 1 && day <= 4;
-  const isWeekend = day === 5 || day === 6;
-  let timeScore;
-  if (isWeekday) {
-    if (hour >= 11 && hour <= 14) timeScore = 27;
-    else if (hour >= 17 && hour <= 19) timeScore = 25;
-    else if (hour >= 21) timeScore = 15;
-    else timeScore = 18;
-  } else if (isWeekend) {
-    if (hour >= 11 && hour <= 14) timeScore = 22;
-    else if (hour >= 18 && hour <= 21) timeScore = 5;
-    else if (hour >= 22) timeScore = 12;
-    else timeScore = 10;
-  } else {
-    if (hour >= 10 && hour <= 14) timeScore = 20;
-    else if (hour >= 17 && hour <= 20) timeScore = 14;
-    else timeScore = 12;
-  }
-  const pl = venue.price_level;
-  const priceScore = pl === 1 ? 8 : pl === 2 ? 10 : pl === 3 ? 7 : pl === 4 ? 4 : 6;
-  const rc = venue.review_count ?? 0;
-  const seatScore = rc < 100 ? 5 : rc < 300 ? 12 : rc < 700 ? 18 : 20;
-  const types = venue.types ?? [];
-  const typeModifier = types.some((t) => WALKIN_BAR_TYPES.has(t)) ? 10
-    : (types.includes('fine_dining') || types.includes('fine_dining_restaurant')) ? -15
-    : 0;
-  const primaryType = types[0] ?? '';
-  const isRestaurant = primaryType.endsWith('_restaurant') || primaryType === 'restaurant';
-  const isBar = types.some((t) => WALKIN_BAR_TYPES.has(t));
-  const restaurantPeakPenalty = (isRestaurant && !isBar && (day === 0 || day === 5 || day === 6) && hour >= 17 && hour <= 21) ? -10 : 0;
-  return Math.min(100, Math.max(0, 20 + timeScore + priceScore + seatScore + typeModifier + restaurantPeakPenalty));
-}
-
-
-/**
- * Compute a bounding box for a radius query without PostGIS.
- * Returns { latMin, latMax, lngMin, lngMax }.
- */
-function boundingBox(lat, lng, radiusKm) {
-  const dLat = radiusKm / 111.0;
-  const dLng = radiusKm / (111.0 * Math.cos((lat * Math.PI) / 180));
-  return { latMin: lat - dLat, latMax: lat + dLat, lngMin: lng - dLng, lngMax: lng + dLng };
-}
-
-/**
- * Fetch venues from the DB for a given tab.
- * Returns { venues: VenueRow[], isEmpty: boolean }
- *   isEmpty = true for Trending when < 10 results qualify.
- */
 async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
   const { lat, lon } = anchor;
-  const radiusKm = filters?.radius || 5;
-  const bb = boundingBox(lat, lon ?? lat, radiusKm);
-
-  let query = supabase
-    .from('venues')
-    .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
-    .gte('lat', bb.latMin)
-    .lte('lat', bb.latMax)
-    .gte('lng', bb.lngMin)
-    .lte('lng', bb.lngMax)
-    .eq('is_chain', false);
-
-  // Price filter
-  if (filters?.priceLevels?.length) {
-    const ints = filters.priceLevels.map((p) => PRICE_CHIP_TO_INT[p]).filter(Boolean);
-    if (ints.length) query = query.in('price_level', ints);
-  }
-
-  // Cuisine filter — match venues whose types array contains any selected cuisine type
-  // Supabase JSONB contains syntax: types @> '["italian_restaurant"]'
-  if (filters?.cuisines?.length) {
-    const cuisineFilter = filters.cuisines
-      .map((c) => `types.cs.${JSON.stringify([c])}`)
-      .join(',');
-    query = query.or(cuisineFilter);
-  }
-
-  // Tab-specific filters + ordering
-  if (tab === 'popular') {
-    query = query
-      .not('review_count', 'is', null)
-      .gte('rating', 4.0)
-      .order('review_count', { ascending: false })
-      .limit(20);
-  } else if (tab === 'new') {
-    // Tiered year window — expands annually until 30 venues found
-    let results = [];
-    let yearWindow = 0;
-    for (let years = 1; years <= 10; years++) {
-      yearWindow = years;
-      const cutoff = new Date(Date.now() - years * 365.25 * 24 * 60 * 60 * 1000).toISOString();
-      let newQuery = supabase
-        .from('venues')
-        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
-        .gte('lat', bb.latMin)
-        .lte('lat', bb.latMax)
-        .gte('lng', bb.lngMin)
-        .lte('lng', bb.lngMax)
-        .eq('is_chain', false)
-        .gte('rating', 4.0)
-        .not('review_count_at_ingestion', 'is', null)
-        .lt('review_count_at_ingestion', 75)
-        .gte('created_at', cutoff)
-        .order('created_at', { ascending: false })
-        .limit(30);
-      if (filters?.priceLevels?.length) {
-        const ints = filters.priceLevels.map((p) => PRICE_CHIP_TO_INT[p]).filter(Boolean);
-        if (ints.length) newQuery = newQuery.in('price_level', ints);
-      }
-      if (filters?.cuisines?.length) {
-        const cuisineFilter = filters.cuisines.map((c) => `types.cs.${JSON.stringify([c])}`).join(',');
-        newQuery = newQuery.or(cuisineFilter);
-      }
-      const { data: newData, error: newError } = await newQuery;
-      if (newError) {
-        console.error('[TabFeed] New query error:', newError);
-        break;
-      }
-      results = newData || [];
-      if (results.length >= 30) break;
-    }
-    console.log('[TabFeed] New: found', results.length, 'venues within', yearWindow, 'year(s)');
-    const newSkipSet = new Set(skippedIds || []);
-    const newFiltered = results.filter((v) => {
-      const id = (v.google_place_id || '').replace(/^places\//, '');
-      return !newSkipSet.has(id);
-    });
-    return {
-      venues: newFiltered.map((v) => ({
-        google_place_id: v.google_place_id,
-        place_id: v.google_place_id,
-        name: v.name,
-        address: v.address,
-        lat: v.lat,
-        lon: v.lng,
-        rating: v.rating,
-        review_count: v.review_count,
-        price_level: v.price_level,
-        types: v.venue_types || [],
-        image_urls: v.photo_urls || [],
-        descriptors: v.descriptors || [],
-        photos_complete: v.photos_complete ?? false,
-      })),
-      isEmpty: newFiltered.length === 0,
-    };
-  } else if (tab === 'trending') {
-    query = query
-      .not('trending_score', 'is', null)
-      .not('review_count_30d_ago', 'is', null)
-      .gte('review_count', 50)
-      .gte('rating', 4.0)
-      .order('trending_score', { ascending: false })
-      .limit(30);
-  } else if (tab === 'walkin') {
-    let walkinQuery = supabase
-      .from('venues')
-      .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors')
-      .eq('is_chain', false)
-      .gte('rating', 4.0)
-      .gte('review_count', 50)
-      .gte('lat', bb.latMin)
-      .lte('lat', bb.latMax)
-      .gte('lng', bb.lngMin)
-      .lte('lng', bb.lngMax)
-      .order('review_count', { ascending: false })
-      .limit(60);
-    if (filters?.priceLevels?.length) {
-      const ints = filters.priceLevels.map((p) => PRICE_CHIP_TO_INT[p]).filter(Boolean);
-      if (ints.length) walkinQuery = walkinQuery.in('price_level', ints);
-    }
-    const { data: walkinData, error: walkinError } = await walkinQuery;
-    if (walkinError) {
-      console.error('[TabFeed] Walkin query error:', walkinError);
-      return { venues: [], isEmpty: true };
-    }
-    const walkinSkipSet = new Set(skippedIds || []);
-    const scored = (walkinData || [])
-      .filter((v) => !walkinSkipSet.has((v.google_place_id || '').replace(/^places\//, '')))
-      .map((v) => {
-        const normalised = {
-          google_place_id: v.google_place_id,
-          place_id: v.google_place_id,
-          name: v.name,
-          address: v.address,
-          lat: v.lat,
-          lon: v.lng,
-          rating: v.rating,
-          review_count: v.review_count,
-          price_level: v.price_level,
-          types: v.venue_types || [],
-          image_urls: v.photo_urls || [],
-          descriptors: v.descriptors || [],
-          photos_complete: v.photos_complete ?? false,
-        };
-        return { ...normalised, _walkinScore: computeInlineWalkinScore(normalised) };
-      })
-      .sort((a, b) => b._walkinScore - a._walkinScore)
-      .slice(0, 20);
-    console.log('[TabFeed] Walkin: scored', scored.length, 'venues, top score:', scored[0]?._walkinScore);
-    return { venues: scored, isEmpty: scored.length === 0 };
-  }
-
-  const { data, error } = await query;
+  const { hour, day } = getLocalHourAndDay();
+  const { data, error } = await supabase.functions.invoke('feed-tabs', {
+    body: {
+      tab,
+      lat,
+      lon: lon ?? lat,
+      radius_km: filters?.radius || 5,
+      price_levels: filters?.priceLevels,
+      cuisines: filters?.cuisines,
+      skipped_ids: skippedIds,
+      local_hour: hour,
+      local_day: day,
+    },
+  });
   if (error) {
-    console.error('[TabFeed] DB query error:', error);
+    console.error('[TabFeed] feed-tabs invoke error:', error);
     return { venues: [], isEmpty: true };
   }
-
-  // Exclude skipped/interacted IDs
-  const skipSet = new Set(skippedIds || []);
-  let filtered = (data || []).filter((v) => {
-    const id = (v.google_place_id || '').replace(/^places\//, '');
-    return !skipSet.has(id);
-  });
-
-  // For Trending: apply std-dev threshold client-side, or fall back to proxy ordering
-  if (tab === 'trending') {
-    const hasRealScores = filtered.some((v) => v.trending_score != null);
-
-    if (hasRealScores) {
-      const scores = filtered.map((v) => v.trending_score).filter((s) => s != null);
-      if (scores.length >= 3) {
-        const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
-        const stdDev = Math.sqrt(scores.reduce((a, b) => a + (b - mean) ** 2, 0) / scores.length);
-        const threshold = mean + stdDev;
-        filtered = filtered.filter((v) => v.trending_score > threshold);
-      }
-      if (filtered.length < 10) {
-        return { venues: filtered, isEmpty: true };
-      }
-    } else {
-      // No real trending scores yet — proxy fallback: top-rated with review_count >= 50
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from('venues')
-        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at')
-        .gte('lat', bb.latMin)
-        .lte('lat', bb.latMax)
-        .gte('lng', bb.lngMin)
-        .lte('lng', bb.lngMax)
-        .gte('review_count', 50)
-        .gte('rating', 4.0)
-        .order('rating', { ascending: false })
-        .order('review_count', { ascending: false })
-        .limit(30);
-
-      if (!fallbackError && fallbackData?.length) {
-        const skipSet2 = new Set(skippedIds || []);
-        filtered = fallbackData.filter((v) => {
-          const id = (v.google_place_id || '').replace(/^places\//, '');
-          return !skipSet2.has(id);
-        });
-      }
-    }
-  }
-
-  // Normalise shape to match what DiscoveryCard expects
-  const normalised = filtered.map((v) => ({
-    google_place_id: v.google_place_id,
-    place_id: v.google_place_id,
-    name: v.name,
-    address: v.address,
-    lat: v.lat,
-    lon: v.lng,
-    rating: v.rating,
-    review_count: v.review_count,
-    price_level: v.price_level,
-    types: v.venue_types || [],
-    image_urls: v.photo_urls || [],
-    descriptors: v.descriptors || [],
-    photos_complete: v.photos_complete ?? false,
-  }));
-
-  return { venues: normalised, isEmpty: false };
+  return data;
 }
 
 function persistGuestSeenIds(servedIdsSet) {
