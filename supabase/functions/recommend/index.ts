@@ -313,9 +313,18 @@ function isOpenNow(regularOpeningHours: any): boolean {
 
 function calculateVenueScore(rating: number, reviewCount: number, isRelaxedAdmission = false): number {
   if (!rating || !reviewCount) return 0;
+  // Bayesian shrinkage: pull low-review ratings toward the admission floor rather
+  // than trusting them at face value. Without this, a 5.0 from 6 reviews outscores
+  // a 4.4 from 1000+ reviews, since RATING_WEIGHT swings the full normalized range
+  // regardless of sample size. Reuses REVIEW_FLOOR/RATING_FLOOR as the shrinkage
+  // constants rather than introducing new magic numbers; effect vanishes as
+  // reviewCount grows well past REVIEW_FLOOR, so well-reviewed venues are barely
+  // touched.
+  const effectiveRating =
+    (reviewCount * rating + SCORING.REVIEW_FLOOR * SCORING.RATING_FLOOR) / (reviewCount + SCORING.REVIEW_FLOOR);
   const normalizedRating = Math.max(
     0,
-    ((rating - SCORING.RATING_FLOOR) / (SCORING.RATING_CEILING - SCORING.RATING_FLOOR)) * 10,
+    ((effectiveRating - SCORING.RATING_FLOOR) / (SCORING.RATING_CEILING - SCORING.RATING_FLOOR)) * 10,
   );
   const normalizedReviews = Math.max(
     0,
