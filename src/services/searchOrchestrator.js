@@ -120,7 +120,6 @@ export async function runConversationalSearch({
           exclude_ids: venues.map(v => v.place_id),
           cuisine_types: intent.cuisineTypes?.length > 0 ? intent.cuisineTypes : undefined,
           intent: { vibe: intent.vibeKeywords },
-          session_context: [],
         },
       });
       const fallbackVenues = (data?.results ?? []).filter(v => (v.rating ?? 0) >= 3.8);

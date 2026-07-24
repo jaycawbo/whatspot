@@ -690,7 +690,8 @@ async function getGoogleVenues(params: {
   let googleSearchQuery = disambiguateClub(refinedSearchTerm);
   if (isOnStreetSearch && detectedStreetBase) {
     const streetWords = detectedStreetBase.split(/\s+/);
-    const locationWords = [...streetWords, 'street', 'st', 'avenue', 'ave', 'road', 'rd', 'boulevard', 'blvd', 'drive', 'dr', 'lane', 'ln', 'toronto', 'ontario', 'canada'];
+    const locationNameWords = location_name.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+    const locationWords = [...streetWords, 'street', 'st', 'avenue', 'ave', 'road', 'rd', 'boulevard', 'blvd', 'drive', 'dr', 'lane', 'ln', ...locationNameWords];
     googleSearchQuery = refinedSearchTerm
       .split(/[\s,]+/)
       .filter(w => !locationWords.includes(w.toLowerCase()))
@@ -832,7 +833,6 @@ function dedup(venues: any[]): any[] {
 // ─── Search pipeline ───
 
 async function handleSearch(params: {
-  session_context:  any[];
   search_term:      string;
   lat:              number;
   lon:              number;
@@ -852,12 +852,11 @@ async function handleSearch(params: {
   servedFromSupabase: boolean;
   wasGoogleFallback:  boolean;
   gated:              boolean;
-  refinementIntent:   any;
   search_summary:     any;
   suggested_chips:    string[];
 }> {
   const {
-    session_context, search_term, exclude_ids, price_levels, cuisine_types,
+    search_term, exclude_ids, price_levels, cuisine_types,
     open_now, relaxation_level, intent, authUserId, GOOGLE_KEY,
   } = params;
 
@@ -866,15 +865,6 @@ async function handleSearch(params: {
   let location_name = params.location_name;
   const admission = { ...params.admission };
   const isDiscoveryMode = false;
-
-  // ─── Session context string ───
-  let sessionContextString = '';
-  if (Array.isArray(session_context) && session_context.length > 0) {
-    sessionContextString = '\n\nPrevious searches this session:\n' + session_context.map((s: any) =>
-      `- Query: "${s.query}"\n  Top results: ${(s.results || []).map((r: any) => `${r.name}${r.cuisine_type ? ` (${r.cuisine_type})` : ''}`).join(', ')}${s.search_summary ? `\n  Summary: ${typeof s.search_summary === 'string' ? s.search_summary : s.search_summary?.intro || ''}` : ''}`
-    ).join('\n');
-    console.log(`📝 Session context: ${session_context.length} previous searches`);
-  }
 
   let refinedSearchTerm = search_term;
 
@@ -886,7 +876,7 @@ async function handleSearch(params: {
     safe('step1-refinement', () => callLLM(
       'gemini-2.5-flash',
       'You extract cuisine keywords from search queries for Google Places API. IMPORTANT: Do NOT include any location names, street names, city names, or neighbourhood names in your output. Only return food/cuisine/dining keywords.',
-      `The user is searching for "${search_term}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "Toronto", etc.).\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise cuisine/food keywords suitable for a Google Places search.${sessionContextString}`,
+      `The user is searching for "${search_term}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "${location_name}", etc.).\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise cuisine/food keywords suitable for a Google Places search.`,
       [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'] } } }],
       { type: 'function', function: { name: 'refine_query' } },
       { max_tokens: 100, temperature: 0 },
@@ -942,6 +932,8 @@ async function handleSearch(params: {
   }
   console.log('✅ STEPS 1 & 1b complete');
 
+  const locationNameWords = (location_name || '').toLowerCase().split(/[^a-z]+/).filter(Boolean);
+
   // ─── Street detection ───
   const STREET_IDENTIFIERS = /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i;
   const PROXIMITY_WORDS = /\b(near|around|by|close\s+to|nearby|near\s+me|off\s+of|around\s+the\s+corner)\b/i;
@@ -971,53 +963,6 @@ async function handleSearch(params: {
     console.log(`📍 Proximity words detected in query — using standard radius logic`);
   }
 
-  // ─── STEP 1c: Refinement intent detection ───
-  let refinementIntent: { is_refinement: boolean; keep_results: string[]; replace_count: number; refined_query: string } | null = null;
-
-  if (Array.isArray(session_context) && session_context.length > 0) {
-    console.log('🔄 STEP 1c: Checking for refinement intent...');
-    try {
-      const lastSearch = session_context[session_context.length - 1];
-      const previousResultNames = (lastSearch?.results || []).map((r: any) => r.name);
-
-      refinementIntent = await callLLM(
-        'gemini-2.5-flash',
-        'You detect whether a search query is asking to modify/replace specific results from a previous search, or is a fresh new search.',
-        `Given the query "${search_term}" and the session history, determine if this query is asking to modify previous results rather than start a fresh search. Specifically detect phrases like "replace", "swap", "different option", "something else", "instead of", "change #[number]", or "not that one".\n\nPrevious search query: "${lastSearch?.query || ''}"\nPrevious results: ${previousResultNames.map((n: string, i: number) => `#${i + 1} ${n}`).join(', ')}\n\nReturn a JSON object.${sessionContextString}`,
-        [{
-          type: 'function',
-          function: {
-            name: 'detect_refinement',
-            description: 'Detect if query is a refinement of previous results',
-            parameters: {
-              type: 'object',
-              properties: {
-                is_refinement: { type: 'boolean', description: 'True if the query asks to modify/replace previous results' },
-                keep_results: { type: 'array', items: { type: 'string' }, description: 'Venue names from previous search to keep unchanged' },
-                replace_count: { type: 'number', description: 'Number of venues to replace' },
-                refined_query: { type: 'string', description: 'The underlying search intent stripped of refinement language' },
-              },
-              required: ['is_refinement', 'keep_results', 'replace_count', 'refined_query'],
-            },
-          },
-        }],
-        { type: 'function', function: { name: 'detect_refinement' } },
-        { max_tokens: 100, temperature: 0 },
-      );
-
-      if (refinementIntent?.is_refinement) {
-        console.log(`✅ STEP 1c: Refinement detected — keep ${refinementIntent.keep_results.length} venues, replace ${refinementIntent.replace_count}, refined query: "${refinementIntent.refined_query}"`);
-        refinedSearchTerm = refinementIntent.refined_query;
-      } else {
-        console.log('⏩ STEP 1c: Not a refinement, proceeding normally');
-        refinementIntent = null;
-      }
-    } catch (e: any) {
-      console.warn('⚠️ STEP 1c: Refinement detection failed:', e.message);
-      refinementIntent = null;
-    }
-  }
-
   // ─── Supabase search track ───
   let filteredVenues: any[] = [];
   let servedFromSupabase = false;
@@ -1032,7 +977,7 @@ async function handleSearch(params: {
         .split(/\s+/)
         .filter((w: string) => w.length > 2)
         .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have',
-          'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
+          'find', 'show', 'want', 'restaurants', 'restaurant'].includes(w) && !locationNameWords.includes(w));
 
       if (queryWords.length > 0) {
         const expandedTypes = expandQueryToTypes(queryWords);
@@ -1103,7 +1048,7 @@ async function handleSearch(params: {
       const searchWords = searchTermLower.split(/\s+/)
         .filter((w: string) => w.length > 2)
         .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have',
-          'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
+          'find', 'show', 'want', 'restaurants', 'restaurant'].includes(w) && !locationNameWords.includes(w));
 
       if (searchWords.length > 0) {
         const admittedIds = new Set(sbAdmitted.map((v: any) => v.google_place_id));
@@ -1367,7 +1312,7 @@ async function handleSearch(params: {
     const locationKey = `disc_${Math.round(lat * 10) / 10}_${Math.round(lon * 10) / 10}`;
     const allowed = await checkAndLog(sbGuard, 'discovery_fallback', locationKey);
     if (!allowed) {
-      return { gated: true, finalVenues: [], reserveVenues: [], servedFromSupabase: false, wasGoogleFallback: false, refinementIntent, search_summary: null, suggested_chips: [] };
+      return { gated: true, finalVenues: [], reserveVenues: [], servedFromSupabase: false, wasGoogleFallback: false, search_summary: null, suggested_chips: [] };
     }
 
     const googleVenues = await getGoogleVenues({
@@ -1378,7 +1323,7 @@ async function handleSearch(params: {
     });
 
     if (googleVenues === null) {
-      return { gated: false, finalVenues: [], reserveVenues: [], servedFromSupabase: false, wasGoogleFallback: false, refinementIntent, search_summary: null, suggested_chips: [] };
+      return { gated: false, finalVenues: [], reserveVenues: [], servedFromSupabase: false, wasGoogleFallback: false, search_summary: null, suggested_chips: [] };
     }
     filteredVenues = googleVenues;
     wasGoogleFallback = true;
@@ -1669,7 +1614,7 @@ async function handleSearch(params: {
   }
 
   if (streetFilteredVenues.length === 0) {
-    return { gated: false, finalVenues: [], reserveVenues: [], servedFromSupabase, wasGoogleFallback, refinementIntent, search_summary: null, suggested_chips: [] };
+    return { gated: false, finalVenues: [], reserveVenues: [], servedFromSupabase, wasGoogleFallback, search_summary: null, suggested_chips: [] };
   }
 
   // ─── STEP 4: Score + sort ───
@@ -1722,7 +1667,7 @@ async function handleSearch(params: {
     const queryWords = refinedSearchTerm.toLowerCase()
       .split(/\s+/)
       .filter((w: string) => w.length > 2)
-      .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have', 'find', 'show', 'want', 'restaurants', 'restaurant', 'toronto'].includes(w));
+      .filter((w: string) => !['best', 'most', 'good', 'great', 'near', 'with', 'that', 'have', 'find', 'show', 'want', 'restaurants', 'restaurant'].includes(w) && !locationNameWords.includes(w));
 
     if (queryWords.length > 0) {
       const expandedTypes = expandQueryToTypes(queryWords);
@@ -1765,7 +1710,7 @@ async function handleSearch(params: {
   const comprehensiveResult = await safe('comprehensive-llm', () => callLLM(
     'gemini-2.5-flash',
     `You are a knowledgeable local friend who knows the city's food and drink scene intimately. Evaluate venues and only include genuinely suitable matches. Venue types reflect what the place actually serves — use them as the primary relevance signal. A venue is NOT relevant if its primary purpose does not match the query intent. Examples of venues to exclude with confidence 0: an Italian restaurant for a coffee query, a shisha lounge for a coffee query, a sushi restaurant for a wine bar query, a gym for any food or drink query. A venue's PRIMARY TYPE is the strongest signal. If the PRIMARY TYPE is a cuisine category (italian, vegan, french, japanese, etc.) and the query is for a different category (coffee, wine bar, etc.), assign confidence 0 regardless of secondary tags. A venue scores below 0.5 only if the queried item is incidental to its primary activity. Only include venues where the queried item is a core part of what the venue is known for.`,
-    `The user searched for "${search_term}" in ${location_name}.${sessionContextString ? `\n\nSession context:\n${sessionContextString}` : ''}\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for EVERY candidate venue listed above, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits or doesn't) }. Score honestly: venues that are primarily what the query is about score 0.7-1.0. Venues where the queried item is incidental to a different primary purpose (e.g. a vegan restaurant or bakery that also happens to serve coffee, for a coffee query) score 0.2-0.4. Venues completely unrelated to the query score 0.0-0.1. Order by confidence descending.\n- "descriptors": array of arrays, one per rankings entry with confidence >= 0.5 only (in that same relative order — do not generate descriptors for venues scored below 0.5), each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
+    `The user searched for "${search_term}" in ${location_name}.\n\nCandidate venues:\n${candidateList}\n\nReturn a JSON object with exactly these fields:\n- "rankings": array of objects for EVERY candidate venue listed above, each with { "index": number (1-based), "confidence": number (0.0-1.0), "reasoning": string (one sentence why this venue fits or doesn't) }. Score honestly: venues that are primarily what the query is about score 0.7-1.0. Venues where the queried item is incidental to a different primary purpose (e.g. a vegan restaurant or bakery that also happens to serve coffee, for a coffee query) score 0.2-0.4. Venues completely unrelated to the query score 0.0-0.1. Order by confidence descending.\n- "descriptors": array of arrays, one per rankings entry with confidence >= 0.5 only (in that same relative order — do not generate descriptors for venues scored below 0.5), each containing exactly 3 short evocative phrases (3-6 words each) that capture the venue's vibe, food or drink style, and one standout quality. Write them like a knowledgeable local would describe the place — specific and evocative, never generic. Examples: "candlelit date setting", "handmade pasta daily", "hidden neighbourhood gem", "natural wine focus", "wood-fired everything".\n- "summary": object with "intro" (one short phrase, max 10 words) and "bullets" (array of { name, note } where note is max 8 words).\n- "chips": array of 3-4 short follow-up search suggestions.`,
     [
       {
         type: 'function',
@@ -1867,59 +1812,6 @@ async function handleSearch(params: {
   console.log(`⏱️ Comprehensive LLM duration: ${Date.now() - llmCallStart}ms`);
   console.log(`✅ COMPREHENSIVE LLM complete — ${finalVenues.length} venues selected`);
 
-  // ─── STEP 4c: Refinement post-processing ───
-  if (refinementIntent) {
-    console.log('🔄 STEP 4c: Applying refinement post-processing...');
-
-    const allPreviousNames = new Set<string>();
-    for (const s of session_context) {
-      for (const r of (s.results || [])) {
-        allPreviousNames.add(r.name.toLowerCase().trim());
-      }
-    }
-
-    const keepNamesLower = new Set(refinementIntent.keep_results.map((n: string) => n.toLowerCase().trim()));
-    const newCandidates = finalVenues.filter((v: any) => {
-      const nameLower = v.name.toLowerCase().trim();
-      return !allPreviousNames.has(nameLower) && !keepNamesLower.has(nameLower);
-    });
-
-    const replacements = newCandidates.slice(0, refinementIntent.replace_count);
-
-    const lastSearch = session_context[session_context.length - 1];
-    const previousResults = lastSearch?.results || [];
-    const keptVenues: any[] = [];
-    for (const prev of previousResults) {
-      if (keepNamesLower.has(prev.name.toLowerCase().trim())) {
-        const matchInCurrent = finalVenues.find((v: any) => v.name.toLowerCase().trim() === prev.name.toLowerCase().trim());
-        if (matchInCurrent) {
-          keptVenues.push(matchInCurrent);
-        } else {
-          keptVenues.push({
-            name: prev.name,
-            address: prev.address || '',
-            lat: prev.lat,
-            lon: prev.lon,
-            distance_km: prev.distance_km,
-            rating: prev.rating,
-            review_count: prev.review_count,
-            price_level: prev.price_level,
-            place_id: prev.place_id,
-            category: prev.category,
-            cuisine_type: prev.cuisine_type,
-            descriptors: prev.descriptors || [],
-            reasoning_explanation: prev.reasoning_explanation,
-            image_urls: prev.image_urls || [],
-            score: prev.score,
-          });
-        }
-      }
-    }
-
-    finalVenues = [...keptVenues, ...replacements];
-    console.log(`✅ STEP 4c: Kept ${keptVenues.length} venues, added ${replacements.length} replacements`);
-  }
-
   // ─── Reserve venues ───
   const finalVenueIds = new Set(finalVenues.map((v: any) => v.place_id));
   const reserveVenues = candidates
@@ -1932,7 +1824,6 @@ async function handleSearch(params: {
     reserveVenues,
     servedFromSupabase,
     wasGoogleFallback,
-    refinementIntent,
     search_summary,
     suggested_chips,
   };
@@ -2132,7 +2023,6 @@ Deno.serve(async (req) => {
       open_now,
       price_levels,
       cuisine_types,
-      session_context = [],
       exclude_ids = [],
       criteria_pass,
       intent,
@@ -2203,7 +2093,6 @@ Deno.serve(async (req) => {
 
     if (!isDiscoveryMode) {
       const searchResult = await handleSearch({
-        session_context,
         search_term: searchTerm,
         lat,
         lon,

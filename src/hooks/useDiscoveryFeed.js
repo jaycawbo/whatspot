@@ -3,7 +3,10 @@ import { recommend } from '@/services/api';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { supabase } from '@/integrations/supabase/client';
 
-const TORONTO_ANCHORS = [
+// Used only when the browser's geolocation hasn't resolved (or was denied) — a real
+// fallback location is required to fetch any feed at all. Toronto is the current home
+// market; update if/when the default launch market changes.
+const DEFAULT_MARKET_ANCHORS = [
   { lat: 43.6532, lon: -79.3832 }, // center
   { lat: 43.6622, lon: -79.3832 }, // north
   { lat: 43.6442, lon: -79.3832 }, // south
@@ -101,8 +104,23 @@ export function addClientSkippedId(id) {
  * in the feed-tabs edge function — this is a thin wrapper preserving the same
  * { venues, isEmpty } contract callers already rely on.
  */
+
+// Uses the browser's local timezone rather than a hardcoded city, so the walk-in
+// time-of-day score (computed server-side in feed-tabs) reflects what time it
+// actually is for the user right now, not the server's or a hardcoded market's.
+function getLocalHourAndDay() {
+  const now = new Date();
+  const dayStr = now.toLocaleDateString('en-US', { weekday: 'short' });
+  const hourStr = now.toLocaleTimeString('en-US', { hour: '2-digit', hour12: false });
+  const weekdayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  let hour = parseInt(hourStr.split(':')[0], 10);
+  if (hour === 24) hour = 0;
+  return { hour, day: weekdayMap[dayStr] ?? 1 };
+}
+
 async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
   const { lat, lon } = anchor;
+  const { hour, day } = getLocalHourAndDay();
   const { data, error } = await supabase.functions.invoke('feed-tabs', {
     body: {
       tab,
@@ -112,6 +130,8 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       price_levels: filters?.priceLevels,
       cuisines: filters?.cuisines,
       skipped_ids: skippedIds,
+      local_hour: hour,
+      local_day: day,
     },
   });
   if (error) {
@@ -224,8 +244,8 @@ export function useDiscoveryFeed() {
       const nextIndex = (anchorIndex + 1) % ANCHOR_OFFSETS.length;
 
       if (!anchorPointRef.current) {
-        const baseLat = loc?.lat ?? TORONTO_ANCHORS[0].lat;
-        const baseLon = loc?.lon ?? TORONTO_ANCHORS[0].lon;
+        const baseLat = loc?.lat ?? DEFAULT_MARKET_ANCHORS[0].lat;
+        const baseLon = loc?.lon ?? DEFAULT_MARKET_ANCHORS[0].lon;
         const off = ANCHOR_OFFSETS[anchorIndex] ?? ANCHOR_OFFSETS[0];
         anchorPointRef.current = { lat: baseLat + off.dlat, lon: baseLon + off.dlon };
       }
@@ -248,8 +268,8 @@ export function useDiscoveryFeed() {
 
     // Guest: random anchor from sessionStorage
     isGuestRef.current = true;
-    const guestBaseLat = loc?.lat ?? TORONTO_ANCHORS[0].lat;
-    const guestBaseLon = loc?.lon ?? TORONTO_ANCHORS[0].lon;
+    const guestBaseLat = loc?.lat ?? DEFAULT_MARKET_ANCHORS[0].lat;
+    const guestBaseLon = loc?.lon ?? DEFAULT_MARKET_ANCHORS[0].lon;
     try {
       const stored = sessionStorage.getItem('whatspot_anchor_index');
       if (stored !== null) {
@@ -403,13 +423,6 @@ export function useDiscoveryFeed() {
     setError(null);
     setCurrentQuery(query);
     setOverflowVenues([]);
-
-    // Read session context
-    let session_context = [];
-    try {
-      const raw = sessionStorage.getItem('whatspot_session_history');
-      if (raw) session_context = JSON.parse(raw);
-    } catch {}
 
     const excludeIds = Array.from(new Set([...allServedIdsRef.current, ..._clientSkippedIds]));
 

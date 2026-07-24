@@ -77,9 +77,8 @@ export async function recommend(params) {
     writeIntentSummary(null);
   }
 
-  const { session_context, ...rest } = { ...params, query: queryToUse };
   const { data, error } = await supabase.functions.invoke('recommend', {
-    body: { ...rest, session_context: session_context || [], intent },
+    body: { ...params, query: queryToUse, intent },
   });
   if (error) throw error;
   return data;

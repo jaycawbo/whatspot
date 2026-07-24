@@ -8,18 +8,11 @@ const WALKIN_BAR_TYPES = new Set(['bar', 'pub', 'cocktail_bar', 'wine_bar', 'bre
 
 const VENUE_COLUMNS = 'google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at';
 
-function getTorontoHourAndDay(): { hour: number; day: number } {
-  const now = new Date();
-  const dayStr = now.toLocaleDateString('en-US', { timeZone: 'America/Toronto', weekday: 'short' });
-  const hourStr = now.toLocaleTimeString('en-US', { timeZone: 'America/Toronto', hour: '2-digit', hour12: false });
-  const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-  let hour = parseInt(hourStr.split(':')[0], 10);
-  if (hour === 24) hour = 0;
-  return { hour, day: weekdayMap[dayStr] ?? 1 };
-}
-
-function computeInlineWalkinScore(venue: { price_level: number | null; review_count: number | null; types: string[] }): number {
-  const { hour, day } = getTorontoHourAndDay();
+// hour/day are the viewing user's own local time, supplied by the client — a Deno
+// edge function has no notion of "the user's local time" on its own, so this must
+// be computed client-side (see getLocalHourAndDay in useDiscoveryFeed.js) and
+// threaded through rather than computed here against the server's timezone.
+function computeInlineWalkinScore(venue: { price_level: number | null; review_count: number | null; types: string[] }, hour: number, day: number): number {
   const isWeekday = day >= 1 && day <= 4;
   const isWeekend = day === 5 || day === 6;
   let timeScore: number;
@@ -59,7 +52,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { tab, lat, lon, radius_km, price_levels, cuisines, skipped_ids } = await req.json();
+    const { tab, lat, lon, radius_km, price_levels, cuisines, skipped_ids, local_hour, local_day } = await req.json();
     if (!tab || lat == null || lon == null) {
       return errorResponse('tab, lat, and lon are required', 400);
     }
@@ -247,7 +240,7 @@ Deno.serve(async (req) => {
         })
         .map((v: any) => {
           const shaped = toShape(v);
-          return { ...shaped, _walkinScore: computeInlineWalkinScore(shaped) };
+          return { ...shaped, _walkinScore: computeInlineWalkinScore(shaped, local_hour ?? 12, local_day ?? 1) };
         })
         .sort((a: any, b: any) => b._walkinScore - a._walkinScore)
         .slice(0, 20);
