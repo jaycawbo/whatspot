@@ -152,6 +152,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     try { return sessionStorage.getItem('whatspot_deck_venue_ids') || ''; } catch { return ''; }
   });
   const initialVenueIdsRef = useRef(savedVenueIds.current());
+  // Remembers the swipe index for each distinct venue-list signature seen this session,
+  // so switching feed tabs and coming back resumes on the same card instead of resetting.
+  const positionByListRef = useRef(new Map());
 
   useEffect(() => {
     if (initialVenues.length === 0) return;
@@ -163,10 +166,25 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     if (newIds === initialVenueIdsRef.current) return;
 
     const prevIds = initialVenueIdsRef.current;
+    if (prevIds !== '') positionByListRef.current.set(prevIds, currentIndex);
     initialVenueIdsRef.current = newIds;
     // Do NOT write whatspot_deck_venue_ids here — only saveFeedCache (useDiscoveryFeed)
     // writes it, and only with the feed-only IDs. Writing combined (feed+reserve) IDs here
     // causes the next back-nav to fail the early-return check and incorrectly reset.
+
+    // Returning to a venue list already seen this session (e.g. switching back to a
+    // previously-viewed feed tab) — resume exactly where the user left off.
+    if (positionByListRef.current.has(newIds)) {
+      const restoredIndex = positionByListRef.current.get(newIds);
+      setVenues(initialVenues);
+      setOverflowAppended(false);
+      setCurrentIndex(Math.min(restoredIndex, Math.max(0, initialVenues.length - 1)));
+      moreRequestedRef.current = false;
+      x.set(0);
+      y.set(0);
+      opacity.set(1);
+      return;
+    }
 
     // If this is an append (new list contains current card), maintain position
     if (prevIds !== '' && currentVenue) {
