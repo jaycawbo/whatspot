@@ -189,6 +189,10 @@ export function useDiscoveryFeed() {
   // Used to gate allServedIdsRef checks in staged pool deduplication — on back-nav,
   // allServedIdsRef is seeded from cache and must not be used to block staged venues.
   const fetchedFreshRef = useRef(false);
+  // Caches the last fetched "For You" result (recommend pipeline, not a DB tab) so
+  // switching away and back within the same anchor/filters doesn't refetch.
+  const forYouKeyRef = useRef(null);
+  const forYouVenuesRef = useRef(null);
 
   // Runs once per mount (not on re-renders) — sets suppression flags before any effect fires.
   // _sessionFetchedAt > 0 means this browser tab has already fetched; this is a back-nav.
@@ -550,7 +554,7 @@ export function useDiscoveryFeed() {
         } catch {}
       }
 
-      return { wasGoogleFallback };
+      return { wasGoogleFallback, venues: filtered, overflowVenues: overflow };
     } catch (err) {
       let errDetail = err?.message || 'unknown';
       if (err?.context) {
@@ -788,6 +792,31 @@ export function useDiscoveryFeed() {
     }
   }, [state.userLocation, state.locationName, state.filters]);
 
+  // Switch to "For You" — reuses the last fetch if anchor/filters haven't changed since,
+  // otherwise fetches fresh and caches the result for the next switch back.
+  const switchToForYou = useCallback(async () => {
+    const anchor = anchorPointRef.current ?? state.userLocation;
+    const key = JSON.stringify({ anchor, filters: state.filters });
+
+    if (forYouKeyRef.current === key && forYouVenuesRef.current) {
+      const cached = forYouVenuesRef.current;
+      setVenues(cached.venues);
+      setOverflowVenues(cached.overflowVenues);
+      setCurrentQuery('');
+      setTabEmpty(cached.venues.length === 0);
+      reserveVenuesRef.current = cached.reserveVenues;
+      return;
+    }
+
+    const result = await fetchFeed();
+    forYouKeyRef.current = key;
+    forYouVenuesRef.current = {
+      venues: result?.venues || [],
+      overflowVenues: result?.overflowVenues || [],
+      reserveVenues: reserveVenuesRef.current,
+    };
+  }, [fetchFeed, state.userLocation, state.filters]);
+
   const getReserveVenues = useCallback((activeIds) => {
     let skippedIds = [];
     try {
@@ -837,6 +866,7 @@ export function useDiscoveryFeed() {
     restoreSearch,
     expandSearch,
     refetchDiscovery: () => fetchFeed(),
+    switchToForYou,
     getReserveVenues,
     getPrefetchedVenues,
     prefetchNextBatch,

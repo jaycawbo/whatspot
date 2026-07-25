@@ -50,6 +50,7 @@ export default function Home() {
     restoreSearch,
     expandSearch,
     refetchDiscovery,
+    switchToForYou,
     getReserveVenues,
     getPrefetchedVenues,
     prefetchNextBatch,
@@ -268,9 +269,9 @@ export default function Home() {
   const handleTabChange = useCallback(
     (tab) => {
       setReserveVenues([]);
-      if (tab === 'for_you') refetchDiscovery();
+      if (tab === 'for_you') switchToForYou();
     },
-    [refetchDiscovery]
+    [switchToForYou]
   );
 
   const handleClearSearch = useCallback(() => {
