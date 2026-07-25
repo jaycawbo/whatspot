@@ -157,6 +157,11 @@ export function useDiscoveryFeed() {
   const [error, setError] = useState(null);
   const [currentQuery, setCurrentQuery] = useState(cached?.currentQuery || '');
   const [tabEmpty, setTabEmpty] = useState(false);
+  // { [tabKey]: { venues, isEmpty } } — prefetched in parallel for all DB-driven tabs so
+  // FeedModeTabs can hide empty tabs from the bar before they're ever selected.
+  const [tabDataMap, setTabDataMap] = useState({});
+  const tabDataMapRef = useRef({});
+  const tabPrefetchKeyRef = useRef(null);
   const radiusRef = useRef(state.filters?.radius || 5);
   const abortRef = useRef(null);
   const hasFetchedRef = useRef(!!cached);
@@ -359,18 +364,39 @@ export function useDiscoveryFeed() {
       });
   }, [state.userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Tab feed — fires when feedTab or filters change (for DB-driven tabs: new/trending)
-  // For You and Popular use the existing recommend pipeline.
+  // Tab feed — fires when feedTab or filters change. Prefetches ALL DB-driven tabs
+  // (walkin/new/trending/popular) in parallel so FeedModeTabs can hide any tab with
+  // zero results from the bar before it's ever selected, then applies the active tab's
+  // data from the resulting map. Re-prefetches only when the anchor/filters actually
+  // change; switching between already-fetched tabs just reads the cached map.
+  // For You uses the existing recommend pipeline and is skipped here.
   useEffect(() => {
     const tab = state.feedTab;
-    if (!tab || tab === 'for_you') {
-      setTabEmpty(false);
-      return;
-    }
     // Block ALL tab fetches while back-nav restore is active — cleared on first swipe.
     if (_isBackNav) return;
     const anchor = anchorPointRef.current ?? state.userLocation;
     if (!anchor) return; // wait until anchor is initialised
+
+    const applyActiveTab = (map) => {
+      if (!tab || tab === 'for_you') {
+        setTabEmpty(false);
+        return;
+      }
+      const entry = map[tab];
+      if (!entry) return;
+      setVenues(entry.venues);
+      setOverflowVenues([]);
+      setCurrentQuery('');
+      setTabEmpty(entry.isEmpty);
+      _sessionVenues = entry.venues;
+    };
+
+    const prefetchKey = JSON.stringify({ anchor, filters: state.filters });
+    if (tabPrefetchKeyRef.current === prefetchKey) {
+      applyActiveTab(tabDataMapRef.current);
+      return;
+    }
+    tabPrefetchKeyRef.current = prefetchKey;
 
     setIsLoading(true);
     setTabEmpty(false);
@@ -381,21 +407,21 @@ export function useDiscoveryFeed() {
       if (raw) skippedIds = JSON.parse(raw);
     } catch {}
 
-    fetchTabVenues(tab, {
-      anchor,
-      filters: state.filters,
-      skippedIds,
-    }).then(({ venues: tabVenues, isEmpty }) => {
-      console.log(`[TabFeed] ${tab} returned ${tabVenues.length} venues. First 3:`, tabVenues.slice(0, 3).map(v => v.name));
-      setVenues(tabVenues);
-      setOverflowVenues([]);
-      setCurrentQuery('');
-      setTabEmpty(isEmpty);
+    const DB_TABS = ['walkin', 'new', 'trending', 'popular'];
+    Promise.all(
+      DB_TABS.map((t) =>
+        fetchTabVenues(t, { anchor, filters: state.filters, skippedIds }).then((result) => [t, result])
+      )
+    ).then((entries) => {
+      const map = Object.fromEntries(entries);
+      console.log('[TabFeed] Prefetched tabs:', entries.map(([t, r]) => `${t}=${r.venues.length}${r.isEmpty ? ' (empty)' : ''}`).join(', '));
+      tabDataMapRef.current = map;
+      setTabDataMap(map);
+      applyActiveTab(map);
       // Ensure back-nav detection fires on remount even when fetchFeed was never called
       // (e.g. initial load took the restore path and only the tab feed ran this session).
       if (!_sessionFetchedAt) _sessionFetchedAt = Date.now();
       if (!_sessionAnchor && anchorPointRef.current) _sessionAnchor = anchorPointRef.current;
-      _sessionVenues = tabVenues;
     }).catch((err) => {
       console.error('[TabFeed] Error:', err);
       setVenues([]);
@@ -806,6 +832,7 @@ export function useDiscoveryFeed() {
     error,
     currentQuery,
     tabEmpty,
+    tabDataMap,
     searchFeed,
     restoreSearch,
     expandSearch,
