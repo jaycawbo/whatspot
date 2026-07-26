@@ -1,4 +1,4 @@
-# whatspot
+# Whatspot
 
 **Discover your next favourite spot to eat.**
 
