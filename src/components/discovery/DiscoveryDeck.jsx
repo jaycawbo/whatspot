@@ -99,7 +99,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       if (rawId && !fetchedPlaceIdsRef.current.has(rawId)) {
         fetchedPlaceIdsRef.current.add(rawId);
         supabase.functions.invoke('get-place-photos', { body: { place_id: rawId, max_photos: 4 } })
-          .then(({ data }) => {
+          .then(({ data, error }) => {
             if (data?.photo_urls?.length > 0) {
               const img = new Image();
               img.onload = img.onerror = () => {
@@ -112,10 +112,14 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
               };
               img.src = data.photo_urls[0];
             } else {
+              if (error || data?.success === false) {
+                console.warn(`[DiscoveryDeck] photo fetch for ${rawId} did not complete (cap or error) — showing placeholder this session, will retry next session`, error?.message || data?.error);
+              }
               setPhotoFetchSettledIds((prev) => new Set(prev).add(rawId));
             }
           })
-          .catch(() => {
+          .catch((err) => {
+            console.warn(`[DiscoveryDeck] photo fetch for ${rawId} failed — showing placeholder this session, will retry next session`, err?.message);
             setPhotoFetchSettledIds((prev) => new Set(prev).add(rawId));
           });
       }
@@ -270,7 +274,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     if (!rawId || fetchedPlaceIdsRef.current.has(rawId)) return;
     fetchedPlaceIdsRef.current.add(rawId);
     supabase.functions.invoke('get-place-photos', { body: { place_id: rawId, max_photos: 4 } })
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         if (data?.photo_urls?.length > 0) {
           const img = new Image();
           img.onload = img.onerror = () => {
@@ -283,10 +287,14 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
           };
           img.src = data.photo_urls[0];
         } else {
+          if (error || data?.success === false) {
+            console.warn(`[DiscoveryDeck] photo fetch for ${rawId} did not complete (cap or error) — showing placeholder this session, will retry next session`, error?.message || data?.error);
+          }
           setPhotoFetchSettledIds((prev) => new Set(prev).add(rawId));
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.warn(`[DiscoveryDeck] photo fetch for ${rawId} failed — showing placeholder this session, will retry next session`, err?.message);
         setPhotoFetchSettledIds((prev) => new Set(prev).add(rawId));
       });
   }, [nextVenue]);
