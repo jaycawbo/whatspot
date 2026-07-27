@@ -13,7 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { useSpots } from '@/hooks/useSpots';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { logEvent } from '@/lib/logEvent';
+import { logEvent, venueSnapshot } from '@/lib/logEvent';
 
 // Preset system lists — must match LABEL_TO_INTERACTION keys in useSpots.js
 const SYSTEM_LISTS = [
@@ -94,12 +94,19 @@ export default function SaveToSpotsDialog({ open, onOpenChange, venue }) {
       if (saved) {
         await updateLabels({ placeId, labels: selectedLabels });
         toast.success('Labels updated');
+        logEvent('label_updated', {
+          venue_id: placeId,
+          metadata: { labels: selectedLabels },
+          ...venueSnapshot(venue),
+        });
       } else {
         await saveSpot({ venue, labels: selectedLabels });
         toast.success(`${venue.name} added to Spots`);
         logEvent('save', {
           venue_id: venue.place_id || venue.google_place_id,
           neighborhood_context: venue.address,
+          metadata: { labels: selectedLabels },
+          ...venueSnapshot(venue),
         });
       }
       onOpenChange(false);

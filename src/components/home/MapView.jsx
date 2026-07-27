@@ -8,7 +8,7 @@ import { useSpots } from '@/hooks/useSpots';
 import { useIsMobile } from '@/hooks/use-mobile';
 import HeartButton from '@/components/spots/HeartButton';
 import { createPillMarker } from '@/components/map/createPillMarker';
-import { logEvent } from '@/lib/logEvent';
+import { logEvent, venueSnapshot } from '@/lib/logEvent';
 import 'leaflet/dist/leaflet.css';
 
 function formatPrice(level) {
@@ -141,7 +141,7 @@ function MapContent({ results, spotsIds, favIds, userLocation }) {
         const placeId = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
         return (
           <Marker key={v.name + i} position={[lat, lng]} icon={icon} eventHandlers={{
-            click: () => logEvent('click_map', { venue_id: v.place_id || v.google_place_id }),
+            click: () => logEvent('click_map', { venue_id: v.place_id || v.google_place_id, ...venueSnapshot(v) }),
           }}>
             <Popup>
               <div className="text-sm min-w-[160px]">

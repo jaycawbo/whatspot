@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { useSpots } from '@/hooks/useSpots';
 import { getAnonId, getSessionId } from '@/lib/identity';
 import { supabase } from '@/integrations/supabase/client';
-import { logEvent } from '@/lib/logEvent';
+import { logEvent, venueSnapshot } from '@/lib/logEvent';
 import { toast } from 'sonner';
 
 /**
@@ -50,6 +50,7 @@ export function useDiscoveryInteractions() {
       logEvent(interactionType, {
         venue_id: placeId,
         metadata: rating ? { rating } : {},
+        ...venueSnapshot(venue),
       }),
       // Upsert to user_venue_interactions (current state)
       supabase.from('user_venue_interactions').upsert(
@@ -128,6 +129,14 @@ export function useDiscoveryInteractions() {
   const writePassiveSkip = useCallback(async (venue) => {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
     if (!placeId) return;
+
+    // Fires the instant this card becomes current, regardless of what the user does next —
+    // it's a "shown" event, not a "no action taken" one. Log to user_events for both
+    // anonymous and authenticated users — fire-and-forget.
+    logEvent('card_shown', {
+      venue_id: placeId,
+      ...venueSnapshot(venue),
+    });
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -322,20 +331,20 @@ export function useDiscoveryInteractions() {
 
   const logRatingSheetOpened = useCallback((venue) => {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
-    console.log('[TODO: wire to backend]', { event: 'rating_sheet_opened', venue_id: placeId, timestamp: Date.now() });
+    logEvent('rating_sheet_opened', { venue_id: placeId, ...venueSnapshot(venue) });
   }, []);
 
   const logRatingSheetCancelled = useCallback((venue) => {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
-    console.log('[TODO: wire to backend]', { event: 'rating_sheet_cancelled', venue_id: placeId, timestamp: Date.now() });
+    logEvent('rating_sheet_cancelled', { venue_id: placeId, ...venueSnapshot(venue) });
   }, []);
 
   const logDescriptorTap = useCallback((venueId, tagText) => {
-    console.log('[TODO: wire to backend]', { event: 'descriptor_tag_tapped', venue_id: venueId, tag_text: tagText, timestamp: Date.now() });
+    logEvent('descriptor_tag_tapped', { venue_id: venueId, metadata: { tag_text: tagText } });
   }, []);
 
   const logPhotoAdvance = useCallback((venueId, photoIndex) => {
-    console.log('[TODO: wire to backend]', { event: 'photo_advanced', venue_id: venueId, photo_index: photoIndex, timestamp: Date.now() });
+    logEvent('photo_advanced', { venue_id: venueId, metadata: { photo_index: photoIndex } });
   }, []);
 
   // Execute pending action after auth

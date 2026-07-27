@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import DiscoveryCard from './DiscoveryCard';
 import RatingDialog from './RatingDialog';
 import { useDiscoveryInteractions } from '@/hooks/useDiscoveryInteractions';
+import { logEvent, venueSnapshot } from '@/lib/logEvent';
 import { useNavigate } from 'react-router-dom';
 import { useIsMobile } from '@/hooks/use-mobile';
 import AuthModal from '@/components/auth/AuthModal';
@@ -457,6 +458,11 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     if (Date.now() < blockCardTapUntilRef.current) return;
     const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
     try { sessionStorage.setItem('whatspot_deck_index', String(currentIndex)); } catch {}
+    logEvent('click', {
+      venue_id: placeId,
+      metadata: { source: 'discovery_feed' },
+      ...venueSnapshot(venue),
+    });
     navigate(`/venue/${placeId}`, { state: { venue } });
   }, [navigate, currentIndex]);
 
