@@ -215,7 +215,8 @@ Deno.serve(async (req) => {
         }
         console.log(`[enrich-venues] ${cleanId} — ${validUrls.length}/${photoResources.length} photos stored`);
       } else {
-        console.log(`[enrich-venues] ${cleanId} — no photos returned by Google`);
+        updateRow.photos_complete = true;
+        console.log(`[enrich-venues] ${cleanId} — no photos returned by Google, marking complete`);
       }
 
       // ── Step 4: Upsert to DB ───────────────────────────────────────────
