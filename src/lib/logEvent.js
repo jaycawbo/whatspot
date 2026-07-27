@@ -18,3 +18,12 @@ export async function logEvent(eventType, payload = {}) {
     console.warn('logEvent failed:', e.message, JSON.stringify(e));
   }
 }
+
+export function venueSnapshot(venue) {
+  return {
+    venue_cuisine_type: venue?.cuisine_type ?? null,
+    venue_price_level: venue?.price_level ?? null,
+    venue_distance_km: venue?.distance_km ?? null,
+    venue_rating: venue?.rating ?? null,
+  };
+}

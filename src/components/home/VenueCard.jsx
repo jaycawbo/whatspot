@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, MapPin, Bookmark, BookmarkCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { logEvent } from '@/lib/logEvent';
+import { logEvent, venueSnapshot } from '@/lib/logEvent';
 import BeenHereButton from '@/components/ui/BeenHereButton';
 import RatingDialog from '@/components/discovery/RatingDialog';
 import { useSpots } from '@/hooks/useSpots';
@@ -47,6 +47,7 @@ export default function VenueCard({ venue, index, currentQuery }) {
             venue_id: venue.place_id || venue.google_place_id,
             search_query: currentQuery,
             position_in_results: index,
+            ...venueSnapshot(venue),
           });
           observer.unobserve(el);
         }
@@ -62,6 +63,13 @@ export default function VenueCard({ venue, index, currentQuery }) {
   const handleClick = () => {
     if (ratingDialogOpenRef.current) return;
     if (!placeId) return;
+    logEvent('click', {
+      venue_id: placeId,
+      search_query: currentQuery,
+      position_in_results: index,
+      metadata: { source: 'venue_card' },
+      ...venueSnapshot(venue),
+    });
     navigate(`/venue/${placeId}`, { state: { venue } });
   };
 
@@ -78,6 +86,7 @@ export default function VenueCard({ venue, index, currentQuery }) {
   const handleRate = async (rating) => {
     try {
       await saveBeenHere({ venue, rating });
+      logEvent('rated', { venue_id: placeId, metadata: { rating }, ...venueSnapshot(venue) });
     } catch (e) {
       console.error('Failed to save been here:', e);
     }

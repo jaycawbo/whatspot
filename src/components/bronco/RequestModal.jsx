@@ -11,6 +11,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useBronco } from '@/context/BroncoContext';
 import { toast } from '@/hooks/use-toast';
+import { logEvent, venueSnapshot } from '@/lib/logEvent';
 
 const MAX_NOTE = 140;
 const MIN_PARTY = 1;
@@ -91,6 +92,12 @@ function RequestForm({ venue, onClose, onSuccess }) {
           return;
         }
       }
+
+      logEvent('walk_in_request', {
+        venue_id: venue.place_id || venue.google_place_id || venue.id,
+        metadata: { party_size: partySize },
+        ...venueSnapshot(venue),
+      });
 
       onClose();
       onSuccess(venueName);
