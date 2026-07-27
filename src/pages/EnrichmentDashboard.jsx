@@ -24,6 +24,12 @@ export default function EnrichmentDashboard() {
   const [sweepResult, setSweepResult] = useState(null);
   const [sweepError, setSweepError] = useState(null);
 
+  // ── Photo backfill state ───────────────────────────────────────────────────
+  const [backfillBatchSize, setBackfillBatchSize] = useState(50);
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillResult, setBackfillResult] = useState(null);
+  const [backfillError, setBackfillError] = useState(null);
+
   useEffect(() => { loadStats(); }, []);
 
   async function loadStats() {
@@ -112,6 +118,41 @@ export default function EnrichmentDashboard() {
       setSweepError(err.message);
     } finally {
       setSweepRunning(false);
+    }
+  }
+
+  // ── Photo backfill handlers ────────────────────────────────────────────────
+  async function handleBackfillDryRun() {
+    setBackfillRunning(true);
+    setBackfillResult(null);
+    setBackfillError(null);
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('backfill-photos-complete', {
+        body: { dry_run: true, batch_size: backfillBatchSize },
+      });
+      if (fnError) throw fnError;
+      setBackfillResult(data);
+    } catch (err) {
+      setBackfillError(err.message);
+    } finally {
+      setBackfillRunning(false);
+    }
+  }
+
+  async function handleBackfillRun() {
+    setBackfillRunning(true);
+    setBackfillResult(null);
+    setBackfillError(null);
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('backfill-photos-complete', {
+        body: { dry_run: false, batch_size: backfillBatchSize },
+      });
+      if (fnError) throw fnError;
+      setBackfillResult(data);
+    } catch (err) {
+      setBackfillError(err.message);
+    } finally {
+      setBackfillRunning(false);
     }
   }
 
@@ -255,6 +296,57 @@ Est. months @ 1k/mo: ${stats.estimatedMonths}`}
         {sweepResult && (
           <pre style={{ background: '#f4f4f4', padding: '0.75rem', borderRadius: '4px' }}>
             {JSON.stringify(sweepResult, null, 2)}
+          </pre>
+        )}
+      </section>
+
+      <hr style={{ marginBottom: '2rem', border: 'none', borderTop: '1px solid #ddd' }} />
+
+      {/* ── Photo backfill section ────────────────────────────────────────── */}
+      <section style={{ marginBottom: '2rem' }}>
+        <strong>Backfill Photo State</strong>
+        <p style={{ color: '#666', fontSize: '0.85rem', margin: '0.25rem 0 0.75rem' }}>
+          Re-checks venues left in an ambiguous photo state before #277 (enriched, but photos_complete
+          false with no photo_urls) — corrects photos_complete for venues Google genuinely has no
+          photos for, and retries venues where a real photo download previously failed. Shares the
+          same monthly photos cap as normal on-demand fetches.
+        </p>
+
+        <div style={{ marginBottom: '0.75rem' }}>
+          <label style={{ fontSize: '0.85rem' }}>Batch size&nbsp;</label>
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={backfillBatchSize}
+            onChange={(e) => setBackfillBatchSize(parseInt(e.target.value, 10) || 1)}
+            style={{ width: '80px', padding: '0.25rem', marginRight: '0.5rem', fontFamily: 'monospace' }}
+          />
+          <span style={{ color: '#888', fontSize: '0.85rem' }}>
+            max 200 — run Dry Run first to check cap headroom before spending budget
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem' }}>
+          <button onClick={handleBackfillDryRun} disabled={backfillRunning}
+            style={{ padding: '0.5rem 1rem', cursor: backfillRunning ? 'not-allowed' : 'pointer', fontFamily: 'monospace' }}>
+            {backfillRunning ? 'Running...' : 'Dry Run'}
+          </button>
+          <button onClick={handleBackfillRun} disabled={backfillRunning}
+            style={{ padding: '0.5rem 1rem', cursor: backfillRunning ? 'not-allowed' : 'pointer',
+              fontFamily: 'monospace', background: '#1a1a1a', color: '#fff', border: '1px solid #1a1a1a' }}>
+            {backfillRunning ? 'Running...' : 'Run'}
+          </button>
+        </div>
+
+        {backfillError && (
+          <pre style={{ color: 'red', background: '#fff0f0', padding: '0.75rem', borderRadius: '4px' }}>
+            {backfillError}
+          </pre>
+        )}
+        {backfillResult && (
+          <pre style={{ background: '#f4f4f4', padding: '0.75rem', borderRadius: '4px' }}>
+            {JSON.stringify(backfillResult, null, 2)}
           </pre>
         )}
       </section>

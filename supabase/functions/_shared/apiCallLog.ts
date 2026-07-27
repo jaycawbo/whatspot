@@ -6,7 +6,7 @@ const DEFAULT_MONTHLY_CAP = 500;
 // breaker against runaway cost (bug/spike/abuse), not a routine per-search throttle.
 const LLM_MONTHLY_CAP = 75000;
 
-function monthlyCapFor(callType: string): number {
+export function monthlyCapFor(callType: string): number {
   if (callType === 'photos') return PHOTOS_MONTHLY_CAP;
   if (callType === 'completeness_llm') return LLM_MONTHLY_CAP;
   return DEFAULT_MONTHLY_CAP;

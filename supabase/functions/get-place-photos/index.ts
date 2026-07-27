@@ -1,26 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { checkAndLog } from '../_shared/apiCallLog.ts';
+import { fetchAndPersistPhotos } from '../_shared/venuePhotos.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
-
-async function fetchWithConcurrency<T, R>(items: T[], fn: (item: T) => Promise<R>, limit = 3): Promise<R[]> {
-  const results: R[] = [];
-  const queue = [...items];
-
-  async function processNext() {
-    if (queue.length === 0) return;
-    const item = queue.shift()!;
-    const result = await fn(item);
-    results.push(result);
-    await processNext();
-  }
-
-  await Promise.all(Array(limit).fill(null).map(() => processNext()));
-  return results;
-}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -68,108 +52,22 @@ Deno.serve(async (req) => {
     // DB check failed — fall through to Google
   }
 
-  // ── Step 2: Fetch photo resource names from Google ─────────────────────────
-  const allowed = await checkAndLog(sb, 'photos', cleanId, max_photos + 1);
-  if (!allowed) {
-    return new Response(JSON.stringify({ success: false, error: 'Monthly API cap reached', photo_urls: [] }), {
+  // ── Step 2: Fetch photos from Google (or persist empty/cap state) ──────────
+  const result = await fetchAndPersistPhotos(sb, apiKey, cleanId, max_photos);
+
+  if (result.capped) {
+    return new Response(JSON.stringify(result), {
       status: 429,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
-
-  try {
-    const placeRef = cleanId.startsWith('places/') ? cleanId : `places/${cleanId}`;
-    const detailsResp = await fetch(`https://places.googleapis.com/v1/${placeRef}?fields=photos`, {
-      headers: { 'X-Goog-Api-Key': apiKey },
-    });
-
-    if (!detailsResp.ok) {
-      console.error(`Google Places error ${detailsResp.status} for ${cleanId}`);
-      return new Response(JSON.stringify({ success: false, error: 'Google Places API error', photo_urls: [] }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const data = await detailsResp.json();
-    const totalAvailable = (data.photos || []).length;
-    const photoResources = ((data.photos || []) as any[]).slice(0, max_photos);
-
-    if (photoResources.length === 0) {
-      const { error: updateError } = await sb.from('venues')
-        .update({ photos_complete: true, photos_fetched_count: 0 })
-        .eq('google_place_id', cleanId);
-      if (updateError) {
-        console.error(`Failed to persist empty-photos state for ${cleanId}:`, updateError.message);
-      }
-      return new Response(JSON.stringify({ success: true, photo_urls: [] }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // ── Step 3: Fetch bytes + upload to Supabase Storage ──────────────────
-    const photoUrls = await fetchWithConcurrency(
-      photoResources.map((photo: any, index: number) => ({ photo, index })),
-      async ({ photo, index }: { photo: any; index: number }) => {
-        try {
-          const mediaUrl = `https://places.googleapis.com/v1/${photo.name}/media?maxHeightPx=800&skipHttpRedirect=false&key=${apiKey}`;
-          const imgResp = await fetch(mediaUrl, { redirect: 'follow' });
-          if (!imgResp.ok) {
-            console.warn(`Media fetch failed (${imgResp.status}) for photo ${index} of ${cleanId}`);
-            return null;
-          }
-
-          const imageBytes = await imgResp.arrayBuffer();
-          const storagePath = `${cleanId}/${index}.jpg`;
-
-          const { error: uploadError } = await sb.storage
-            .from('venue-photos')
-            .upload(storagePath, imageBytes, { contentType: 'image/jpeg', upsert: true });
-
-          if (uploadError) {
-            console.warn(`Storage upload failed for ${storagePath}:`, uploadError.message);
-            return null;
-          }
-
-          const { data: urlData } = sb.storage
-            .from('venue-photos')
-            .getPublicUrl(storagePath);
-
-          return urlData.publicUrl;
-        } catch (err: any) {
-          console.error(`Error processing photo ${index} for ${cleanId}:`, err?.message);
-          return null;
-        }
-      },
-      3,
-    );
-
-    const validUrls = photoUrls.filter((url): url is string => url !== null);
-    console.log(`📸 Stored ${validUrls.length}/${photoResources.length} photos for ${cleanId}`);
-
-    // ── Step 4: Write permanent URLs to DB (fire-and-forget) ──────────────
-    if (validUrls.length > 0) {
-      const { error: updateError } = await sb.from('venues')
-        .update({
-          photo_urls: validUrls,
-          photos_complete: validUrls.length >= max_photos || validUrls.length >= totalAvailable,
-          photos_fetched_count: validUrls.length,
-          enriched: true,
-        })
-        .eq('google_place_id', cleanId);
-      if (updateError) {
-        console.error(`Failed to persist photo_urls for ${cleanId}:`, updateError.message);
-      }
-    }
-
-    return new Response(JSON.stringify({ success: true, photo_urls: validUrls }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-
-  } catch (error: any) {
-    console.error('get-place-photos error:', error?.message);
-    return new Response(JSON.stringify({ success: false, error: 'Internal error', photo_urls: [] }), {
-      status: 500,
+  if (!result.success) {
+    return new Response(JSON.stringify(result), {
+      status: result.error === 'Internal error' ? 500 : 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
+  return new Response(JSON.stringify(result), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 });

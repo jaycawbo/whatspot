@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.census-sweep]
 verify_jwt = false
+
+[functions.backfill-photos-complete]
+verify_jwt = false
