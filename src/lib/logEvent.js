@@ -4,8 +4,9 @@ import { getAnonId, getSessionId } from '@/lib/identity';
 export async function logEvent(eventType, payload = {}) {
   try {
     const now = new Date();
+    const { data: { user } } = await supabase.auth.getUser();
     await supabase.from('user_events').insert({
-      user_id: null,
+      user_id: user?.id ?? null,
       anonymous_id: getAnonId(),
       session_id: getSessionId(),
       event_type: eventType,
@@ -21,6 +22,7 @@ export async function logEvent(eventType, payload = {}) {
 
 export function venueSnapshot(venue) {
   return {
+    venue_name: (venue?.name || '').split('|')[0].trim() || null,
     venue_cuisine_type: venue?.cuisine_type ?? null,
     venue_price_level: venue?.price_level ?? null,
     venue_distance_km: venue?.distance_km ?? null,

@@ -216,6 +216,7 @@ export type Database = {
           venue_cuisine_type: string | null
           venue_distance_km: number | null
           venue_id: string | null
+          venue_name: string | null
           venue_price_level: number | null
           venue_rating: number | null
         }
@@ -236,6 +237,7 @@ export type Database = {
           venue_cuisine_type?: string | null
           venue_distance_km?: number | null
           venue_id?: string | null
+          venue_name?: string | null
           venue_price_level?: number | null
           venue_rating?: number | null
         }
@@ -256,6 +258,7 @@ export type Database = {
           venue_cuisine_type?: string | null
           venue_distance_km?: number | null
           venue_id?: string | null
+          venue_name?: string | null
           venue_price_level?: number | null
           venue_rating?: number | null
         }

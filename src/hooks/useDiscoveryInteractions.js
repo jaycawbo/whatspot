@@ -130,8 +130,10 @@ export function useDiscoveryInteractions() {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
     if (!placeId) return;
 
-    // Log to user_events for both anonymous and authenticated users — fire-and-forget
-    logEvent('passive_skip', {
+    // Fires the instant this card becomes current, regardless of what the user does next —
+    // it's a "shown" event, not a "no action taken" one. Log to user_events for both
+    // anonymous and authenticated users — fire-and-forget.
+    logEvent('card_shown', {
       venue_id: placeId,
       ...venueSnapshot(venue),
     });
