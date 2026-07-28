@@ -242,7 +242,21 @@ function expandQueryToTypes(queryWords: string[]): Set<string> {
 // doesn't currently request it — this is an interim, position-based approximation.
 function matchesCuisineProminently(venueTypes: string[] | undefined, cuisineTypes: string[]): boolean {
   if (!venueTypes?.length) return false;
-  return venueTypes.slice(0, 3).some((t) => cuisineTypes.includes(t));
+  const matchIdx = venueTypes.findIndex((t) => cuisineTypes.includes(t));
+  if (matchIdx === -1 || matchIdx > 2) return false;
+  // Position alone isn't enough — confirmed via real data (e.g. "Geladona", a Brazilian
+  // restaurant/dessert shop with "cafe" as its 2nd tag) that a venue can clear the top-3
+  // gate while its actual primary business is something else entirely. If the primary
+  // type (index 0) is a specific, different dining category — not the generic
+  // "restaurant", not one of the searched cuisine types itself — the match is likely
+  // incidental, UNLESS the venue also carries a more specific tag from the searched set
+  // (e.g. coffee_shop, not just the loose "cafe") signalling it really is that business.
+  const primary = venueTypes[0];
+  const primaryIsDifferentSpecificDining = primary !== 'restaurant' && primary.endsWith('_restaurant') && !cuisineTypes.includes(primary);
+  if (primaryIsDifferentSpecificDining) {
+    return venueTypes.some((t) => t !== 'cafe' && cuisineTypes.includes(t));
+  }
+  return true;
 }
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {

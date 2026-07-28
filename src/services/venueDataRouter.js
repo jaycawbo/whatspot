@@ -225,8 +225,26 @@ export async function queryVenuesFromDb({ query, keywords, venueTypes, cuisineTy
   // Korean fried chicken restaurant secondarily tagged "cafe") would otherwise pass.
   // Clean matches empirically cluster in the first 3 entries — require that here since
   // this DB-level filter can't see position on its own.
+  //
+  // Position alone isn't enough — confirmed via real data (e.g. "Geladona", a Brazilian
+  // restaurant/dessert shop with "cafe" as its 2nd tag) that a venue can clear the top-3
+  // gate while its actual primary business is something else entirely. If the primary
+  // type (index 0) is a specific, different dining category — not the generic
+  // "restaurant", not one of the searched cuisine types itself — the match is likely
+  // incidental, UNLESS the venue also carries a more specific tag from the searched set
+  // (e.g. coffee_shop, not just the loose "cafe") signalling it really is that business.
   if (cuisineTypes?.length > 0) {
-    rows = rows.filter((row) => (row.venue_types || []).slice(0, 3).some((t) => cuisineTypes.includes(t)));
+    rows = rows.filter((row) => {
+      const venueTypes = row.venue_types || [];
+      const matchIdx = venueTypes.findIndex((t) => cuisineTypes.includes(t));
+      if (matchIdx === -1 || matchIdx > 2) return false;
+      const primary = venueTypes[0];
+      const primaryIsDifferentSpecificDining = primary !== 'restaurant' && primary?.endsWith('_restaurant') && !cuisineTypes.includes(primary);
+      if (primaryIsDifferentSpecificDining) {
+        return venueTypes.some((t) => t !== 'cafe' && cuisineTypes.includes(t));
+      }
+      return true;
+    });
   }
 
   // Attach crow-flies distance to each row if user coords are available.
