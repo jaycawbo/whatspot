@@ -79,7 +79,11 @@ export function rowToVenue(row) {
 function buildResponse(rows, correctionInfo = null, intentSummary = null) {
   const venues = rows.map(rowToVenue);
   return {
-    results:         venues.slice(0, 12),
+    // Return everything the (widened) DB fetch found — the caller's scoreVenue()
+    // step re-ranks by a review-count-aware score, not DB-level rating order, so
+    // truncating to 12 here (before scoring runs) would silently throw away
+    // better-reviewed candidates that just didn't have the highest raw rating.
+    results:         venues,
     reserve_venues:  venues.slice(12, 22),
     nearby_overflow: [],
     suggested_chips: [],
@@ -120,14 +124,17 @@ function isWeeklyStale(row) {
  * @param {object} params
  * @param {string} [params.query]            - freetext search string
  * @param {string[]} [params.excludeIds]    - google_place_ids to exclude
- * @param {number} [params.limit]           - max rows (default 22)
+ * @param {number} [params.limit]           - max rows (default 100 — deliberately wide so
+ *   scoreVenue()'s review-count-aware ranking has a real pool to work with; DB-level
+ *   `order by rating desc` alone would otherwise crowd out well-reviewed venues with a
+ *   merely-very-good rating in favour of high-rating/low-review noise)
  * @param {number} [params.lat]             - center latitude for bounding box
  * @param {number} [params.lon]             - center longitude for bounding box
  * @param {number} [params.radiusKm]        - search radius in km (default 5)
  * @param {boolean} [params.bypassCorrection] - skip autocorrect for this call
  * @param {string} [params.userId] - user id for building search context
  */
-export async function queryVenuesFromDb({ query, keywords, venueTypes, cuisineTypes, priceLevel, areaOverride, excludeIds = [], limit = 22, lat, lon, radiusKm = 5, locationName = '', bypassCorrection = false, userId = null } = {}) {
+export async function queryVenuesFromDb({ query, keywords, venueTypes, cuisineTypes, priceLevel, areaOverride, excludeIds = [], limit = 100, lat, lon, radiusKm = 5, locationName = '', bypassCorrection = false, userId = null } = {}) {
   let qb = supabase.from('venues').select('*');
   let correctionInfo = null;
   let intentSummary = null;
