@@ -22,7 +22,39 @@ async function fetchWithConcurrency<T, R>(items: T[], fn: (item: T) => Promise<R
   return results;
 }
 
-Deno.serve(async (req) => {
+// ── Pure decision logic (net-new resume/merge) — exported for unit testing ──
+
+/** How many more photos are needed to reach maxPhotos, given what's already stored. */
+export function planPhotoFetch(existingCount: number, maxPhotos: number): number {
+  return Math.max(0, maxPhotos - existingCount);
+}
+
+/** The net-new slice of Google's photo list — resumes at existingCount, never re-requests earlier photos. */
+export function selectNetNewPhotos<T>(googlePhotos: T[], existingCount: number, maxPhotos: number): T[] {
+  return googlePhotos.slice(existingCount, maxPhotos);
+}
+
+/** Merges newly-fetched photos onto existing ones (never overwrites) and derives the completeness flag. */
+export function mergeFetchedPhotos(
+  existingPhotoUrls: string[],
+  fetched: ({ index: number; url: string } | null)[],
+  maxPhotos: number,
+  totalAvailable: number,
+): { mergedUrls: string[]; photosComplete: boolean } {
+  const newValid = fetched
+    .filter((r): r is { index: number; url: string } => r !== null)
+    .sort((a, b) => a.index - b.index)
+    .map((r) => r.url);
+
+  const mergedUrls = [...existingPhotoUrls, ...newValid];
+
+  return {
+    mergedUrls,
+    photosComplete: mergedUrls.length >= maxPhotos || mergedUrls.length >= totalAvailable,
+  };
+}
+
+async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -74,7 +106,7 @@ Deno.serve(async (req) => {
   // Net-new only: only fetch what's missing to reach max_photos, resuming from
   // where we left off. Never re-request/re-download photos already stored.
   const existingCount = existingPhotoUrls.length;
-  const delta = max_photos - existingCount;
+  const delta = planPhotoFetch(existingCount, max_photos);
 
   if (delta <= 0) {
     return new Response(JSON.stringify({ success: true, photo_urls: existingPhotoUrls }), {
@@ -108,7 +140,7 @@ Deno.serve(async (req) => {
     const totalAvailable = (data.photos || []).length;
     // Resume from existingCount — this is the net-new slice, never re-fetching
     // photos already downloaded.
-    const photoResources = ((data.photos || []) as any[]).slice(existingCount, max_photos);
+    const photoResources = selectNetNewPhotos((data.photos || []) as any[], existingCount, max_photos);
 
     if (photoResources.length === 0) {
       // Google has nothing beyond what we already have — genuinely complete.
@@ -160,14 +192,10 @@ Deno.serve(async (req) => {
       3,
     );
 
-    const newValid = fetched
-      .filter((r): r is { index: number; url: string } => r !== null)
-      .sort((a, b) => a.index - b.index)
-      .map((r) => r.url);
+    const fetchedCount = fetched.filter((r) => r !== null).length;
+    console.log(`📸 Stored ${fetchedCount}/${photoResources.length} new photos for ${cleanId} (had ${existingCount})`);
 
-    console.log(`📸 Stored ${newValid.length}/${photoResources.length} new photos for ${cleanId} (had ${existingCount})`);
-
-    if (newValid.length === 0) {
+    if (fetchedCount === 0) {
       // Nothing new landed — leave existing state untouched so the same delta
       // is retried (not skipped) on the next call.
       return new Response(JSON.stringify({ success: true, photo_urls: existingPhotoUrls }), {
@@ -176,11 +204,11 @@ Deno.serve(async (req) => {
     }
 
     // ── Step 4: Merge with existing and write permanent URLs to DB ────────
-    const mergedUrls = [...existingPhotoUrls, ...newValid];
+    const { mergedUrls, photosComplete } = mergeFetchedPhotos(existingPhotoUrls, fetched, max_photos, totalAvailable);
     const { error: updateError } = await sb.from('venues')
       .update({
         photo_urls: mergedUrls,
-        photos_complete: mergedUrls.length >= max_photos || mergedUrls.length >= totalAvailable,
+        photos_complete: photosComplete,
         photos_fetched_count: mergedUrls.length,
         enriched: true,
       })
@@ -200,4 +228,8 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
-});
+}
+
+if (import.meta.main) {
+  Deno.serve(handleRequest);
+}
