@@ -13,6 +13,7 @@ import AuthModal from '@/components/auth/AuthModal';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
+import { mergeVenuesOnBackgroundExpansion } from './discoveryDeckVenueMerge';
 
 const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
@@ -205,15 +206,14 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         moreRequestedRef.current = false;
         return;
       }
-      // Prior state exists but current card not in new batch (background expansion).
-      // Preserve position rather than resetting to 0.
-      setVenues(initialVenues);
+      // Prior state exists but current card not in new batch (background expansion —
+      // e.g. ripple/radius expansion replaced the underlying feed). Keep the current
+      // card (and everything before it) exactly as-is rather than clamping the old
+      // index into the unrelated new array — that used to silently swap currentVenue
+      // out from under the user, firing a phantom "shown" event. See #279.
+      setVenues((prev) => mergeVenuesOnBackgroundExpansion(prev, currentIndex, initialVenues));
       setOverflowAppended(false);
-      setCurrentIndex((prev) => Math.min(prev, Math.max(0, initialVenues.length - 1)));
       moreRequestedRef.current = false;
-      x.set(0);
-      y.set(0);
-      opacity.set(1);
       return;
     }
 
@@ -226,7 +226,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     x.set(0);
     y.set(0);
     opacity.set(1);
-  }, [initialVenues, x, y, opacity, currentVenue]);
+  }, [initialVenues, x, y, opacity, currentVenue, currentIndex]);
 
   // Proactive loading — fire when 8 cards remain OR 25% consumed.
   // Suppressed on back-nav restore until the user swipes (avoids triggering expandSearch
