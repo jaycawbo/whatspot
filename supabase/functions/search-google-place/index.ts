@@ -1,7 +1,18 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { checkAndLog } from '../_shared/apiCallLog.ts';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
+
+// Google Places type → best-effort category guess, matching the convention
+// already used in recommend/index.ts. Real category backfill still happens
+// via the infer-venue-categories cron; this just avoids an empty filter UI
+// immediately after import.
+function guessCategory(types: string[]): string | null {
+  return (types || []).find((t) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || null;
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -9,7 +20,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { venue_name, lat, lon, city_name } = await req.json();
+    const { venue_name, lat, lon, city_name, register = false } = await req.json();
 
     if (!venue_name) {
       return new Response(JSON.stringify({ error: 'venue_name is required' }), {
@@ -22,6 +33,22 @@ Deno.serve(async (req) => {
     if (!apiKey) {
       return new Response(JSON.stringify({ error: 'Google Places API key not configured' }), {
         status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const sb = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    );
+
+    // Monthly spend-cap circuit breaker — shared with the other Places API
+    // functions. Matters most here: bulk list-import can fire dozens of these
+    // in one user action.
+    const allowed = await checkAndLog(sb, 'text_search', undefined);
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: 'Monthly API cap reached' }), {
+        status: 429,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -47,7 +74,9 @@ Deno.serve(async (req) => {
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask': 'places.id,places.displayName,places.location,places.types',
+        // Basic-tier fields only (no Atmosphere fields like rating/priceLevel/photos —
+        // those stay behind the existing lazy enrichment path in google-places-details).
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.businessStatus',
       },
       body: JSON.stringify(requestBody),
     });
@@ -75,11 +104,32 @@ Deno.serve(async (req) => {
     if (!placeId && place.id) {
       placeId = place.id.startsWith('places/') ? place.id : `places/${place.id}`;
     }
+    const cleanId = (placeId || '').replace(/^places\//, '');
+
+    // Optional: register a minimal venue row so the caller can immediately
+    // save this place to Spots without a separate insert step. Used by the
+    // bulk list-import flow (issue #285). Basic-tier fields only; `enriched`
+    // stays false so photos/reviews/hours load lazily like any other venue.
+    if (register && cleanId) {
+      await sb.from('venues').upsert([{
+        google_place_id: cleanId,
+        name:             place.displayName?.text || venue_name,
+        address:          place.formattedAddress   || '',
+        lat:              place.location?.latitude  || null,
+        lng:              place.location?.longitude || null,
+        venue_types:      place.types || [],
+        category:         guessCategory(place.types || []),
+        business_status:  place.businessStatus || null,
+        enriched:         false,
+        is_chain:         false,
+      }], { onConflict: 'google_place_id', ignoreDuplicates: true });
+    }
 
     return new Response(JSON.stringify({
       success: true,
-      place_id: placeId,
+      place_id: cleanId,
       name: place.displayName?.text || venue_name,
+      address: place.formattedAddress || '',
       lat: place.location?.latitude || null,
       lon: place.location?.longitude || null,
       types: place.types || [],

@@ -9,9 +9,10 @@ import SpotsMapView from '@/components/spots/SpotsMapView';
 import SpotsFilterBar from '@/components/spots/SpotsFilterBar';
 import SpotsMoveDialog from '@/components/spots/SpotsMoveDialog';
 import ShareListDialog from '@/components/spots/ShareListDialog';
+import ImportListDialog from '@/components/spots/ImportListDialog';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
-import { List, Map, Share2, Heart, ChevronDown, ChevronUp, Tag, Search, X } from 'lucide-react';
+import { List, Map, Share2, Upload, Heart, ChevronDown, ChevronUp, Tag, Search, X } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -85,7 +86,7 @@ function NoteDialog({ spot, onSave, onClose }) {
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function Spots() {
-  const { spots, isLoading, removeSpot, moveToList, updateNote, isAuthenticated } = useSpots();
+  const { spots, isLoading, removeSpot, moveToList, updateNote, saveSpot, isAuthenticated } = useSpots();
   const { labelsByVenue, getVenueLabels, userLabels } = useUserLabels();
   const { user } = useAuth();
   const { state } = useGlobalState();
@@ -119,6 +120,7 @@ export default function Spots() {
   const [moveDialogSpot, setMoveDialogSpot] = useState(null); // { placeId, currentList }
   const [noteDialogSpot, setNoteDialogSpot] = useState(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
   // Reset filters/search/labels when active list changes
@@ -311,6 +313,12 @@ export default function Spots() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {isAuthenticated && (
+              <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+                <Upload className="h-4 w-4 mr-1.5" />
+                Import
+              </Button>
+            )}
             {isAuthenticated && spots.length > 0 && (
               <Button variant="outline" size="sm" onClick={() => setShareOpen(true)}>
                 <Share2 className="h-4 w-4 mr-1.5" />
@@ -604,6 +612,12 @@ export default function Spots() {
 
       {/* ── Dialogs ── */}
       <ShareListDialog open={shareOpen} onOpenChange={setShareOpen} />
+      <ImportListDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        existingSpots={spots}
+        onSaveVenue={(venue) => saveSpot({ venue, labels: ['Interested'] })}
+      />
       <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
 
       {noteDialogSpot && (
