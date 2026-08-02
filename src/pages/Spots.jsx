@@ -6,7 +6,7 @@ import { useUserLabels } from '@/hooks/useUserLabels';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import SpotCard from '@/components/spots/SpotCard';
 import SpotsMapView from '@/components/spots/SpotsMapView';
-import SpotsFilterBar from '@/components/spots/SpotsFilterBar';
+import SpotsFilterBar, { DEFAULT_SPOTS_FILTERS } from '@/components/spots/SpotsFilterBar';
 import SpotsMoveDialog from '@/components/spots/SpotsMoveDialog';
 import ShareListDialog from '@/components/spots/ShareListDialog';
 import AuthModal from '@/components/auth/AuthModal';
@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { haversineKm } from '@/lib/geo';
+import { humanizeCategory } from '@/lib/filterOptions';
 
 // ─── List definitions ───────────────────────────────────────────────────────
 
@@ -44,16 +45,6 @@ const EMPTY_STATES = {
   'Not Interested': 'Swipe left on venues that aren\'t for you.',
   "Didn't Like It": 'Rate a venue 👎 after visiting — it will appear here.',
 };
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function humanizeCategory(cat) {
-  return (cat || '')
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .replace(/ Restaurant$/, '')
-    .trim();
-}
 
 // ─── Note editing dialog ─────────────────────────────────────────────────────
 
@@ -101,12 +92,7 @@ export default function Spots() {
   const [activeLabelId, setActiveLabelId] = useState(null); // null = All
 
   // ── Filter bar ──
-  const [filters, setFilters] = useState({
-    openNow: false,
-    priceLevels: [],
-    cuisines: [],
-    maxDistanceKm: null,
-  });
+  const [filters, setFilters] = useState(DEFAULT_SPOTS_FILTERS);
 
   // ── View ──
   const [viewMode, setViewMode] = useState('list');
@@ -125,7 +111,7 @@ export default function Spots() {
   useEffect(() => {
     setSearchQuery('');
     setActiveLabelId(null);
-    setFilters({ openNow: false, priceLevels: [], cuisines: [], maxDistanceKm: null });
+    setFilters(DEFAULT_SPOTS_FILTERS);
     setSelectedIds(new Set());
     setIsEditMode(false);
   }, [activeList]);
@@ -206,13 +192,18 @@ export default function Spots() {
       result = result.filter((s) => filters.cuisines.includes(s.category));
     }
 
+    // Walk-in only (same field Feed/Search filters on)
+    if (filters.walkInOnly) {
+      result = result.filter((s) => s.is_available === true);
+    }
+
     // Distance (requires userLocation — handle both lon and lng field names)
     const userLon = userLoc?.lon ?? userLoc?.lng;
-    if (filters.maxDistanceKm !== null && userLoc?.lat && userLon) {
+    if (filters.radius !== null && userLoc?.lat && userLon) {
       result = result.filter((s) => {
         if (!s.lat || !s.lng) return true; // keep if no coords
         const dist = haversineKm(userLoc.lat, userLon, s.lat, s.lng);
-        return dist <= filters.maxDistanceKm;
+        return dist <= filters.radius;
       });
     }
 
@@ -287,7 +278,7 @@ export default function Spots() {
     setIsEditMode(false);
   };
 
-  const hasActiveFilters = filters.openNow || filters.priceLevels.length > 0 || filters.cuisines.length > 0 || filters.maxDistanceKm !== null;
+  const hasActiveFilters = filters.walkInOnly || filters.priceLevels.length > 0 || filters.cuisines.length > 0 || filters.radius !== null;
 
   // ── Render ───────────────────────────────────────────────────────────────
 
