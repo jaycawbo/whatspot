@@ -616,7 +616,7 @@ export default function Spots() {
         open={importOpen}
         onOpenChange={setImportOpen}
         existingSpots={spots}
-        onSaveVenue={(venue) => saveSpot({ venue, labels: ['Interested'] })}
+        onSaveVenue={(venue, label) => saveSpot({ venue, labels: [label || 'Interested'] })}
       />
       <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
 

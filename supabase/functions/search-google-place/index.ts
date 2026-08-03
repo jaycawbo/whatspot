@@ -110,7 +110,10 @@ Deno.serve(async (req) => {
     // save this place to Spots without a separate insert step. Used by the
     // bulk list-import flow (issue #285). Basic-tier fields only; `enriched`
     // stays false so photos/reviews/hours load lazily like any other venue.
+    let venueId: string | null = null;
     if (register && cleanId) {
+      // ignoreDuplicates so an existing (possibly already-enriched) venue row
+      // is never overwritten — we only ever fill in a row that doesn't exist yet.
       await sb.from('venues').upsert([{
         google_place_id: cleanId,
         name:             place.displayName?.text || venue_name,
@@ -123,11 +126,21 @@ Deno.serve(async (req) => {
         enriched:         false,
         is_chain:         false,
       }], { onConflict: 'google_place_id', ignoreDuplicates: true });
+
+      // Upsert with ignoreDuplicates doesn't RETURNING a skipped conflict row,
+      // so fetch the id separately regardless of whether this call inserted it.
+      const { data: venueRow } = await sb
+        .from('venues')
+        .select('id')
+        .eq('google_place_id', cleanId)
+        .maybeSingle();
+      venueId = venueRow?.id ?? null;
     }
 
     return new Response(JSON.stringify({
       success: true,
       place_id: cleanId,
+      venue_id: venueId,
       name: place.displayName?.text || venue_name,
       address: place.formattedAddress || '',
       lat: place.location?.latitude || null,
