@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
     if (register && cleanId) {
       // ignoreDuplicates so an existing (possibly already-enriched) venue row
       // is never overwritten — we only ever fill in a row that doesn't exist yet.
-      await sb.from('venues').upsert([{
+      const { error: upsertError } = await sb.from('venues').upsert([{
         google_place_id: cleanId,
         name:             place.displayName?.text || venue_name,
         address:          place.formattedAddress   || '',
@@ -127,8 +127,14 @@ Deno.serve(async (req) => {
         is_chain:         false,
       }], { onConflict: 'google_place_id', ignoreDuplicates: true });
 
+      if (upsertError) {
+        console.error('[search-google-place] venue upsert failed:', upsertError.message);
+      }
+
       // Upsert with ignoreDuplicates doesn't RETURNING a skipped conflict row,
       // so fetch the id separately regardless of whether this call inserted it.
+      // If the upsert itself failed AND no prior row exists, this legitimately
+      // returns null — the client treats a null venue_id as a failed match.
       const { data: venueRow } = await sb
         .from('venues')
         .select('id')
