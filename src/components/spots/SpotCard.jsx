@@ -45,7 +45,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-const ALL_LISTS = ['Favourites', 'Interested', 'Been To', 'Not Interested', "Didn't Like It"];
 const RATING_LABELS = { liked: 'Liked it', loved: 'Loved it', disliked: "Didn't like it" };
 const RATING_ICONS  = { liked: ThumbsUpIcon, loved: TwoThumbsUpIcon, disliked: ThumbsDownIcon };
 const RATING_ICON_CLASSES = { liked: 'h-3.5 w-3.5', loved: 'h-3.5 w-4', disliked: 'h-3.5 w-3.5' };
@@ -53,7 +52,9 @@ const RATING_ICON_CLASSES = { liked: 'h-3.5 w-3.5', loved: 'h-3.5 w-4', disliked
 export default function SpotCard({
   spot,
   onRemove,
-  onMoveToList,
+  moveTargets = [],
+  onMove,
+  showNotes = false,
   onEditNote,
   isEditMode = false,
   isSelected = false,
@@ -61,7 +62,6 @@ export default function SpotCard({
 }) {
   const navigate = useNavigate();
   const placeId = spot.google_place_id || '';
-  const currentList = spot.labels?.[0] || '';
   const [noteExpanded, setNoteExpanded] = useState(false);
 
   const handleClick = () => {
@@ -168,22 +168,21 @@ export default function SpotCard({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              {/* Move to list — status lists only */}
-              {onMoveToList && (
+              {/* Move to list — every other list, status and custom alike */}
+              {moveTargets.length > 0 && (
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="gap-2">
                     <ArrowRightLeft className="h-3.5 w-3.5" />
                     Move to list
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
-                    {ALL_LISTS.map((list) => (
+                    {moveTargets.map((target) => (
                       <DropdownMenuItem
-                        key={list}
-                        onClick={() => onMoveToList?.(placeId, list)}
-                        className={cn('gap-2', currentList === list && 'font-medium')}
+                        key={`${target.kind}:${target.value}`}
+                        onClick={() => onMove?.(placeId, target)}
+                        className="gap-2"
                       >
-                        {list}
-                        {currentList === list && <Check className="h-3 w-3 ml-auto" />}
+                        {target.label}
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuSubContent>
@@ -191,14 +190,14 @@ export default function SpotCard({
               )}
 
               {/* Add/edit note — status lists only (notes live on user_venue_interactions) */}
-              {onMoveToList && (
+              {showNotes && (
                 <DropdownMenuItem onClick={() => onEditNote?.(spot)} className="gap-2">
                   <FileText className="h-3.5 w-3.5" />
                   {spot.notes ? 'Edit note' : 'Add note'}
                 </DropdownMenuItem>
               )}
 
-              {onMoveToList && <DropdownMenuSeparator />}
+              {(moveTargets.length > 0 || showNotes) && <DropdownMenuSeparator />}
 
               {/* Delete */}
               <DropdownMenuItem

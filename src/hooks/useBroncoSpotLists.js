@@ -19,7 +19,7 @@ export function useBroncoSpotLists() {
 
     const { data: rawLists } = await supabase
       .from('spot_lists')
-      .select('id, name, created_at')
+      .select('id, name, created_at, is_public, share_token')
       .eq('user_id', user.id)
       .order('created_at', { ascending: true });
 
@@ -105,13 +105,29 @@ export function useBroncoSpotLists() {
     const { data, error } = await supabase
       .from('spot_lists')
       .insert({ user_id: user.id, name: name.trim() })
-      .select('id, name, created_at')
+      .select('id, name, created_at, is_public, share_token')
       .single();
     if (data) {
       setLists((prev) => [...prev, { ...data, items: [] }]);
     }
     return { data, error };
   }, [user?.id]);
+
+  const toggleListVisibility = useCallback(async (listId, isPublic) => {
+    if (!user?.id) return { error: new Error('Not signed in') };
+
+    // Optimistic update
+    setLists((prev) => prev.map((l) => (l.id === listId ? { ...l, is_public: isPublic } : l)));
+
+    const { error } = await supabase
+      .from('spot_lists')
+      .update({ is_public: isPublic })
+      .eq('id', listId)
+      .eq('user_id', user.id);
+
+    if (error) await loadLists();
+    return { error };
+  }, [user?.id, loadLists]);
 
   const saveVenue = useCallback(async (venue, listId) => {
     if (!user?.id) return { error: new Error('Not signed in') };
@@ -166,5 +182,5 @@ export function useBroncoSpotLists() {
     return { error };
   }, [user?.id, lists, loadLists]);
 
-  return { lists, savedIds, isLoading, createList, saveVenue, removeVenue };
+  return { lists, savedIds, isLoading, createList, saveVenue, removeVenue, toggleListVisibility };
 }

@@ -15,6 +15,8 @@ import VenueDetails from '@/pages/VenueDetails';
 import VenuePortal from '@/pages/VenuePortal';
 import EnrichmentDashboard from '@/pages/EnrichmentDashboard';
 import Credits from '@/pages/Credits';
+import SpotsList from '@/pages/SpotsList';
+import SharedSpotList from '@/pages/SharedSpotList';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -62,6 +64,12 @@ const AuthenticatedApp = () => {
         <Route path="/portal/:venueId" element={<VenuePortal />} />
         <Route path="/enrich" element={<EnrichmentDashboard />} />
         <Route path="/credits" element={<Credits />} />
+        <Route path="/Spots/:listSlug" element={
+          <LayoutWrapper currentPageName="Spots">
+            <SpotsList />
+          </LayoutWrapper>
+        } />
+        <Route path="/lists/:shareToken" element={<SharedSpotList />} />
         {Object.entries(Pages).map(([path, Page]) => (
           <Route
             key={path}
