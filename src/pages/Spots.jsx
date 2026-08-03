@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Header from '@/components/home/Header';
-import SpotListsSection from '@/components/bronco/SpotListsSection';
+import { useBroncoSpotLists } from '@/hooks/useBroncoSpotLists';
 import { useSpots } from '@/hooks/useSpots';
 import { useUserLabels } from '@/hooks/useUserLabels';
 import { useGlobalState } from '@/context/GlobalStateContext';
@@ -9,9 +9,10 @@ import SpotsMapView from '@/components/spots/SpotsMapView';
 import SpotsFilterBar, { DEFAULT_SPOTS_FILTERS } from '@/components/spots/SpotsFilterBar';
 import SpotsMoveDialog from '@/components/spots/SpotsMoveDialog';
 import ShareListDialog from '@/components/spots/ShareListDialog';
+import ImportListDialog from '@/components/spots/ImportListDialog';
 import AuthModal from '@/components/auth/AuthModal';
 import { Button } from '@/components/ui/button';
-import { List, Map, Share2, Heart, ChevronDown, ChevronUp, Tag, Search, X } from 'lucide-react';
+import { List, Map, Share2, Upload, Heart, ChevronDown, ChevronUp, Tag, Search, X } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -76,8 +77,9 @@ function NoteDialog({ spot, onSave, onClose }) {
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function Spots() {
-  const { spots, isLoading, removeSpot, moveToList, updateNote, isAuthenticated } = useSpots();
+  const { spots, isLoading, removeSpot, moveToList, updateNote, saveSpot, isAuthenticated } = useSpots();
   const { labelsByVenue, getVenueLabels, userLabels } = useUserLabels();
+  const { lists: customLists, removeVenue: removeFromCustomList } = useBroncoSpotLists();
   const { user } = useAuth();
   const { state } = useGlobalState();
 
@@ -105,6 +107,7 @@ export default function Spots() {
   const [moveDialogSpot, setMoveDialogSpot] = useState(null); // { placeId, currentList }
   const [noteDialogSpot, setNoteDialogSpot] = useState(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
   // Reset filters/search/labels when active list changes
@@ -116,11 +119,27 @@ export default function Spots() {
     setIsEditMode(false);
   }, [activeList]);
 
+  // Active list may be a status list (name) or a custom Bronco list (id) — same tab row, same level
+  const activeCustomList = useMemo(() => customLists.find((l) => l.id === activeList), [customLists, activeList]);
+  const activeListLabel = activeCustomList?.name ?? activeList;
+
   // All spots for the active list
   const listSpots = useMemo(() => {
+    if (activeCustomList) {
+      return activeCustomList.items
+        .filter((item) => item.venue)
+        .map((item) => ({
+          ...item.venue,
+          favoriteId: item.id,
+          labels: [],
+          interactionType: null,
+          rating: null,
+          notes: null,
+        }));
+    }
     const matcher = LIST_MATCHER[activeList];
     return matcher ? spots.filter(matcher) : [];
-  }, [spots, activeList]);
+  }, [spots, activeList, activeCustomList]);
 
   // Available cuisines in current list
   const availableCuisines = useMemo(() => {
@@ -220,6 +239,17 @@ export default function Spots() {
   };
 
   const handleRemove = async (placeId) => {
+    if (activeCustomList) {
+      const item = activeCustomList.items.find((i) => i.venue?.google_place_id === placeId);
+      if (!item?.venue) return;
+      try {
+        await removeFromCustomList(item.venue, activeCustomList.id);
+        toast.success('Removed from list');
+      } catch {
+        toast.error('Failed to remove');
+      }
+      return;
+    }
     try {
       await removeSpot(placeId);
       toast.success('Removed from Spots');
@@ -288,9 +318,6 @@ export default function Spots() {
 
       <div className="pt-14 px-4 md:px-8 lg:px-12 py-6 max-w-4xl mx-auto space-y-4">
 
-        {/* Bronco: custom named spot lists with live availability */}
-        <SpotListsSection />
-
         {/* Page header */}
         <div className="flex items-center justify-between">
           <div>
@@ -308,7 +335,13 @@ export default function Spots() {
                 Share
               </Button>
             )}
-            {isAuthenticated && listSpots.length > 0 && (
+            {isAuthenticated && (
+              <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+                <Upload className="h-4 w-4 mr-1.5" />
+                Import
+              </Button>
+            )}
+            {isAuthenticated && listSpots.length > 0 && !activeCustomList && (
               <Button
                 variant={isEditMode ? 'default' : 'outline'}
                 size="sm"
@@ -345,7 +378,7 @@ export default function Spots() {
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={`Search within ${activeList}...`}
+                placeholder={`Search within ${activeListLabel}...`}
                 className="w-full rounded-xl border border-border bg-background pl-9 pr-9 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               />
               {searchQuery && (
@@ -373,6 +406,22 @@ export default function Spots() {
                     )}
                   >
                     {list}
+                  </button>
+                ))}
+
+                {/* Custom (Bronco) lists — same tab level as status lists */}
+                {customLists.map((list) => (
+                  <button
+                    key={list.id}
+                    onClick={() => handleSwitchList(list.id)}
+                    className={cn(
+                      'rounded-full px-4 py-1.5 text-sm font-medium transition-colors border whitespace-nowrap',
+                      activeList === list.id
+                        ? 'bg-foreground text-background border-foreground'
+                        : 'text-muted-foreground border-border hover:text-foreground hover:bg-accent'
+                    )}
+                  >
+                    {list.name}
                   </button>
                 ))}
 
@@ -518,7 +567,7 @@ export default function Spots() {
                 <p className="text-muted-foreground text-sm max-w-xs">
                   {searchQuery || activeLabelId || hasActiveFilters
                     ? 'No venues match your current filters.'
-                    : EMPTY_STATES[activeList]}
+                    : (EMPTY_STATES[activeList] ?? 'No venues in this list yet.')}
                 </p>
               </div>
             )}
@@ -531,7 +580,7 @@ export default function Spots() {
                     key={spot.favoriteId}
                     spot={spot}
                     onRemove={handleRemove}
-                    onMoveToList={(placeId, listName) => handleMoveToList(placeId, listName)}
+                    onMoveToList={activeCustomList ? undefined : (placeId, listName) => handleMoveToList(placeId, listName)}
                     onEditNote={(s) => setNoteDialogSpot(s)}
                     isEditMode={isEditMode}
                     isSelected={selectedIds.has(spot.google_place_id)}
@@ -595,6 +644,12 @@ export default function Spots() {
 
       {/* ── Dialogs ── */}
       <ShareListDialog open={shareOpen} onOpenChange={setShareOpen} />
+      <ImportListDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        existingSpots={spots}
+        onSaveVenue={(venue, label) => saveSpot({ venue, labels: [label || 'Interested'] })}
+      />
       <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
 
       {noteDialogSpot && (

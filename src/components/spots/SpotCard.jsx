@@ -168,33 +168,37 @@ export default function SpotCard({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              {/* Move to list */}
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger className="gap-2">
-                  <ArrowRightLeft className="h-3.5 w-3.5" />
-                  Move to list
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  {ALL_LISTS.map((list) => (
-                    <DropdownMenuItem
-                      key={list}
-                      onClick={() => onMoveToList?.(placeId, list)}
-                      className={cn('gap-2', currentList === list && 'font-medium')}
-                    >
-                      {list}
-                      {currentList === list && <Check className="h-3 w-3 ml-auto" />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
+              {/* Move to list — status lists only */}
+              {onMoveToList && (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="gap-2">
+                    <ArrowRightLeft className="h-3.5 w-3.5" />
+                    Move to list
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    {ALL_LISTS.map((list) => (
+                      <DropdownMenuItem
+                        key={list}
+                        onClick={() => onMoveToList?.(placeId, list)}
+                        className={cn('gap-2', currentList === list && 'font-medium')}
+                      >
+                        {list}
+                        {currentList === list && <Check className="h-3 w-3 ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )}
 
-              {/* Add/edit note */}
-              <DropdownMenuItem onClick={() => onEditNote?.(spot)} className="gap-2">
-                <FileText className="h-3.5 w-3.5" />
-                {spot.notes ? 'Edit note' : 'Add note'}
-              </DropdownMenuItem>
+              {/* Add/edit note — status lists only (notes live on user_venue_interactions) */}
+              {onMoveToList && (
+                <DropdownMenuItem onClick={() => onEditNote?.(spot)} className="gap-2">
+                  <FileText className="h-3.5 w-3.5" />
+                  {spot.notes ? 'Edit note' : 'Add note'}
+                </DropdownMenuItem>
+              )}
 
-              <DropdownMenuSeparator />
+              {onMoveToList && <DropdownMenuSeparator />}
 
               {/* Delete */}
               <DropdownMenuItem
