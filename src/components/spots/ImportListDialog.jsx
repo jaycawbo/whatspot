@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -40,6 +40,10 @@ export default function ImportListDialog({ open, onOpenChange, existingSpots = [
   const [destination, setDestination] = useState('status:Interested');
   const [newListName, setNewListName] = useState('');
 
+  // Set when the dialog is closed while an import is in flight — the async
+  // loop checks this and stops making further changes to state/UI once set.
+  const cancelledRef = useRef(false);
+
   const reset = () => {
     setStep(STEPS.PICK);
     setCsvText('');
@@ -53,7 +57,10 @@ export default function ImportListDialog({ open, onOpenChange, existingSpots = [
   };
 
   const handleClose = (o) => {
-    if (!o) reset();
+    if (!o) {
+      if (step === STEPS.IMPORTING) cancelledRef.current = true;
+      reset();
+    }
     onOpenChange(o);
   };
 
@@ -65,7 +72,13 @@ export default function ImportListDialog({ open, onOpenChange, existingSpots = [
   const handleParse = () => {
     const result = parseTakeoutCsv(csvText);
     const existingNames = new Set(existingSpots.map((s) => normalize(s.name)));
-    const deduped = result.entries.filter((e) => !existingNames.has(normalize(e.title)));
+    const seenInFile = new Set();
+    const deduped = result.entries.filter((e) => {
+      const key = normalize(e.title);
+      if (existingNames.has(key) || seenInFile.has(key)) return false;
+      seenInFile.add(key);
+      return true;
+    });
     setParsed(result);
     setToImport(deduped);
     setSkippedCount(result.entries.length - deduped.length);
@@ -75,6 +88,7 @@ export default function ImportListDialog({ open, onOpenChange, existingSpots = [
   const canImport = toImport.length > 0 && (destination !== NEW_LIST_VALUE || newListName.trim().length > 0);
 
   const handleImport = async () => {
+    cancelledRef.current = false;
     setStep(STEPS.IMPORTING);
     setProgress({ done: 0, total: toImport.length });
     const imported = [];
@@ -85,10 +99,10 @@ export default function ImportListDialog({ open, onOpenChange, existingSpots = [
     let statusLabel = null;
     let customListId = null;
     if (destination === NEW_LIST_VALUE) {
-      const created = await createList(newListName.trim());
+      const { data: created, error: createError } = await createList(newListName.trim());
       customListId = created?.id ?? null;
       if (!customListId) {
-        toast.error("Couldn't create the new list — import cancelled");
+        toast.error(createError?.message ? `Couldn't create the list: ${createError.message}` : "Couldn't create the new list — import cancelled");
         setStep(STEPS.PREVIEW);
         return;
       }
@@ -99,6 +113,8 @@ export default function ImportListDialog({ open, onOpenChange, existingSpots = [
     }
 
     for (const entry of toImport) {
+      if (cancelledRef.current) return;
+
       try {
         const { data, error } = await supabase.functions.invoke('search-google-place', {
           body: { venue_name: entry.title, lat: entry.lat, lon: entry.lon, register: true },
@@ -106,11 +122,21 @@ export default function ImportListDialog({ open, onOpenChange, existingSpots = [
         if (error || !data?.success) {
           unmatched.push(entry.title);
         } else if (customListId) {
-          await saveToCustomList(
-            { id: data.venue_id, name: data.name, google_place_id: data.place_id },
-            customListId
-          );
-          imported.push(data.name || entry.title);
+          if (!data.venue_id) {
+            // Search matched, but venue registration didn't return an id — can't
+            // save to a specific list without it. Don't count this as imported.
+            unmatched.push(entry.title);
+          } else {
+            const { error: saveError } = await saveToCustomList(
+              { id: data.venue_id, name: data.name, google_place_id: data.place_id },
+              customListId
+            );
+            if (saveError) {
+              unmatched.push(entry.title);
+            } else {
+              imported.push(data.name || entry.title);
+            }
+          }
         } else {
           await onSaveVenue({ place_id: data.place_id, name: data.name }, statusLabel);
           imported.push(data.name || entry.title);
@@ -118,10 +144,13 @@ export default function ImportListDialog({ open, onOpenChange, existingSpots = [
       } catch {
         unmatched.push(entry.title);
       }
+
+      if (cancelledRef.current) return;
       setProgress((p) => ({ ...p, done: p.done + 1 }));
       await new Promise((r) => setTimeout(r, IMPORT_DELAY_MS));
     }
 
+    if (cancelledRef.current) return;
     setResults({ imported, unmatched });
     setStep(STEPS.DONE);
     if (imported.length > 0) toast.success(`Imported ${imported.length} venue${imported.length === 1 ? '' : 's'}`);

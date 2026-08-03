@@ -94,9 +94,15 @@ export function useBroncoSpotLists() {
     };
   }, [loadLists]);
 
+  // All three mutators below return { data, error } (never throw) so existing
+  // fire-and-forget callers (VenueCard.jsx, SpotListsSection.jsx) keep working
+  // unmodified, while callers that need to know whether the write actually
+  // landed (ImportListDialog.jsx) can check `error`.
+
   const createList = useCallback(async (name) => {
-    if (!user?.id || !name.trim()) return;
-    const { data } = await supabase
+    if (!user?.id) return { data: null, error: new Error('Not signed in') };
+    if (!name.trim()) return { data: null, error: new Error('List name is required') };
+    const { data, error } = await supabase
       .from('spot_lists')
       .insert({ user_id: user.id, name: name.trim() })
       .select('id, name, created_at')
@@ -104,11 +110,12 @@ export function useBroncoSpotLists() {
     if (data) {
       setLists((prev) => [...prev, { ...data, items: [] }]);
     }
-    return data;
+    return { data, error };
   }, [user?.id]);
 
   const saveVenue = useCallback(async (venue, listId) => {
-    if (!user?.id || !venue?.id) return;
+    if (!user?.id) return { error: new Error('Not signed in') };
+    if (!venue?.id) return { error: new Error('Venue is missing an id') };
 
     // Optimistic update
     setSavedIds((prev) => new Set([...prev, venue.id]));
@@ -129,10 +136,12 @@ export function useBroncoSpotLists() {
       setSavedIds((prev) => { const s = new Set(prev); s.delete(venue.id); return s; });
       await loadLists();
     }
+    return { error };
   }, [user?.id, loadLists]);
 
   const removeVenue = useCallback(async (venue, listId) => {
-    if (!user?.id || !venue?.id) return;
+    if (!user?.id) return { error: new Error('Not signed in') };
+    if (!venue?.id) return { error: new Error('Venue is missing an id') };
 
     // Optimistic update
     setLists((prev) =>
@@ -154,6 +163,7 @@ export function useBroncoSpotLists() {
       .eq('venue_id', venue.id);
 
     if (error) await loadLists();
+    return { error };
   }, [user?.id, lists, loadLists]);
 
   return { lists, savedIds, isLoading, createList, saveVenue, removeVenue };
