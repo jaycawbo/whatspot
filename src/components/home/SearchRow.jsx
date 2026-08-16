@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronLeft, Search, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 
 /**
  * Permanent search bar row fixed just below the nav (top-14).
@@ -54,7 +55,13 @@ export default function SearchRow({
             aria-label="Open search"
           >
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 shrink-0 pointer-events-none" />
-            <span className="truncate">{query || 'Ask and you shall receive...'}</span>
+            <span className="flex-1 truncate">{query || 'Ask and you shall receive...'}</span>
+            <Badge
+              variant="secondary"
+              className="ml-2 shrink-0 rounded-full border-transparent bg-green-100 px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide text-green-700 hover:bg-green-100 dark:bg-green-500/15 dark:text-green-400"
+            >
+              Beta
+            </Badge>
           </button>
         </div>
 
