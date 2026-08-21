@@ -846,6 +846,7 @@ async function handleSearch(params: {
   intent:           any;
   authUserId:       string | null;
   GOOGLE_KEY:       string;
+  refined_search_term?: string;
 }): Promise<{
   finalVenues:        any[];
   reserveVenues:      any[];
@@ -858,6 +859,7 @@ async function handleSearch(params: {
   const {
     search_term, exclude_ids, price_levels, cuisine_types,
     open_now, relaxation_level, intent, authUserId, GOOGLE_KEY,
+    refined_search_term,
   } = params;
 
   let lat = params.lat;
@@ -869,18 +871,23 @@ async function handleSearch(params: {
   let refinedSearchTerm = search_term;
 
   // ─── STEPS 1 & 1b: Query refinement + location detection ───
-  console.log('🤖 STEPS 1 & 1b: Running in parallel...');
+  // STEP 1 is skipped when the caller already supplies Gemini-refined keywords
+  // (e.g. searchOrchestrator.js, which gets them from the refine-query edge function) —
+  // re-deriving the same keywords here would be a redundant Gemini call.
+  console.log(refined_search_term ? '🤖 STEP 1b: Running (STEP 1 skipped, pre-refined term supplied)...' : '🤖 STEPS 1 & 1b: Running in parallel...');
   let refinedSearchTermResult = search_term;
 
   const [refinementResult, locationDetectionResult] = await Promise.all([
-    safe('step1-refinement', () => callLLM(
-      'gemini-2.5-flash',
-      'You extract cuisine keywords from search queries for Google Places API. IMPORTANT: Do NOT include any location names, street names, city names, or neighbourhood names in your output. Only return food/cuisine/dining keywords.',
-      `The user is searching for "${search_term}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "${location_name}", etc.).\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise cuisine/food keywords suitable for a Google Places search.`,
-      [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'] } } }],
-      { type: 'function', function: { name: 'refine_query' } },
-      { max_tokens: 100, temperature: 0 },
-    ), null),
+    refined_search_term
+      ? Promise.resolve({ keywords: refined_search_term })
+      : safe('step1-refinement', () => callLLM(
+          'gemini-2.5-flash',
+          'You extract cuisine keywords from search queries for Google Places API. IMPORTANT: Do NOT include any location names, street names, city names, or neighbourhood names in your output. Only return food/cuisine/dining keywords.',
+          `The user is searching for "${search_term}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "${location_name}", etc.).\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise cuisine/food keywords suitable for a Google Places search.`,
+          [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'] } } }],
+          { type: 'function', function: { name: 'refine_query' } },
+          { max_tokens: 100, temperature: 0 },
+        ), null),
     safe('step1b-location', () => callLLM(
       'gemini-2.5-flash',
       'You detect neighbourhood, district, or city names in search queries.',
@@ -893,7 +900,7 @@ async function handleSearch(params: {
 
   if (refinementResult?.keywords && refinementResult.keywords.toLowerCase() !== search_term.toLowerCase()) {
     refinedSearchTermResult = refinementResult.keywords;
-    console.log(`✅ STEP 1: Refined to: "${refinedSearchTermResult}"`);
+    console.log(refined_search_term ? `✅ Using pre-refined term: "${refinedSearchTermResult}"` : `✅ STEP 1: Refined to: "${refinedSearchTermResult}"`);
   }
   refinedSearchTerm = refinedSearchTermResult;
 
@@ -2026,6 +2033,7 @@ Deno.serve(async (req) => {
       exclude_ids = [],
       criteria_pass,
       intent,
+      refined_search_term,
     } = await req.json();
 
     let lat = originalLat;
@@ -2106,6 +2114,7 @@ Deno.serve(async (req) => {
         intent: intent || null,
         authUserId,
         GOOGLE_KEY: GOOGLE_KEY || '',
+        refined_search_term: refined_search_term || undefined,
       });
 
       if (searchResult.gated) {

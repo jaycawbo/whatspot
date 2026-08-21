@@ -104,7 +104,10 @@ export async function runConversationalSearch({
       const cuisinePrefix = userFilters.cuisines?.length > 0
         ? userFilters.cuisines.map(cuisineTypeToLabel).join(' ') + ' '
         : '';
-      const placesQuery = cuisinePrefix ? `${cuisinePrefix}restaurant` : rawQuery;
+      // Use Gemini's already-refined keywords (location-free, typo-corrected) instead of
+      // rawQuery, so recommend's handleSearch can skip its own redundant refinement call.
+      const refinedKeywords = intent.keywords?.length > 0 ? intent.keywords.join(' ') : rawQuery;
+      const placesQuery = cuisinePrefix ? `${cuisinePrefix}restaurant` : refinedKeywords;
       const placesPrice = userPriceLevels.length > 0
         ? userPriceLevels.map(toPriceLevelString).filter(Boolean)
         : (intent.priceLevel ? [toPriceLevelString(intent.priceLevel)] : undefined);
@@ -112,6 +115,7 @@ export async function runConversationalSearch({
         body: {
           mode: 'query',
           query: placesQuery,
+          refined_search_term: placesQuery,
           lat,
           lon,
           radius_km: effectiveRadius,

@@ -86,6 +86,9 @@ Issues are assigned to whoever owns the task
 Branch names always include the Issue number
 Issues close automatically when the linked PR merges — no manual cleanup needed
 
+Pending Verification
+PR #293 (issue #288, dedup redundant Gemini search-refinement calls): could not be tested end-to-end because Search is currently disabled. Once Search is re-enabled, confirm via recommend edge function logs that STEP 1 keyword refinement is skipped on Places-fallback searches (only STEP 1b location detection should still fire) and that search results are still correct.
+
 Protected Files — Never touch without explicit instruction
 src/components/discovery/DiscoveryDeck.jsx
 src/components/discovery/DiscoveryCard.jsx
