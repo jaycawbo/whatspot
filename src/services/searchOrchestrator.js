@@ -104,9 +104,12 @@ export async function runConversationalSearch({
       const cuisinePrefix = userFilters.cuisines?.length > 0
         ? userFilters.cuisines.map(cuisineTypeToLabel).join(' ') + ' '
         : '';
-      // Use Gemini's already-refined keywords (location-free, typo-corrected) instead of
-      // rawQuery, so recommend's handleSearch can skip its own redundant refinement call.
-      const refinedKeywords = intent.keywords?.length > 0 ? intent.keywords.join(' ') : rawQuery;
+      // Use Gemini's typo-corrected query (e.g. "sishi" -> "sushi") — falling back to its
+      // extracted keywords, then the raw query — so corrections made in refine-query reach
+      // the Places fallback too, and recommend's handleSearch can skip its own redundant
+      // refinement call entirely (issue #288).
+      const refinedKeywords = intent.correctedQuery
+        || (intent.keywords?.length > 0 ? intent.keywords.join(' ') : rawQuery);
       const placesQuery = cuisinePrefix ? `${cuisinePrefix}restaurant` : refinedKeywords;
       const placesPrice = userPriceLevels.length > 0
         ? userPriceLevels.map(toPriceLevelString).filter(Boolean)
