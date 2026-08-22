@@ -4,7 +4,9 @@ export const HIDDEN_LISTS = ['Been To', 'Not Interested', "Didn't Like It"];
 export const LIST_MATCHER = {
   Favourites: (s) => s.interactionType === 'rated' && s.rating === 'loved',
   Interested: (s) => s.interactionType === 'interested',
-  'Been To': (s) => s.interactionType === 'rated' && s.rating === 'liked',
+  // Catch-all: any rated venue counts as "Been To", regardless of sentiment.
+  // A venue can therefore match both 'Been To' and Favourites/Didn't Like It.
+  'Been To': (s) => s.interactionType === 'rated',
   'Not Interested': (s) => s.interactionType === 'not_interested',
   "Didn't Like It": (s) => s.interactionType === 'rated' && s.rating === 'disliked',
 };
