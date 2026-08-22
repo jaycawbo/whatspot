@@ -205,19 +205,34 @@ export default function SpotsList() {
   };
 
   // Move targets always include every OTHER list — status and custom alike —
-  // regardless of which kind of list is currently open. Status lists are
-  // mutually exclusive with each other (a venue has exactly one rating), but
-  // custom lists are independent of status and of each other, so a venue can
-  // end up in multiple lists at once.
+  // regardless of which kind of list is currently open. Custom lists are
+  // independent of status and of each other, so a venue can end up in
+  // multiple lists at once. Status lists used to be mutually exclusive (a
+  // venue has exactly one rating), but 'Been To' is now a catch-all over any
+  // rating, so a venue can match 'Been To' AND Favourites/Didn't Like It at
+  // once — moveTargets is computed per spot (below) to avoid offering a
+  // no-op "move to" for a list the spot already belongs to.
+  const customMoveTargets = useMemo(
+    () => customLists
+      .filter((l) => l.id !== activeCustomList?.id)
+      .map((l) => ({ kind: 'custom', value: l.id, label: l.name })),
+    [activeCustomList, customLists]
+  );
+
   const moveTargets = useMemo(() => {
     const statusTargets = ['Favourites', 'Interested', 'Been To', 'Not Interested', "Didn't Like It"]
       .filter((l) => l !== activeList)
       .map((l) => ({ kind: 'status', value: l, label: l }));
-    const customTargets = customLists
-      .filter((l) => l.id !== activeCustomList?.id)
-      .map((l) => ({ kind: 'custom', value: l.id, label: l.name }));
-    return [...statusTargets, ...customTargets];
-  }, [activeList, activeCustomList, customLists]);
+    return [...statusTargets, ...customMoveTargets];
+  }, [activeList, customMoveTargets]);
+
+  const getMoveTargetsFor = (spot) => {
+    const alreadyIn = new Set(spot.labels?.length ? spot.labels : (activeList ? [activeList] : []));
+    const statusTargets = ['Favourites', 'Interested', 'Been To', 'Not Interested', "Didn't Like It"]
+      .filter((l) => !alreadyIn.has(l))
+      .map((l) => ({ kind: 'status', value: l, label: l }));
+    return [...statusTargets, ...customMoveTargets];
+  };
 
   const moveVenueTo = async (placeId, target) => {
     if (target.kind === 'status') {
@@ -482,7 +497,7 @@ export default function SpotsList() {
                 key={spot.favoriteId}
                 spot={spot}
                 onRemove={handleRemove}
-                moveTargets={moveTargets}
+                moveTargets={getMoveTargetsFor(spot)}
                 onMove={handleMoveSingle}
                 showNotes={!activeCustomList}
                 onEditNote={(s) => setNoteDialogSpot(s)}
