@@ -95,6 +95,7 @@ export async function parseSearchIntent({ rawQuery, userCoordinates, userId = nu
     deprioritiseReviewCount: false,
     intentSummary: null,
     correctionInfo: null,
+    correctedQuery: rawQuery,
   };
 
   try {
@@ -127,6 +128,9 @@ export async function parseSearchIntent({ rawQuery, userCoordinates, userId = nu
       correctionInfo: correctionApplied
         ? { correctedQuery: data.corrected_query, rawQuery, correctionApplied: true }
         : null,
+      // Always populated (falls back to rawQuery) so downstream callers can use it
+      // as the Places-fallback query without re-checking correctionApplied.
+      correctedQuery: data.corrected_query || rawQuery,
     };
   } catch {
     return fallback;
