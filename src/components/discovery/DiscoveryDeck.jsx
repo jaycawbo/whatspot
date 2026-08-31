@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { signalUserInteraction, addClientSkippedId } from '@/hooks/useDiscoveryFeed';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ThumbsUp } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, X, Heart, SkipForward, MapPinCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import DiscoveryCard from './DiscoveryCard';
+import SwipeBurst from './SwipeBurst';
 import RatingDialog from './RatingDialog';
 import { useDiscoveryInteractions } from '@/hooks/useDiscoveryInteractions';
 import { logEvent, venueSnapshot } from '@/lib/logEvent';
@@ -19,6 +20,25 @@ const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
 const SWIPE_UP_THRESHOLD = 80;
 const RATING_CANCEL_TAP_BLOCK_MS = 500;
+
+// The icon's growth completing exactly at SWIPE_THRESHOLD (the min distance to trigger
+// a swipe) meant it saturated the moment the swipe became valid, well before most real
+// drags actually end — reads as "stops growing mid-swipe". Growth now plays out over a
+// distance further past that trigger point so it keeps growing through more of the
+// gesture. ICON_MAX_SCALE is 2x the original 1.3 max. SwipeBurst reads its starting
+// scale/opacity live from performAction (see ICON_SCALE_BY_DIRECTION below) rather than
+// hardcoding a value, so a swipe released before reaching full growth hands off from
+// wherever it actually was, not from this constant — this only matters as the
+// button-click fallback's starting scale (no drag ever occurred, so there's no live
+// value to read).
+const ICON_GROWTH_DISTANCE_MULTIPLIER = 3;
+const ICON_MAX_SCALE = 2.6;
+
+const BURST_ICON = {
+  right: { Icon: Heart, className: 'h-10 w-10 text-white fill-white/40' },
+  left: { Icon: X, className: 'h-10 w-10 text-white' },
+  down: { Icon: SkipForward, className: 'h-10 w-10 text-white fill-white/40' },
+};
 
 const LOCATION_KEYWORDS = [
   'little portugal', 'kensington', 'ossington', 'queen west', 'king street',
@@ -56,11 +76,14 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const [ratingSheetOpen, setRatingSheetOpen] = useState(false);
   const [ratingPendingVenue, setRatingPendingVenue] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [burst, setBurst] = useState(null); // { direction, origin: { x, y } }
+  const handleBurstDone = useCallback(() => setBurst(null), []);
   const isMobile = useIsMobile();
   const currentVenue = venues[currentIndex] ?? null;
   const hasMore = currentIndex < venues.length;
   const navigate = useNavigate();
   const containerRef = useRef(null);
+  const activeCardRef = useRef(null);
   const moreRequestedRef = useRef(false);
   const isAnimatingRef = useRef(false);
   const blockCardTapUntilRef = useRef(0);
@@ -152,6 +175,32 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const downOverlayOpacity = useTransform(y, [0, SWIPE_DOWN_THRESHOLD], [0, 0.8]);
   const upOverlayOpacity = useTransform(y, [-SWIPE_UP_THRESHOLD, 0], [0.8, 0]);
 
+  // Icon grows continuously with live drag progress (not just at release) — same
+  // useTransform pattern as the opacity values above. The "burst" that plays on
+  // release lives in SwipeBurst, rendered via a portal so it can't be clipped.
+  const rightIconScale = useTransform(x, [0, SWIPE_THRESHOLD * ICON_GROWTH_DISTANCE_MULTIPLIER], [1, ICON_MAX_SCALE]);
+  const leftIconScale = useTransform(x, [-SWIPE_THRESHOLD * ICON_GROWTH_DISTANCE_MULTIPLIER, 0], [ICON_MAX_SCALE, 1]);
+  const downIconScale = useTransform(y, [0, SWIPE_DOWN_THRESHOLD * ICON_GROWTH_DISTANCE_MULTIPLIER], [1, ICON_MAX_SCALE]);
+  const upIconScale = useTransform(y, [-SWIPE_UP_THRESHOLD * ICON_GROWTH_DISTANCE_MULTIPLIER, 0], [ICON_MAX_SCALE, 1]);
+
+  // The icon needs its own opacity, independent of the background tint's (which
+  // ramps 0→0.8 over the FULL drag and, since the icon is nested inside that tinted
+  // div, was multiplying against it — leaving the icon nearly invisible until the
+  // last third of the drag even though its scale was already growing the whole time.
+  // Ramping the icon to full opacity over just the first 40% of the drag makes the
+  // growth visible from the start instead of appearing to pop in right before release.
+  const rightIconOpacity = useTransform(x, [0, SWIPE_THRESHOLD * 0.4], [0, 1]);
+  const leftIconOpacity = useTransform(x, [-SWIPE_THRESHOLD * 0.4, 0], [1, 0]);
+  const downIconOpacity = useTransform(y, [0, SWIPE_DOWN_THRESHOLD * 0.4], [0, 1]);
+  const upIconOpacity = useTransform(y, [-SWIPE_UP_THRESHOLD * 0.4, 0], [1, 0]);
+
+  // Lets performAction read the icon's actual live scale/opacity at the instant of
+  // release (see .get() calls below), instead of assuming it always reached its max —
+  // a release right at the swipe threshold is usually well short of full growth. No
+  // 'up' entry: that direction opens the rating sheet instead of bursting.
+  const ICON_SCALE_BY_DIRECTION = { right: rightIconScale, left: leftIconScale, down: downIconScale };
+  const ICON_OPACITY_BY_DIRECTION = { right: rightIconOpacity, left: leftIconOpacity, down: downIconOpacity };
+
   // Reset deck when initial venues change (new search) or append (reserve venues)
   // Seed from sessionStorage so back-navigation with cached venues doesn't trigger a reset
   const savedVenueIds = useRef(() => {
@@ -186,6 +235,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       setOverflowAppended(false);
       setCurrentIndex(Math.min(restoredIndex, Math.max(0, initialVenues.length - 1)));
       moreRequestedRef.current = false;
+      x.stop();
+      y.stop();
+      opacity.stop();
       x.set(0);
       y.set(0);
       opacity.set(1);
@@ -223,6 +275,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     setCurrentIndex(0);
     try { sessionStorage.setItem('whatspot_deck_index', '0'); } catch {}
     moreRequestedRef.current = false;
+    x.stop();
+    y.stop();
+    opacity.stop();
     x.set(0);
     y.set(0);
     opacity.set(1);
@@ -356,6 +411,33 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       animate(y, exitY, { duration: exitDuration, ease: 'easeOut' }),
       animate(opacity, 0, { duration: exitDuration, ease: 'easeOut' }),
     ]);
+
+    // Celebratory burst, portal-rendered so it can't be clipped by the deck's
+    // overflow-hidden ancestors (mobile in particular — see SwipeBurst.jsx) and runs on
+    // its own independent timeline, decoupled from the card's own exit speed above.
+    // Origin comes from the card's own live (dragged) position, not the static deck
+    // container — otherwise the burst appears back at the deck's resting center instead
+    // of where the card actually was on release, breaking continuity with the icon that
+    // was growing under the user's finger/cursor throughout the drag.
+    const cardRect = activeCardRef.current?.getBoundingClientRect() ?? containerRef.current?.getBoundingClientRect();
+    if (cardRect) {
+      // Read the icon's actual live scale/opacity at this instant rather than assuming
+      // it reached ICON_MAX_SCALE — a release right at the swipe threshold is usually
+      // well short of full growth (see ICON_GROWTH_DISTANCE_MULTIPLIER above), so the
+      // burst needs to pick up from wherever the icon really was, not a fixed constant.
+      // Button clicks never drag at all, so x/y sit at 0 and the live opacity reads 0 —
+      // that's how we detect "no real drag happened" and fall back to today's pop-in.
+      const liveOpacity = ICON_OPACITY_BY_DIRECTION[direction]?.get() ?? 0;
+      const liveScale = ICON_SCALE_BY_DIRECTION[direction]?.get() ?? 1;
+      const initialOpacity = liveOpacity > 0 ? liveOpacity : 1;
+      const initialScale = liveOpacity > 0 ? liveScale : ICON_MAX_SCALE;
+      setBurst({
+        direction,
+        origin: { x: cardRect.left + cardRect.width / 2, y: cardRect.top + cardRect.height / 2 },
+        initialScale,
+        initialOpacity,
+      });
+    }
 
     let success = true;
     if (direction === 'right') {
@@ -603,7 +685,22 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const isCardDimmed = ratingSheetOpen;
 
   return (
-    <div ref={containerRef} className="flex flex-col w-full mx-auto max-w-[calc(100vw-2rem)] sm:max-w-[560px] lg:max-w-[660px]" style={{ height: 'var(--deck-height, 78vh)' }}>
+    <div
+      ref={containerRef}
+      className="flex flex-col w-full mx-auto max-w-[calc(100vw-2rem)] sm:max-w-[560px] lg:max-w-[660px]"
+      style={{
+        height: 'var(--deck-height, 78vh)',
+        // DiscoveryCard's own photo zone caps at 520px (see its clamp() height), but
+        // --deck-height (Home.jsx) can grow past that on tall desktop viewports since
+        // it isn't aware of that cap. Without a ceiling here, the card's h-full root
+        // outgrows its actual content and the leftover space collects below the info
+        // section (which fills it via flex-1), pushing the Skip button down with a
+        // large gap. 520 (max photo height) + ~145 (name/rating/tags content) + ~50
+        // (Skip button row + margin) — capped only on desktop; mobile's deck-height
+        // formula doesn't exhibit this and isn't touched.
+        maxHeight: isMobile ? undefined : '715px',
+      }}
+    >
       {/* Card area */}
       <div className="relative flex-1 min-h-0">
         {/* Ghost cards */}
@@ -618,9 +715,10 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         {currentVenue ? (
           <motion.div
             key={currentVenue.place_id || currentVenue.google_place_id || currentIndex}
+            ref={activeCardRef}
             className="absolute inset-0 z-10 touch-none"
             style={{ x, y, opacity }}
-            drag={!ratingSheetOpen}
+            drag={!ratingSheetOpen && !exitDirection}
             dragMomentum={false}
             dragElastic={0.05}
             onDragStart={handleDragStart}
@@ -638,23 +736,32 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
           >
             {/* Swipe overlays */}
             <motion.div
-              className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
+              className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none"
               style={{ opacity: rightOverlayOpacity, background: 'hsla(142, 71%, 45%, 0.2)' }}
             >
+              <motion.div style={{ scale: rightIconScale, opacity: rightIconOpacity }}>
+                <Heart className="h-10 w-10 text-white fill-white/30" />
+              </motion.div>
               <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Interested</span>
             </motion.div>
 
             <motion.div
-              className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
+              className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none"
               style={{ opacity: leftOverlayOpacity, background: 'hsla(0, 84%, 60%, 0.2)' }}
             >
-              <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Not Interested</span>
+              <motion.div style={{ scale: leftIconScale, opacity: leftIconOpacity }}>
+                <X className="h-10 w-10 text-white" />
+              </motion.div>
+              <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Not interested</span>
             </motion.div>
 
             <motion.div
-              className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center pointer-events-none"
+              className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none"
               style={{ opacity: downOverlayOpacity, background: 'hsla(0, 0%, 50%, 0.2)' }}
             >
+              <motion.div style={{ scale: downIconScale, opacity: downIconOpacity }}>
+                <SkipForward className="h-10 w-10 text-white fill-white/30" />
+              </motion.div>
               <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Skip for now</span>
             </motion.div>
 
@@ -662,7 +769,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
               className="absolute inset-0 z-20 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none"
               style={{ opacity: upOverlayOpacity, background: 'hsla(210, 70%, 50%, 0.2)' }}
             >
-              <ThumbsUp className="h-10 w-10 text-white fill-white/30" />
+              <motion.div style={{ scale: upIconScale, opacity: upIconOpacity }}>
+                <MapPinCheck className="h-10 w-10 text-white fill-white/30" />
+              </motion.div>
               <span className="text-2xl font-bold text-white" style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.6)' }}>Been here</span>
             </motion.div>
 
@@ -758,6 +867,19 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
 
       {/* Auth modal */}
       <AuthModal open={authModalOpen} onOpenChange={handleAuthClose} />
+
+      {/* Celebratory burst on swipe completion — portal-rendered, see SwipeBurst.jsx */}
+      {burst && (
+        <SwipeBurst
+          direction={burst.direction}
+          Icon={BURST_ICON[burst.direction]?.Icon}
+          iconClassName={BURST_ICON[burst.direction]?.className}
+          origin={burst.origin}
+          initialScale={burst.initialScale}
+          initialOpacity={burst.initialOpacity}
+          onDone={handleBurstDone}
+        />
+      )}
     </div>
   );
 }
