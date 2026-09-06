@@ -822,73 +822,79 @@ async function handleSearch(params: {
   let refinedSearchTerm = search_term;
 
   // ─── STEPS 1 & 1b: Query refinement + location detection ───
-  // STEP 1 is skipped when the caller already supplies Gemini-refined keywords
-  // (e.g. searchOrchestrator.js, which gets them from the refine-query edge function) —
-  // re-deriving the same keywords here would be a redundant Gemini call.
-  console.log(refined_search_term ? '🤖 STEP 1b: Running (STEP 1 skipped, pre-refined term supplied)...' : '🤖 STEPS 1 & 1b: Running in parallel...');
-  let refinedSearchTermResult = search_term;
+  // Both steps are skipped when the caller (searchOrchestrator.js) already ran
+  // refine-query and passed its output through as refined_search_term — re-deriving the
+  // same keywords/location here would be a redundant Gemini call. See issue #288.
+  // Callers that don't pre-parse (e.g. mode: 'browse_category') still hit the Gemini
+  // fallback below, which also handles location detection since refine-query doesn't
+  // extract location today.
+  if (refined_search_term) {
+    refinedSearchTerm = refined_search_term;
+    console.log(`⏭️ STEPS 1 & 1b skipped — using pre-refined term: "${refinedSearchTerm}"`);
+  } else {
+    console.log('🤖 STEPS 1 & 1b: Running in parallel...');
+    let refinedSearchTermResult = search_term;
 
-  const [refinementResult, locationDetectionResult] = await Promise.all([
-    refined_search_term
-      ? Promise.resolve({ keywords: refined_search_term })
-      : safe('step1-refinement', () => callLLM(
-          'gemini-2.5-flash',
-          'You extract cuisine keywords from search queries for Google Places API. IMPORTANT: Do NOT include any location names, street names, city names, or neighbourhood names in your output. Only return food/cuisine/dining keywords.',
-          `The user is searching for "${search_term}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "${location_name}", etc.).\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise cuisine/food keywords suitable for a Google Places search.`,
-          [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'] } } }],
-          { type: 'function', function: { name: 'refine_query' } },
-          { max_tokens: 100, temperature: 0 },
-        ), null),
-    safe('step1b-location', () => callLLM(
-      'gemini-2.5-flash',
-      'You detect neighbourhood, district, or city names in search queries.',
-      `Given the search query "${search_term}" and current location "${location_name}", identify if the query mentions a specific neighbourhood, district, or city name that is different from or more specific than the current location. Return the detected location string or "NONE" if no specific location is mentioned.`,
-      [{ type: 'function', function: { name: 'detect_location', description: 'Return detected location or NONE', parameters: { type: 'object', properties: { detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' } }, required: ['detected_location'] } } }],
-      { type: 'function', function: { name: 'detect_location' } },
-      { max_tokens: 100, temperature: 0 },
-    ), null),
-  ]);
+    const [refinementResult, locationDetectionResult] = await Promise.all([
+      safe('step1-refinement', () => callLLM(
+        'gemini-2.5-flash',
+        'You extract cuisine keywords from search queries for Google Places API. IMPORTANT: Do NOT include any location names, street names, city names, or neighbourhood names in your output. Only return food/cuisine/dining keywords.',
+        `The user is searching for "${search_term}" in ${location_name}.\nIdentify the primary cuisine types, dietary needs, or specific culinary styles mentioned.\nIf the query implies a very specific type of food, extract those keywords.\nIf the query is generic (e.g., "best restaurants", "places to eat"), return "restaurant".\nDo NOT include location words like street names, city names, or neighbourhoods (e.g. do NOT include "College Street", "${location_name}", etc.).\nReturn ONLY a comma-separated list of 1-3 highly relevant and concise cuisine/food keywords suitable for a Google Places search.`,
+        [{ type: 'function', function: { name: 'refine_query', description: 'Return refined search keywords', parameters: { type: 'object', properties: { keywords: { type: 'string', description: 'Comma-separated refined cuisine/food keywords only, no location names' } }, required: ['keywords'] } } }],
+        { type: 'function', function: { name: 'refine_query' } },
+        { max_tokens: 100, temperature: 0 },
+      ), null),
+      safe('step1b-location', () => callLLM(
+        'gemini-2.5-flash',
+        'You detect neighbourhood, district, or city names in search queries.',
+        `Given the search query "${search_term}" and current location "${location_name}", identify if the query mentions a specific neighbourhood, district, or city name that is different from or more specific than the current location. Return the detected location string or "NONE" if no specific location is mentioned.`,
+        [{ type: 'function', function: { name: 'detect_location', description: 'Return detected location or NONE', parameters: { type: 'object', properties: { detected_location: { type: 'string', description: 'The detected neighbourhood/district/city name, or "NONE"' } }, required: ['detected_location'] } } }],
+        { type: 'function', function: { name: 'detect_location' } },
+        { max_tokens: 100, temperature: 0 },
+      ), null),
+    ]);
 
-  if (refinementResult?.keywords && refinementResult.keywords.toLowerCase() !== search_term.toLowerCase()) {
-    refinedSearchTermResult = refinementResult.keywords;
-    console.log(refined_search_term ? `✅ Using pre-refined term: "${refinedSearchTermResult}"` : `✅ STEP 1: Refined to: "${refinedSearchTermResult}"`);
-  }
-  refinedSearchTerm = refinedSearchTermResult;
+    if (refinementResult?.keywords && refinementResult.keywords.toLowerCase() !== search_term.toLowerCase()) {
+      refinedSearchTermResult = refinementResult.keywords;
+      console.log(`✅ STEP 1: Refined to: "${refinedSearchTermResult}"`);
+    }
+    refinedSearchTerm = refinedSearchTermResult;
 
-  if (locationDetectionResult?.detected_location && locationDetectionResult.detected_location !== 'NONE') {
-    const detectedLocation = locationDetectionResult.detected_location;
-    const geocodeQuery = location_name ? `${detectedLocation}, ${location_name}` : detectedLocation;
-    console.log(`📍 STEP 1b: Detected location: "${detectedLocation}", geocoding as "${geocodeQuery}"...`);
-    try {
-      const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
-      const geocodeResp = await fetch(`${SUPABASE_URL}/functions/v1/geocode-address`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: geocodeQuery, city_name: location_name || undefined }),
-      });
-      if (geocodeResp.ok) {
-        const geocodeData = await geocodeResp.json();
-        if (geocodeData.lat && geocodeData.lon) {
-          const dLat = (geocodeData.lat - lat) * Math.PI / 180;
-          const dLon = (geocodeData.lon - lon) * Math.PI / 180;
-          const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180) * Math.cos(geocodeData.lat*Math.PI/180) * Math.sin(dLon/2)**2;
-          const distKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-          if (distKm > 100) {
-            console.warn(`⚠️ STEP 1b: Geocode result too far from user location (${distKm.toFixed(1)}km), discarding override`);
-          } else {
-            lat = geocodeData.lat;
-            lon = geocodeData.lon;
-            location_name = detectedLocation;
-            admission.maxRadius = 2;
-            console.log(`📍 STEP 1b: Location override: ${detectedLocation} (${lat}, ${lon}), ${distKm.toFixed(1)}km from user`);
+    if (locationDetectionResult?.detected_location && locationDetectionResult.detected_location !== 'NONE') {
+      const detectedLocation = locationDetectionResult.detected_location;
+      const geocodeQuery = location_name ? `${detectedLocation}, ${location_name}` : detectedLocation;
+      console.log(`📍 STEP 1b: Detected location: "${detectedLocation}", geocoding as "${geocodeQuery}"...`);
+      try {
+        const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+        const geocodeResp = await fetch(`${SUPABASE_URL}/functions/v1/geocode-address`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: geocodeQuery, city_name: location_name || undefined }),
+        });
+        if (geocodeResp.ok) {
+          const geocodeData = await geocodeResp.json();
+          if (geocodeData.lat && geocodeData.lon) {
+            const dLat = (geocodeData.lat - lat) * Math.PI / 180;
+            const dLon = (geocodeData.lon - lon) * Math.PI / 180;
+            const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180) * Math.cos(geocodeData.lat*Math.PI/180) * Math.sin(dLon/2)**2;
+            const distKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            if (distKm > 100) {
+              console.warn(`⚠️ STEP 1b: Geocode result too far from user location (${distKm.toFixed(1)}km), discarding override`);
+            } else {
+              lat = geocodeData.lat;
+              lon = geocodeData.lon;
+              location_name = detectedLocation;
+              admission.maxRadius = 2;
+              console.log(`📍 STEP 1b: Location override: ${detectedLocation} (${lat}, ${lon}), ${distKm.toFixed(1)}km from user`);
+            }
           }
         }
+      } catch (e: any) {
+        console.warn('⚠️ STEP 1b: Geocoding failed:', e.message);
       }
-    } catch (e: any) {
-      console.warn('⚠️ STEP 1b: Geocoding failed:', e.message);
     }
+    console.log('✅ STEPS 1 & 1b complete');
   }
-  console.log('✅ STEPS 1 & 1b complete');
 
   const locationNameWords = (location_name || '').toLowerCase().split(/[^a-z]+/).filter(Boolean);
 

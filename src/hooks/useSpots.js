@@ -24,17 +24,20 @@ function skipHistoryTypeFor(mapping) {
   return mapping.interaction_type === 'rated' ? 'been_here' : mapping.interaction_type;
 }
 
-// Reverse: interaction → display label
-function interactionToLabel(interaction_type, rating) {
+// Reverse: interaction → display labels. A rated venue always includes
+// 'Been To' (catch-all — any rating means it's been visited) alongside its
+// specific sentiment list, if any. Keep in sync with LIST_MATCHER in
+// spotListConstants.js.
+function interactionToLabels(interaction_type, rating) {
   if (interaction_type === 'rated') {
-    if (rating === 'loved')    return 'Favourites';
-    if (rating === 'liked')    return 'Been To';
-    if (rating === 'disliked') return "Didn't Like It";
+    if (rating === 'loved')    return ['Favourites', 'Been To'];
+    if (rating === 'disliked') return ["Didn't Like It", 'Been To'];
+    return ['Been To'];
   }
-  if (interaction_type === 'interested')    return 'Interested';
-  if (interaction_type === 'not_interested') return 'Not Interested';
-  if (interaction_type === 'skipped')        return 'Not Interested';
-  return 'Interested';
+  if (interaction_type === 'interested')    return ['Interested'];
+  if (interaction_type === 'not_interested') return ['Not Interested'];
+  if (interaction_type === 'skipped')        return ['Not Interested'];
+  return ['Interested'];
 }
 
 export function useSpots() {
@@ -74,7 +77,7 @@ export function useSpots() {
         return {
           ...venue,
           favoriteId: row.id,
-          labels: [interactionToLabel(row.interaction_type, row.rating)],
+          labels: interactionToLabels(row.interaction_type, row.rating),
           interactionType: row.interaction_type,
           rating: row.rating,
           google_rating: venue.rating ?? null,
