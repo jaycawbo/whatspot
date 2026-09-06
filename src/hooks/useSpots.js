@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/AuthContext';
+import { upsertSkipHistory } from '@/lib/skipHistory';
 
 const SPOTS_KEY = ['spots'];
 
@@ -12,6 +13,16 @@ const LABEL_TO_INTERACTION = {
   'Favourites':      { interaction_type: 'rated',          rating: 'loved' },
   'Been To':         { interaction_type: 'rated',          rating: 'liked' },
 };
+
+// Derive the skip_history suppression type from an already-resolved
+// LABEL_TO_INTERACTION mapping, so a venue classified from Search /
+// Save-to-Spots / the Spots page also gets suppressed from Discovery — not
+// just venues swiped in the deck. Reusing `mapping` (rather than a second
+// label lookup) guarantees this stays in sync with LABEL_TO_INTERACTION's
+// fallback, including for descriptor tags that aren't system list labels.
+function skipHistoryTypeFor(mapping) {
+  return mapping.interaction_type === 'rated' ? 'been_here' : mapping.interaction_type;
+}
 
 // Reverse: interaction → display label
 function interactionToLabel(interaction_type, rating) {
@@ -120,6 +131,8 @@ export function useSpots() {
           { onConflict: 'user_id,venue_id' }
         );
       if (intError) throw intError;
+
+      upsertSkipHistory(googlePlaceId, skipHistoryTypeFor(mapping)).catch(() => {});
     },
     onSuccess: (_, { venue }) => {
       queryClient.invalidateQueries({ queryKey: SPOTS_KEY });
@@ -161,6 +174,8 @@ export function useSpots() {
         .eq('user_id', user.id)
         .eq('venue_id', placeId);
       if (error) throw error;
+
+      upsertSkipHistory(placeId, skipHistoryTypeFor(mapping)).catch(() => {});
     },
     onSuccess: (_, { placeId }) => {
       queryClient.invalidateQueries({ queryKey: SPOTS_KEY });
@@ -185,6 +200,8 @@ export function useSpots() {
         .eq('user_id', user.id)
         .eq('venue_id', placeId);
       if (error) throw error;
+
+      upsertSkipHistory(placeId, skipHistoryTypeFor(mapping)).catch(() => {});
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: SPOTS_KEY }),
   });
@@ -222,6 +239,8 @@ export function useSpots() {
           { onConflict: 'user_id,venue_id' }
         );
       if (error) throw error;
+
+      upsertSkipHistory(googlePlaceId, 'been_here').catch(() => {});
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: SPOTS_KEY }),
   });

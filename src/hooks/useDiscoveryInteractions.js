@@ -3,6 +3,7 @@ import { useSpots } from '@/hooks/useSpots';
 import { getAnonId, getSessionId } from '@/lib/identity';
 import { supabase } from '@/integrations/supabase/client';
 import { logEvent, venueSnapshot } from '@/lib/logEvent';
+import { upsertSkipHistory } from '@/lib/skipHistory';
 import { toast } from 'sonner';
 
 /**
@@ -66,44 +67,6 @@ export function useDiscoveryInteractions() {
         { onConflict: 'user_id,venue_id' }
       ),
     ]);
-  }, []);
-
-  /**
-   * Upsert skip_history for authenticated users.
-   * Returns the previous interaction_type (if any) for list membership transitions.
-   */
-  const upsertSkipHistory = useCallback(async (venueId, interactionType) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user || !venueId) return null;
-
-    // Fetch existing record to capture previous_interaction_type
-    const { data: existing } = await supabase
-      .from('skip_history')
-      .select('interaction_type')
-      .eq('user_id', user.id)
-      .eq('venue_id', venueId)
-      .maybeSingle();
-
-    const previousType = existing?.interaction_type || null;
-
-    // Don't downgrade stronger interactions with passive_skip
-    // (edge case: venue resurfaces after suppression window)
-    if (interactionType === 'passive_skip' && previousType && previousType !== 'passive_skip') {
-      return previousType;
-    }
-
-    await supabase.from('skip_history').upsert(
-      {
-        user_id: user.id,
-        venue_id: venueId,
-        interaction_type: interactionType,
-        previous_interaction_type: previousType !== interactionType ? previousType : existing?.interaction_type || null,
-        created_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,venue_id' }
-    );
-
-    return previousType;
   }, []);
 
   /**

@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/types.ts';
 import { boundingBox, haversineKm } from '../_shared/geo.ts';
+import { getSuppressedVenueIds } from '../_shared/skipHistory.ts';
 
 const PRICE_CHIP_TO_INT: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
 
@@ -62,10 +63,24 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
+    // ─── Extract authenticated user ID for skip_history suppression ───
+    let authUserId: string | null = null;
+    try {
+      const authHeader = req.headers.get('authorization');
+      if (authHeader) {
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user } } = await supabase.auth.getUser(token);
+        authUserId = user?.id || null;
+      }
+    } catch {
+      // Not authenticated — skip suppression
+    }
+    const suppressedIds = authUserId ? await getSuppressedVenueIds(authUserId) : new Set<string>();
+
     const radiusKm = radius_km || 5;
     const bb = boundingBox(lat, lon, radiusKm);
     const withinRadius = (v: { lat: number; lng: number }) => haversineKm(lat, lon, v.lat, v.lng) <= radiusKm;
-    const skipSet = new Set(skipped_ids || []);
+    const skipSet = new Set([...(skipped_ids || []), ...suppressedIds]);
 
     const applyPriceAndCuisine = (qb: any) => {
       if (price_levels?.length) {
