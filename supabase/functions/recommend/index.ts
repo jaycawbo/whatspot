@@ -1,59 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getSuppressedVenueIds } from '../_shared/skipHistory.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
-
-// ─── Suppression windows (in days) by interaction type ───
-const SUPPRESSION_DAYS: Record<string, number | null> = {
-  passive_skip: 21,
-  skip_for_now: 30,
-  interested: 90,
-  not_interested: 45,
-  been_here: null, // indefinite
-};
-
-/**
- * Query skip_history and return venue IDs that should be suppressed.
- */
-async function getSuppressedVenueIds(userId: string): Promise<Set<string>> {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const sb = createClient(supabaseUrl, supabaseKey);
-
-  const { data, error } = await sb
-    .from('skip_history')
-    .select('venue_id, interaction_type, created_at')
-    .eq('user_id', userId)
-    .gte('created_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
-
-  if (error || !data) return new Set();
-
-  const now = Date.now();
-  const suppressed = new Set<string>();
-
-  for (const row of data) {
-    const days = SUPPRESSION_DAYS[row.interaction_type];
-    if (days === null) {
-      // Indefinite suppression (been_here)
-      suppressed.add(row.venue_id);
-    } else if (days !== undefined) {
-      const createdAt = new Date(row.created_at).getTime();
-      const windowMs = days * 24 * 60 * 60 * 1000;
-      if (now - createdAt < windowMs) {
-        suppressed.add(row.venue_id);
-      }
-    }
-  }
-
-  sb.from('skip_history')
-    .delete()
-    .eq('user_id', userId)
-    .lt('created_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
-
-  return suppressed;
-}
 
 async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: number, excludeIds: string[]): Promise<any[]> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
