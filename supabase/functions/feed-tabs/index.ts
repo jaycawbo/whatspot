@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/types.ts';
 import { boundingBox, haversineKm } from '../_shared/geo.ts';
 import { getSuppressedVenueIds } from '../_shared/skipHistory.ts';
+import { weightedShuffleTopK } from '../_shared/weightedShuffle.ts';
 
 const PRICE_CHIP_TO_INT: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
 
@@ -121,7 +122,7 @@ Deno.serve(async (req) => {
         .not('review_count', 'is', null)
         .gte('rating', 4.0)
         .order('review_count', { ascending: false })
-        .limit(20);
+        .limit(40);
       query = applyPriceAndCuisine(query);
       const { data, error } = await query;
       if (error) {
@@ -132,7 +133,9 @@ Deno.serve(async (req) => {
         const id = (v.google_place_id || '').replace(/^places\//, '');
         return !skipSet.has(id) && withinRadius(v);
       });
-      return jsonResponse({ venues: filtered.map(toShape), isEmpty: false });
+      const shaped = filtered.map(toShape);
+      const selected = weightedShuffleTopK(shaped, (v: any) => v.review_count ?? 0, 20);
+      return jsonResponse({ venues: selected, isEmpty: false });
     }
 
     if (tab === 'new') {
@@ -167,7 +170,13 @@ Deno.serve(async (req) => {
         const id = (v.google_place_id || '').replace(/^places\//, '');
         return !skipSet.has(id) && withinRadius(v);
       });
-      return jsonResponse({ venues: filtered.map(toShape), isEmpty: filtered.length === 0 });
+      const now = Date.now();
+      const shaped = filtered.map((v: any) => ({
+        ...toShape(v),
+        _recencyWeight: 1 / ((now - new Date(v.created_at).getTime()) / 86_400_000 + 1),
+      }));
+      const selected = weightedShuffleTopK(shaped, (v: any) => v._recencyWeight, shaped.length);
+      return jsonResponse({ venues: selected, isEmpty: selected.length === 0 });
     }
 
     if (tab === 'trending') {
@@ -225,7 +234,12 @@ Deno.serve(async (req) => {
           });
         }
       }
-      return jsonResponse({ venues: filtered.map(toShape), isEmpty: false });
+      const shaped = filtered.map((v: any) => ({
+        ...toShape(v),
+        _trendWeight: v.trending_score ?? (v.rating ?? 0) * (v.review_count ?? 0),
+      }));
+      const selected = weightedShuffleTopK(shaped, (v: any) => v._trendWeight, shaped.length);
+      return jsonResponse({ venues: selected, isEmpty: false });
     }
 
     if (tab === 'walkin') {
@@ -257,10 +271,10 @@ Deno.serve(async (req) => {
           const shaped = toShape(v);
           return { ...shaped, _walkinScore: computeInlineWalkinScore(shaped, local_hour ?? 12, local_day ?? 1) };
         })
-        .sort((a: any, b: any) => b._walkinScore - a._walkinScore)
-        .slice(0, 20);
+        .sort((a: any, b: any) => b._walkinScore - a._walkinScore);
+      const selected = weightedShuffleTopK(scored, (v: any) => v._walkinScore, 20);
       console.log('[feed-tabs] Walkin: scored', scored.length, 'venues, top score:', scored[0]?._walkinScore);
-      return jsonResponse({ venues: scored, isEmpty: scored.length === 0 });
+      return jsonResponse({ venues: selected, isEmpty: selected.length === 0 });
     }
 
     return errorResponse(`Unknown tab: ${tab}`, 400);

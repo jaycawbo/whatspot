@@ -4,6 +4,7 @@ import { getAnonId, getSessionId } from '@/lib/identity';
 import { supabase } from '@/integrations/supabase/client';
 import { logEvent, venueSnapshot } from '@/lib/logEvent';
 import { upsertSkipHistory } from '@/lib/skipHistory';
+import { removeVenueFromFeedCache } from '@/hooks/useDiscoveryFeed';
 import { toast } from 'sonner';
 
 /**
@@ -193,6 +194,7 @@ export function useDiscoveryInteractions() {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
 
     markVenueExcluded(placeId);
+    removeVenueFromFeedCache(placeId);
     writeInteraction(venue, 'interested');
 
     if (!isAuthenticated) {
@@ -217,6 +219,7 @@ export function useDiscoveryInteractions() {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
 
     markVenueExcluded(placeId);
+    removeVenueFromFeedCache(placeId);
     writeInteraction(venue, 'not_interested');
 
     if (!isAuthenticated) {
@@ -244,6 +247,7 @@ export function useDiscoveryInteractions() {
         sessionStorage.setItem('whatspot_skipped_venues', JSON.stringify([...existing, id]));
       }
     } catch {}
+    removeVenueFromFeedCache(placeId);
 
     writeInteraction(venue, 'skipped');
 
@@ -263,6 +267,7 @@ export function useDiscoveryInteractions() {
     const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
 
     markVenueExcluded(placeId);
+    removeVenueFromFeedCache(placeId);
     writeInteraction(venue, 'rated', rating, notes);
 
     // liked and loved both → Favourites
