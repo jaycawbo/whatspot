@@ -68,6 +68,36 @@ function loadFeedCache() {
   } catch { return null; }
 }
 
+// Called on every terminal swipe so a same-tab reload within the cache TTL
+// doesn't replay a venue the user already classified. Recomputes
+// whatspot_deck_venue_ids in lockstep (DiscoveryDeck resets to card 0 if that
+// ID string doesn't match its own prop), and decrements whatspot_deck_index
+// when the removed venue sat before the deck's current position — removal
+// happens before DiscoveryDeck.advanceCard() bumps that index, so without
+// this every swipe would shift the array under the saved pointer and skip
+// one legitimate unseen venue per swipe on the next reload.
+export function removeVenueFromFeedCache(placeId) {
+  if (!placeId) return;
+  try {
+    const raw = sessionStorage.getItem(FEED_CACHE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.venues)) return;
+    const norm = (v) => (v?.place_id || v?.google_place_id || '').replace(/^places\//, '');
+    const removedIndex = parsed.venues.findIndex(v => norm(v) === placeId);
+    if (removedIndex === -1) return;
+
+    saveFeedCache({ ...parsed, venues: parsed.venues.filter((_, i) => i !== removedIndex) });
+
+    const idxRaw = sessionStorage.getItem('whatspot_deck_index');
+    const deckIndex = idxRaw ? parseInt(idxRaw, 10) : 0;
+    if (removedIndex < deckIndex) {
+      sessionStorage.setItem('whatspot_deck_index', String(deckIndex - 1));
+    }
+    if (_sessionVenues) _sessionVenues = _sessionVenues.filter((_, i) => i !== removedIndex);
+  } catch {}
+}
+
 // Module-level session state — survives component unmount/remount (SPA back-navigation).
 // Using module scope (not sessionStorage) guarantees reliability regardless of storage quota.
 let _sessionAnchor = null;    // anchor point, avoids DB round-trip on back-nav remount
