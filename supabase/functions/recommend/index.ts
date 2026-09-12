@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getSuppressedVenueIds } from '../_shared/skipHistory.ts';
+import { buildUserAffinity, personalizationMultiplier, EMPTY_AFFINITY, type UserAffinity } from '../_shared/buildUserAffinity.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,7 +18,7 @@ async function getSupabaseVenuesForArea(lat: number, lon: number, radiusKm: numb
 
   const { data, error } = await sb
     .from('venues')
-    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address, regular_opening_hours, current_hours_cached_at')
+    .select('google_place_id, name, lat, lng, rating, review_count, price_level, venue_types, neighbourhood, business_status, photo_urls, photos_complete, photos_fetched_count, updated_at, address, regular_opening_hours, current_hours_cached_at')
     .gte('lat', lat - latBuf)
     .lte('lat', lat + latBuf)
     .gte('lng', lon - lngBuf)
@@ -519,6 +520,7 @@ async function getSupabaseVenues(params: {
     place_id: `places/${v.google_place_id}`,
     category: (v.venue_types ?? []).find((t: string) => t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
     cuisine_type: (v.venue_types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+    neighbourhood: v.neighbourhood ?? null,
     isRelaxedAdmission: v.isRelaxedAdmission ?? false,
     unknownPrice: false,
     _rawTypes: v.venue_types ?? [],
@@ -796,6 +798,7 @@ async function handleSearch(params: {
   relaxation_level: number;
   intent:           any;
   authUserId:       string | null;
+  affinity:         UserAffinity;
   GOOGLE_KEY:       string;
   refined_search_term?: string;
 }): Promise<{
@@ -809,7 +812,7 @@ async function handleSearch(params: {
 }> {
   const {
     search_term, exclude_ids, price_levels, cuisine_types,
-    open_now, relaxation_level, intent, authUserId, GOOGLE_KEY,
+    open_now, relaxation_level, intent, authUserId, affinity, GOOGLE_KEY,
     refined_search_term,
   } = params;
 
@@ -992,6 +995,7 @@ async function handleSearch(params: {
               t.includes('restaurant') || t.includes('cafe') || t.includes('bar')) || 'Restaurant',
             cuisine_type: (v.venue_types ?? []).find((t: string) =>
               t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
+            neighbourhood: v.neighbourhood ?? null,
             isRelaxedAdmission,
             unknownPrice: false,
             _rawTypes: v.venue_types ?? [],
@@ -1592,6 +1596,7 @@ async function handleSearch(params: {
   const scoredMapped = streetFilteredVenues
     .map((venue: any) => {
       let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
+      score *= personalizationMultiplier(venue._rawTypes, venue.price_level, venue.neighbourhood, affinity);
       if (venue.unknownPrice) score *= 0.7; // Down-rank venues with unknown price when price filter is active
 
       // Soft intent boost — never hard-filters, only nudges ranking
@@ -1607,6 +1612,10 @@ async function handleSearch(params: {
       const display_weight = isDiscoveryMode ? score + (Math.random() * 0.3) : score;
       return { ...venue, score, display_weight };
     });
+
+  if (Object.keys(affinity.categoryAffinities).length || Object.keys(affinity.priceAffinities).length || Object.keys(affinity.areaAffinity).length || Object.keys(affinity.avoidCategories).length) {
+    console.log(`🎯 Personalization active (search) for user ${authUserId}: signal derived from interaction history, applied across ${scoredMapped.length} venues`);
+  }
 
   const groundingInStep4 = scoredMapped.filter((v: any) => v._fromGrounding);
   const groundingWouldDrop = groundingInStep4.filter((v: any) => v.score <= admission.minScore).length;
@@ -2013,6 +2022,11 @@ Deno.serve(async (req) => {
       // Not authenticated — skip suppression
     }
 
+    // ─── Interaction-history affinity — pure Postgres read, no external API calls ───
+    // Empty maps (no-op multiplier) for guests and cold-start users with too little history.
+    const affinitySb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const affinity: UserAffinity = await safe('buildUserAffinity', () => buildUserAffinity(affinitySb, authUserId), EMPTY_AFFINITY);
+
     const GOOGLE_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY');
 
     const isDiscoveryMode = mode === 'discovery' || (!query && mode !== 'browse_category');
@@ -2070,6 +2084,7 @@ Deno.serve(async (req) => {
         relaxation_level,
         intent: intent || null,
         authUserId,
+        affinity,
         GOOGLE_KEY: GOOGLE_KEY || '',
         refined_search_term: refined_search_term || undefined,
       });
@@ -2217,7 +2232,8 @@ Deno.serve(async (req) => {
     // ─── STEP 4: Score + sort (discovery) ───
     const scoredVenues = filteredVenues
       .map((venue: any) => {
-        const score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
+        let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
+        score *= personalizationMultiplier(venue._rawTypes, venue.price_level, venue.neighbourhood, affinity);
         const display_weight = score + (Math.random() * 0.3);
         return { ...venue, score, display_weight };
       })
@@ -2225,6 +2241,9 @@ Deno.serve(async (req) => {
       .sort((a: any, b: any) => b.display_weight - a.display_weight);
 
     console.log(`📊 STEP 4: ${scoredVenues.length} scored above ${admission.minScore}`);
+    if (Object.keys(affinity.categoryAffinities).length || Object.keys(affinity.priceAffinities).length || Object.keys(affinity.areaAffinity).length || Object.keys(affinity.avoidCategories).length) {
+      console.log(`🎯 Personalization active (discovery) for user ${authUserId}: signal derived from interaction history, applied across ${scoredVenues.length} venues`);
+    }
 
     const candidates = dedup(scoredVenues).slice(0, 30);
 
@@ -2361,7 +2380,8 @@ Deno.serve(async (req) => {
     const stagedVenues = dedup(filteredVenues)
       .filter((v: any) => !allSelectedIds.has(v.place_id))
       .map((v: any) => {
-        const score = calculateVenueScore(v.rating, v.review_count, v.isRelaxedAdmission);
+        let score = calculateVenueScore(v.rating, v.review_count, v.isRelaxedAdmission);
+        score *= personalizationMultiplier(v._rawTypes, v.price_level, v.neighbourhood, affinity);
         return { ...v, score, staged_for_relaxation: true };
       })
       .filter((v: any) => v.score > 0)
