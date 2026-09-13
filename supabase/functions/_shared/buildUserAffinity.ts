@@ -15,6 +15,11 @@ const MIN_INTERACTIONS_FOR_PERSONALIZATION = 5;
 // Bounded nudge — quality (rating/reviews) always remains the dominant signal in calculateVenueScore.
 const PERSONALIZATION_WEIGHT = 0.18;
 
+// For You tab gets a stronger personalization pull than the other discovery tabs — see #309.
+// Cold-start users still fall back to PERSONALIZATION_WEIGHT's no-op behavior (weight only
+// matters when hasAnySignal is true), so this never changes the cold-start experience.
+export const FOR_YOU_PERSONALIZATION_WEIGHT = 0.35;
+
 // Same $ / $$ / $$$ / $$$$ buckets calculateVenueScore's callers already use, so affinity keys
 // match venue.price_level as already threaded through the response shape (no raw-int plumbing needed).
 const PRICE_BUCKETS: Record<number, string> = { 0: '$', 1: '$', 2: '$$', 3: '$$$', 4: '$$$$' };

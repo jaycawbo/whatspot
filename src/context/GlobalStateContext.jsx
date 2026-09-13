@@ -50,7 +50,7 @@ function getInitialState() {
     userLocation: location,
     locationName,
     filters,
-    feedTab: 'walkin',
+    feedTab: 'for_you',
     anonymousId,
     searchHistory: history,
     results: [],

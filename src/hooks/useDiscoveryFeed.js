@@ -391,7 +391,7 @@ export function useDiscoveryFeed() {
     initAnchorPoint()
       .catch(err => console.error('[Discovery] initAnchorPoint (location change) failed:', err))
       .then(() => {
-        fetchFeed().then((result) => {
+        fetchFeed({ forYou: state.feedTab === 'for_you' }).then((result) => {
           const delay = result?.wasGoogleFallback ? 3000 : 0;
           setTimeout(() => prefetchNextBatch(), delay);
         });
@@ -466,7 +466,7 @@ export function useDiscoveryFeed() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.feedTab, state.filters]);
 
-  const fetchFeed = useCallback(async ({ query = '', radius, mode } = {}) => {
+  const fetchFeed = useCallback(async ({ query = '', radius, mode, forYou = false } = {}) => {
     if (import.meta.env.VITE_TESTING_MODE === 'true') {
       console.log('[TestMode] fetchFeed blocked — set VITE_TESTING_MODE=false to enable');
       return;
@@ -498,6 +498,10 @@ export function useDiscoveryFeed() {
         price_levels: state.filters?.priceLevels?.length ? state.filters.priceLevels : undefined,
         cuisine_types: state.filters?.cuisines?.length ? state.filters.cuisines : undefined,
         exclude_ids: excludeIds.length ? excludeIds : undefined,
+        // Stronger PERSONALIZATION_WEIGHT server-side for the For You tab — cold-start users
+        // with too little history fall back to the same ambient ranking automatically (no
+        // signal means personalizationMultiplier is a no-op regardless of this flag).
+        for_you: forYou || undefined,
       };
       let res;
       try {
@@ -635,7 +639,9 @@ export function useDiscoveryFeed() {
     initAnchorPoint()
       .catch(err => console.error('[Discovery] initAnchorPoint failed:', err))
       .then(() => {
-        fetchFeed().then((result) => {
+        // For You is the default landing tab, so this first fetch is the For You feed
+        // unless something already changed state.feedTab before the anchor resolved.
+        fetchFeed({ forYou: state.feedTab === 'for_you' }).then((result) => {
           // Delay prefetch when Google fallback fired — gives the fire-and-forget
           // DB upsert time to complete so the prefetch hits Supabase, not Google.
           const delay = result?.wasGoogleFallback ? 3000 : 0;
@@ -838,7 +844,7 @@ export function useDiscoveryFeed() {
       return;
     }
 
-    const result = await fetchFeed();
+    const result = await fetchFeed({ forYou: true });
     forYouKeyRef.current = key;
     forYouVenuesRef.current = {
       venues: result?.venues || [],
