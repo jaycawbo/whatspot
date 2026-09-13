@@ -4,8 +4,9 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogPortal, DialogOverlay, DialogTitle } from '@/components/ui/dialog';
+import FlagVenueMenu from '@/components/venue/FlagVenueMenu';
 
-export default function VenueImageCarousel({ images = [], forceLoading = false }) {
+export default function VenueImageCarousel({ images = [], forceLoading = false, venueId = null }) {
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true });
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const [isExpanded, setIsExpanded] = React.useState(false);
@@ -78,6 +79,12 @@ export default function VenueImageCarousel({ images = [], forceLoading = false }
               aria-label={`Go to image ${i + 1}`}
             />
           ))}
+        </div>
+      )}
+
+      {venueId && (
+        <div className="absolute top-3 left-3 z-20">
+          <FlagVenueMenu venueId={venueId} />
         </div>
       )}
 
