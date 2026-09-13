@@ -56,7 +56,7 @@ export default function Home() {
     prefetchNextBatch,
   } = useDiscoveryFeed();
 
-  const { showGate, closeGate, incrementSearch } = useGuestLimits();
+  const { showGate, closeGate } = useGuestLimits();
   const listMembershipMap = useVenueListMembership();
   const conversation = useSearchConversation();
 
@@ -166,8 +166,7 @@ export default function Home() {
     async (queryText) => {
       const nextQuery = queryText.trim();
       if (!nextQuery) return;
-      if (conversation.isLimitReached) return;
-      if (incrementSearch()) return;
+      if (conversation.dailyLimitReached) return;
       dispatch({ type: 'SET_QUERY', payload: nextQuery });
       dispatch({ type: 'SET_CATEGORY', payload: null });
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: null });
@@ -185,13 +184,12 @@ export default function Home() {
         setConvQuery(nextQuery);
       }
     },
-    [conversation, dispatch, addSearchHistory, incrementSearch, state.locationName, state.userLocation, state.filters]
+    [conversation, dispatch, addSearchHistory, state.locationName, state.userLocation, state.filters]
   );
 
   const handleSelectCategory = useCallback(
     async (category) => {
-      if (conversation.isLimitReached) return;
-      if (incrementSearch()) return;
+      if (conversation.dailyLimitReached) return;
       dispatch({ type: 'SET_QUERY', payload: category.prompt });
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: category.prompt });
       dispatch({ type: 'SET_CATEGORY', payload: category.label });
@@ -209,7 +207,7 @@ export default function Home() {
         setConvQuery(category.prompt);
       }
     },
-    [conversation, dispatch, addSearchHistory, incrementSearch, state.locationName, state.userLocation, state.filters]
+    [conversation, dispatch, addSearchHistory, state.locationName, state.userLocation, state.filters]
   );
 
   const handleAppendChip = useCallback(
@@ -222,7 +220,7 @@ export default function Home() {
 
   const handleChipTap = useCallback(
     async (chipText) => {
-      if (conversation.isLimitReached) return;
+      if (conversation.dailyLimitReached) return;
       dispatch({ type: 'SET_QUERY', payload: chipText });
       const coords = state.userLocation?.lat
         ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
@@ -240,8 +238,7 @@ export default function Home() {
 
   const handleSearchFromHere = useCallback(
     async (lat, lon) => {
-      if (!state.query || conversation.isSearching || conversation.isLimitReached) return;
-      if (incrementSearch()) return;
+      if (!state.query || conversation.isSearching || conversation.dailyLimitReached) return;
       const newCoords = { lat, lon };
       dispatch({
         type: 'SET_LOCATION',
@@ -263,7 +260,7 @@ export default function Home() {
         setConvChips(result.refinement_suggestions || []);
       }
     },
-    [conversation, dispatch, incrementSearch, state.query, state.locationName, state.filters]
+    [conversation, dispatch, state.query, state.locationName, state.filters]
   );
 
   const handleTabChange = useCallback(
@@ -362,7 +359,12 @@ export default function Home() {
       <AuthModal
         open={showGate}
         onOpenChange={(open) => { if (!open) closeGate(); }}
-        description="Sign in for unlimited swipes and searches."
+        description="Sign in for unlimited swipes."
+      />
+      <AuthModal
+        open={conversation.authGateOpen}
+        onOpenChange={(open) => { if (!open) conversation.closeAuthGate(); }}
+        description="Sign in to search WhatSpot — search is available to signed-in users."
       />
       <FilterDialog
         filters={state.filters}

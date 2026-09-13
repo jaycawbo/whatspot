@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { parseSearchIntent } from '@/lib/parseSearchIntent';
+import { parseSearchIntent, SearchGateError } from '@/lib/parseSearchIntent';
 import { queryVenuesFromDb } from '@/services/venueDataRouter';
 import { scoreVenue } from '@/lib/scoreVenue';
 import { buildResponsePrompt } from '@/lib/buildResponsePrompt';
@@ -38,7 +38,8 @@ export async function runConversationalSearch({
   let intent;
   try {
     intent = await parseSearchIntent({ rawQuery, userCoordinates, userId });
-  } catch {
+  } catch (err) {
+    if (err instanceof SearchGateError) throw err;
     intent = {
       keywords: [rawQuery],
       venueTypes: [],
@@ -127,8 +128,10 @@ export async function runConversationalSearch({
           exclude_ids: venues.map(v => v.place_id),
           cuisine_types: intent.cuisineTypes?.length > 0 ? intent.cuisineTypes : undefined,
           intent: { vibe: intent.vibeKeywords },
+          billable_search: true,
         },
       });
+      if (data?.blocked) throw new SearchGateError(data.reason);
       const fallbackVenues = (data?.results ?? []).filter(v => (v.rating ?? 0) >= 3.8);
       // Cuisine is already embedded in the placesQuery sent to recommend, so we don't
       // re-filter by type here — the edge function's venue types don't reliably include
@@ -140,7 +143,10 @@ export async function runConversationalSearch({
         : fallbackVenues;
       const seen = new Set(venues.map(v => v.place_id));
       venues = [...venues, ...filteredFallback.filter(v => !seen.has(v.place_id))];
-    } catch { /* leave venues from DB only */ }
+    } catch (err) {
+      if (err instanceof SearchGateError) throw err;
+      /* leave venues from DB only */
+    }
   }
 
   // Step 3: Score and sort
