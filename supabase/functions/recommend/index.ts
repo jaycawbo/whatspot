@@ -255,9 +255,15 @@ function isOpenNow(regularOpeningHours: any): boolean {
 
 function calculateVenueScore(rating: number, reviewCount: number, isRelaxedAdmission = false): number {
   if (!rating || !reviewCount) return 0;
+  // Bayesian shrinkage: blend the raw rating toward RATING_FLOOR, weighted by review
+  // count against REVIEW_FLOOR as the shrinkage constant. Without this, a near-perfect
+  // rating from a handful of reviews swings the full normalized range just like a
+  // real, well-reviewed venue. Kept identical to src/lib/scoreVenue.js so client-side
+  // and server-side ranking stay consistent.
+  const shrunkRating = (rating * reviewCount + SCORING.RATING_FLOOR * SCORING.REVIEW_FLOOR) / (reviewCount + SCORING.REVIEW_FLOOR);
   const normalizedRating = Math.max(
     0,
-    ((rating - SCORING.RATING_FLOOR) / (SCORING.RATING_CEILING - SCORING.RATING_FLOOR)) * 10,
+    ((shrunkRating - SCORING.RATING_FLOOR) / (SCORING.RATING_CEILING - SCORING.RATING_FLOOR)) * 10,
   );
   const normalizedReviews = Math.max(
     0,

@@ -30,6 +30,7 @@ export async function runConversationalSearch({
   conversationHistory = [],
   userId = null,
   userFilters = {},
+  locationName = '',
 }) {
   const lat = userCoordinates?.lat ?? null;
   const lon = userCoordinates?.lon ?? userCoordinates?.lng ?? null;
@@ -37,7 +38,7 @@ export async function runConversationalSearch({
   // Step 1: Parse intent — fall back to raw keyword split on failure
   let intent;
   try {
-    intent = await parseSearchIntent({ rawQuery, userCoordinates, userId });
+    intent = await parseSearchIntent({ rawQuery, userCoordinates, userId, locationName });
   } catch {
     intent = {
       keywords: [rawQuery],
@@ -126,6 +127,7 @@ export async function runConversationalSearch({
           price_levels: placesPrice,
           exclude_ids: venues.map(v => v.place_id),
           cuisine_types: intent.cuisineTypes?.length > 0 ? intent.cuisineTypes : undefined,
+          location_name: locationName || undefined,
           intent: { vibe: intent.vibeKeywords },
         },
       });
