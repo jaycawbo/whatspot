@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getSuppressedVenueIds } from '../_shared/skipHistory.ts';
-import { buildUserAffinity, personalizationMultiplier, EMPTY_AFFINITY, type UserAffinity } from '../_shared/buildUserAffinity.ts';
+import { buildUserAffinity, personalizationMultiplier, EMPTY_AFFINITY, FOR_YOU_PERSONALIZATION_WEIGHT, type UserAffinity } from '../_shared/buildUserAffinity.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -2003,6 +2003,7 @@ Deno.serve(async (req) => {
       criteria_pass,
       intent,
       refined_search_term,
+      for_you = false,
     } = await req.json();
 
     let lat = originalLat;
@@ -2233,10 +2234,13 @@ Deno.serve(async (req) => {
     }
 
     // ─── STEP 4: Score + sort (discovery) ───
+    // For You gets a stronger PERSONALIZATION_WEIGHT than the other discovery tabs (#309) —
+    // cold-start users are unaffected since personalizationMultiplier is a no-op without signal.
+    const discoveryPersonalizationWeight = for_you ? FOR_YOU_PERSONALIZATION_WEIGHT : undefined;
     const scoredVenues = filteredVenues
       .map((venue: any) => {
         let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
-        score *= personalizationMultiplier(venue._rawTypes, venue.price_level, venue.neighbourhood, affinity);
+        score *= personalizationMultiplier(venue._rawTypes, venue.price_level, venue.neighbourhood, affinity, discoveryPersonalizationWeight);
         const display_weight = score + (Math.random() * 0.3);
         return { ...venue, score, display_weight };
       })
@@ -2245,7 +2249,7 @@ Deno.serve(async (req) => {
 
     console.log(`📊 STEP 4: ${scoredVenues.length} scored above ${admission.minScore}`);
     if (Object.keys(affinity.categoryAffinities).length || Object.keys(affinity.priceAffinities).length || Object.keys(affinity.areaAffinity).length || Object.keys(affinity.avoidCategories).length) {
-      console.log(`🎯 Personalization active (discovery) for user ${authUserId}: signal derived from interaction history, applied across ${scoredVenues.length} venues`);
+      console.log(`🎯 Personalization active (discovery${for_you ? ', For You' : ''}) for user ${authUserId}: weight=${discoveryPersonalizationWeight ?? 0.18}, applied across ${scoredVenues.length} venues`);
     }
 
     const candidates = dedup(scoredVenues).slice(0, 30);
@@ -2384,7 +2388,7 @@ Deno.serve(async (req) => {
       .filter((v: any) => !allSelectedIds.has(v.place_id))
       .map((v: any) => {
         let score = calculateVenueScore(v.rating, v.review_count, v.isRelaxedAdmission);
-        score *= personalizationMultiplier(v._rawTypes, v.price_level, v.neighbourhood, affinity);
+        score *= personalizationMultiplier(v._rawTypes, v.price_level, v.neighbourhood, affinity, discoveryPersonalizationWeight);
         return { ...v, score, staged_for_relaxation: true };
       })
       .filter((v: any) => v.score > 0)
