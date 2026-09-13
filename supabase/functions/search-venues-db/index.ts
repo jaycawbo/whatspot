@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    let qb = supabase.from('venues').select('*');
+    let qb = supabase.from('venues').select('*').eq('is_removed', false);
 
     if (keywords?.length > 0) {
       // Name-only: address matching causes false positives when cuisine keywords

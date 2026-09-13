@@ -1,10 +1,10 @@
-WhatSpot — Shared Project Knowledge | Last updated: April 5, 2026
+WhatSpot — Shared Project Knowledge | Last updated: September 12, 2026
 Intended to be durable. Update only when foundational decisions change.
 
 Who We Are
 Jake and Jamie — brothers, non-coders, building WhatSpot together
-Jake: primary project owner, GitHub repo owner
-Jamie: primary Supabase access; learning to code as we build
+Jake: primary project owner, GitHub repo owner, primary Supabase access — manages the project independently
+Jamie: learning to code as we build
 Both have Claude Pro access — token efficiency matters
 Never mix up Jamie and Jake
 

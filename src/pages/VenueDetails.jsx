@@ -240,7 +240,7 @@ export default function VenueDetails() {
       </div>
 
       {/* Image carousel */}
-      <VenueImageCarousel images={photoUrls} forceLoading={photosLoading} />
+      <VenueImageCarousel images={photoUrls} forceLoading={photosLoading} venueId={placeId} />
 
       {/* Core info */}
       <div className="px-4 pt-4 space-y-3">
