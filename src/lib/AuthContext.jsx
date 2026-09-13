@@ -53,6 +53,7 @@ export const AuthProvider = ({ children }) => {
       user,
       session,
       isAuthenticated: !!user,
+      isAdmin: user?.app_metadata?.is_admin === true,
       isLoadingAuth,
       isLoadingPublicSettings,
       authError,

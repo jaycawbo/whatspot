@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Star, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import BeenHereButton from '@/components/ui/BeenHereButton';
+import FlagVenueMenu from '@/components/venue/FlagVenueMenu';
 
 function formatPrice(level) {
   if (!level) return null;
@@ -290,9 +291,19 @@ export default function DiscoveryCard({
             </>
           )}
 
-          {/* Spots list membership badge */}
-          {listLabel && (
-            <div className={cn('absolute top-3 z-10 pointer-events-none', onBeenHereClick ? 'left-3' : 'right-3')}>
+          {/* Top-left overlay: list badge (when Been Here owns top-right) + report/flag gear */}
+          <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
+            {listLabel && onBeenHereClick && (
+              <span className="rounded-full px-2.5 py-1 text-xs font-semibold bg-black/55 text-white backdrop-blur-sm pointer-events-none">
+                {listLabel}
+              </span>
+            )}
+            {!isGhost && placeId && <FlagVenueMenu venueId={placeId} />}
+          </div>
+
+          {/* Spots list membership badge (top-right, when Been Here button isn't shown here) */}
+          {listLabel && !onBeenHereClick && (
+            <div className="absolute top-3 right-3 z-10 pointer-events-none">
               <span className="rounded-full px-2.5 py-1 text-xs font-semibold bg-black/55 text-white backdrop-blur-sm">
                 {listLabel}
               </span>
