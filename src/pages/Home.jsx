@@ -365,8 +365,8 @@ export default function Home() {
       <AuthModal
         open={conversation.authGateOpen}
         onOpenChange={(open) => { if (!open) conversation.closeAuthGate(); }}
-        title="Sign in to search"
-        description="Searching is costly and reserved for logged in users."
+        title="Oops...You Must Sign In First"
+        description="Sign in to begin searching for spots."
       />
       <SearchCooldownDialog
         open={conversation.cooldownOpen}
