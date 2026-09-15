@@ -124,6 +124,22 @@ All colors MUST be HSL.
   animation: shimmer-glow 2.2s ease-in-out infinite;
 }
 
+/* Idle nudge on the active DiscoveryCard — a brief rock left/right that hints "swipe me"
+   without an explicit tutorial. Triggered by DiscoveryDeck's idle timer, not looped here. */
+@keyframes card-wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-3deg); }
+  40% { transform: rotate(2.5deg); }
+  60% { transform: rotate(-1.5deg); }
+  80% { transform: rotate(1deg); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .discovery-card-wiggle {
+    animation: card-wiggle 500ms ease-in-out;
+  }
+}
+
 /* "AI-powered" search bar ring. .ai-search-ring always shows a permanent thin solid
    border (box-shadow, foreground-coloured) as the base layer. Its ::before overlay
    carries a conic-gradient that's half transparent / half a rainbow band, so rotating
