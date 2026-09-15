@@ -131,7 +131,7 @@ export async function runConversationalSearch({
           billable_search: true,
         },
       });
-      if (data?.blocked) throw new SearchGateError(data.reason);
+      if (data?.blocked) throw new SearchGateError(data.reason, data.nextAllowedAt);
       const fallbackVenues = (data?.results ?? []).filter(v => (v.rating ?? 0) >= 3.8);
       // Cuisine is already embedded in the placesQuery sent to recommend, so we don't
       // re-filter by type here — the edge function's venue types don't reliably include

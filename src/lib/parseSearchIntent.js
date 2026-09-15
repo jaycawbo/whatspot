@@ -82,12 +82,14 @@ function rawKeywordFallback(rawQuery) {
 }
 
 // Thrown when refine-query reports the search itself is blocked (not signed in,
-// or daily quota used up) — callers must stop the search, not silently fall back
-// to local keyword parsing and keep going (issue #319).
+// or the per-user search cooldown hasn't elapsed) — callers must stop the
+// search, not silently fall back to local keyword parsing and keep going
+// (issue #319).
 export class SearchGateError extends Error {
-  constructor(reason) {
+  constructor(reason, nextAllowedAt) {
     super(`search blocked: ${reason}`);
-    this.reason = reason; // 'auth_required' | 'daily_limit_reached'
+    this.reason = reason; // 'auth_required' | 'rate_limited'
+    this.nextAllowedAt = nextAllowedAt ?? null; // ISO timestamp, set only for 'rate_limited'
   }
 }
 
@@ -114,7 +116,7 @@ export async function parseSearchIntent({ rawQuery, userCoordinates, userId = nu
       body: { query: rawQuery, locationName: '', userContext, billable_search: true },
     });
 
-    if (data?.blocked) throw new SearchGateError(data.reason);
+    if (data?.blocked) throw new SearchGateError(data.reason, data.nextAllowedAt);
 
     if (error || !data) return fallback;
 

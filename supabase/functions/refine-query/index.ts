@@ -7,7 +7,7 @@
  *
  * Request:  { query: string, locationName: string, bypassCorrection?: boolean, userContext?: object, billable_search?: boolean }
  * Response: { keywords: string[], corrected_query: string, correction_applied: boolean, intent: IntentObject }
- *           | { blocked: true, reason: 'auth_required' | 'daily_limit_reached', ... }
+ *           | { blocked: true, reason: 'auth_required' | 'rate_limited', nextAllowedAt?: string, ... }
  *
  * billable_search: true marks this as a live user-initiated search (set by
  * parseSearchIntent.js only), which requires sign-in and counts against the
@@ -179,7 +179,7 @@ Deno.serve(async (req) => {
       const gate = await gateBillableSearch(req);
       if (gate.blocked) {
         return new Response(
-          JSON.stringify({ blocked: true, reason: gate.reason, keywords: [], corrected_query: '', correction_applied: false, intent: EMPTY_INTENT }),
+          JSON.stringify({ blocked: true, reason: gate.reason, nextAllowedAt: gate.nextAllowedAt, keywords: [], corrected_query: '', correction_applied: false, intent: EMPTY_INTENT }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
       }

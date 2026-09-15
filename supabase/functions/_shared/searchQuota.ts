@@ -1,18 +1,19 @@
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// Search now requires sign-in and is capped at 5/day/user (issue #319 — cost
-// safeguard so an unbounded number of Gemini + Places calls can't fire per
-// day). Admins (app_metadata.is_admin — see 20260912000000_add_admin_flag.sql)
-// bypass the daily cap entirely.
-const DAILY_SEARCH_LIMIT = 5;
+// Search now requires sign-in and is rate-limited to one search per 4.8 hours
+// per user (24h / 5 == the "5/day" cap, reframed as a rolling cooldown so the
+// client can show a live countdown to the next allowed search instead of a
+// flat "come back tomorrow" — issue #319). Admins (app_metadata.is_admin —
+// see 20260912000000_add_admin_flag.sql) bypass the cooldown entirely.
+const SEARCH_INTERVAL_SECONDS = 17280; // 4h48m = 24h / 5
 
-export type SearchGateReason = 'auth_required' | 'daily_limit_reached';
+export type SearchGateReason = 'auth_required' | 'rate_limited';
 
 export interface SearchGateResult {
   blocked: boolean;
   reason?: SearchGateReason;
   userId?: string;
-  remaining?: number;
+  nextAllowedAt?: string; // ISO timestamp — only set when reason is 'rate_limited'
 }
 
 function serviceClient(): SupabaseClient {
@@ -23,13 +24,13 @@ function serviceClient(): SupabaseClient {
 
 /**
  * Server-side gate for a billable, user-initiated search call. Rejects
- * anonymous callers outright, then enforces the per-user daily quota via
- * increment_search_quota() (atomic, race-safe). Call this once per logical
- * search action — it increments on every call, so call it exactly once per
- * request that should count against the daily cap.
+ * anonymous callers outright, then enforces the rolling per-user cooldown via
+ * try_consume_search_slot() (atomic, race-safe). Call this once per logical
+ * search action — it consumes a slot on every call that reaches it.
  *
- * Fails closed: if quota tracking itself errors, the call is blocked rather
- * than allowed through for free (unlike apiCallLog's old fail-open behavior).
+ * Fails closed: if the cooldown check itself errors, the call is blocked
+ * rather than allowed through for free (unlike apiCallLog's old fail-open
+ * behavior).
  */
 export async function gateBillableSearch(req: Request): Promise<SearchGateResult> {
   const authHeader = req.headers.get('authorization');
@@ -43,15 +44,18 @@ export async function gateBillableSearch(req: Request): Promise<SearchGateResult
   const isAdmin = user.app_metadata?.is_admin === true;
   if (isAdmin) return { blocked: false, userId: user.id };
 
-  const { data: count, error: rpcError } = await sb.rpc('increment_search_quota', { p_user_id: user.id });
+  const { data, error: rpcError } = await sb
+    .rpc('try_consume_search_slot', { p_user_id: user.id, p_interval_seconds: SEARCH_INTERVAL_SECONDS })
+    .single<{ allowed: boolean; next_allowed_at: string }>();
+
   if (rpcError) {
-    console.error('[searchQuota] increment_search_quota failed — failing closed:', rpcError.message);
-    return { blocked: true, reason: 'daily_limit_reached', userId: user.id };
+    console.error('[searchQuota] try_consume_search_slot failed — failing closed:', rpcError.message);
+    return { blocked: true, reason: 'rate_limited', userId: user.id };
   }
 
-  if ((count ?? 0) > DAILY_SEARCH_LIMIT) {
-    return { blocked: true, reason: 'daily_limit_reached', userId: user.id, remaining: 0 };
+  if (!data?.allowed) {
+    return { blocked: true, reason: 'rate_limited', userId: user.id, nextAllowedAt: data?.next_allowed_at };
   }
 
-  return { blocked: false, userId: user.id, remaining: DAILY_SEARCH_LIMIT - (count ?? 0) };
+  return { blocked: false, userId: user.id };
 }

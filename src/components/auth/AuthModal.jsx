@@ -11,7 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/AuthContext';
 import { Heart } from 'lucide-react';
 
-export default function AuthModal({ open, onOpenChange, description }) {
+export default function AuthModal({ open, onOpenChange, title, description }) {
   const { isAuthenticated } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -51,7 +51,7 @@ export default function AuthModal({ open, onOpenChange, description }) {
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
             <Heart className="h-7 w-7 text-primary" />
           </div>
-          <DialogTitle className="text-xl">Sign in to Whatspot</DialogTitle>
+          <DialogTitle className="text-xl">{title || 'Sign in to Whatspot'}</DialogTitle>
           <DialogDescription>
             {description || 'Save your favorite spots and access them anytime, anywhere.'}
           </DialogDescription>

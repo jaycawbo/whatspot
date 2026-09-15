@@ -2020,7 +2020,7 @@ Deno.serve(async (req) => {
       const gate = await gateBillableSearch(req);
       if (gate.blocked) {
         return new Response(
-          JSON.stringify({ blocked: true, reason: gate.reason, results: [] }),
+          JSON.stringify({ blocked: true, reason: gate.reason, nextAllowedAt: gate.nextAllowedAt, results: [] }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
       }

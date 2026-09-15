@@ -1,28 +1,55 @@
-import { useState } from 'react'
-import { toast } from 'sonner'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../lib/AuthContext'
 import { runConversationalSearch } from '../services/searchOrchestrator'
 import { SearchGateError } from '../lib/parseSearchIntent'
 
 // --- Hook ---
-// Search requires sign-in and is capped server-side at 5/day/user (admins
-// bypass) — see supabase/functions/_shared/searchQuota.ts (issue #319). This
-// hook only reacts to what the server decides; it holds no client-side quota
-// of its own, since that was trivially bypassable (cleared localStorage/private
-// window) and didn't actually stop anonymous search spend.
+// Search requires sign-in and is capped server-side at one search per 4.8h/user
+// (admins bypass) — see supabase/functions/_shared/searchQuota.ts (issue #319).
+// This hook only reacts to what the server decides; it holds no client-side
+// quota of its own, since that was trivially bypassable (cleared localStorage/
+// private window) and didn't actually stop anonymous search spend.
 
 export function useSearchConversation() {
   const { isAuthenticated, user } = useAuth()
 
   const [isSearching, setIsSearching] = useState(false)
   const [authGateOpen, setAuthGateOpen] = useState(false)
-  const [dailyLimitReached, setDailyLimitReached] = useState(false)
+  const [rateLimited, setRateLimited] = useState(false)
+  const [nextAllowedAt, setNextAllowedAt] = useState(null)
+  const [cooldownOpen, setCooldownOpen] = useState(false)
 
-  // Derived — blocks the search UI outright for guests or once today's quota is used
-  const isLimitReached = !isAuthenticated || dailyLimitReached
+  const clearTimerRef = useRef(null)
+
+  // Auto-clear the block the instant the cooldown actually expires, so the
+  // user doesn't need to reload to search again.
+  useEffect(() => {
+    if (clearTimerRef.current) clearTimeout(clearTimerRef.current)
+    if (!nextAllowedAt) return
+
+    const msRemaining = new Date(nextAllowedAt).getTime() - Date.now()
+    if (msRemaining <= 0) {
+      setRateLimited(false)
+      setNextAllowedAt(null)
+      return
+    }
+    clearTimerRef.current = setTimeout(() => {
+      setRateLimited(false)
+      setNextAllowedAt(null)
+    }, msRemaining)
+
+    return () => clearTimeout(clearTimerRef.current)
+  }, [nextAllowedAt])
+
+  // Derived — blocks the search UI outright for guests or during the cooldown
+  const isLimitReached = !isAuthenticated || rateLimited
 
   function closeAuthGate() {
     setAuthGateOpen(false)
+  }
+
+  function closeCooldown() {
+    setCooldownOpen(false)
   }
 
   async function runGatedSearch(rawQuery, userCoordinates, userFilters) {
@@ -32,7 +59,10 @@ export function useSearchConversation() {
       setAuthGateOpen(true)
       return null
     }
-    if (dailyLimitReached) return null
+    if (rateLimited) {
+      setCooldownOpen(true)
+      return null
+    }
 
     setIsSearching(true)
     try {
@@ -47,9 +77,10 @@ export function useSearchConversation() {
       if (err instanceof SearchGateError) {
         if (err.reason === 'auth_required') {
           setAuthGateOpen(true)
-        } else if (err.reason === 'daily_limit_reached') {
-          setDailyLimitReached(true)
-          toast("You've used all 5 searches for today — more tomorrow.")
+        } else if (err.reason === 'rate_limited') {
+          setRateLimited(true)
+          setNextAllowedAt(err.nextAllowedAt)
+          setCooldownOpen(true)
         }
         return null
       }
@@ -70,7 +101,7 @@ export function useSearchConversation() {
   }
 
   function resetSession() {
-    // daily quota is server-side and day-scoped — nothing to reset client-side
+    // the cooldown is server-side and per-user — nothing to reset client-side
   }
 
   return {
@@ -78,7 +109,10 @@ export function useSearchConversation() {
     isSearching,
     authGateOpen,
     closeAuthGate,
-    dailyLimitReached,
+    rateLimited,
+    nextAllowedAt,
+    cooldownOpen,
+    closeCooldown,
     search,
     searchWithFilters,
     resetSession,

@@ -10,6 +10,7 @@ import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
 import ResultsList from '@/components/home/ResultsList';
 import MapView from '@/components/home/MapView';
 import AuthModal from '@/components/auth/AuthModal';
+import SearchCooldownDialog from '@/components/search/SearchCooldownDialog';
 import PostSaveLabelSheet from '@/components/spots/PostSaveLabelSheet';
 import FeedModeTabs from '@/components/home/FeedModeTabs';
 import FilterDialog from '@/components/home/FilterDialog';
@@ -166,7 +167,7 @@ export default function Home() {
     async (queryText) => {
       const nextQuery = queryText.trim();
       if (!nextQuery) return;
-      if (conversation.dailyLimitReached) return;
+      if (conversation.rateLimited) return;
       dispatch({ type: 'SET_QUERY', payload: nextQuery });
       dispatch({ type: 'SET_CATEGORY', payload: null });
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: null });
@@ -189,7 +190,7 @@ export default function Home() {
 
   const handleSelectCategory = useCallback(
     async (category) => {
-      if (conversation.dailyLimitReached) return;
+      if (conversation.rateLimited) return;
       dispatch({ type: 'SET_QUERY', payload: category.prompt });
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: category.prompt });
       dispatch({ type: 'SET_CATEGORY', payload: category.label });
@@ -220,7 +221,7 @@ export default function Home() {
 
   const handleChipTap = useCallback(
     async (chipText) => {
-      if (conversation.dailyLimitReached) return;
+      if (conversation.rateLimited) return;
       dispatch({ type: 'SET_QUERY', payload: chipText });
       const coords = state.userLocation?.lat
         ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
@@ -238,7 +239,7 @@ export default function Home() {
 
   const handleSearchFromHere = useCallback(
     async (lat, lon) => {
-      if (!state.query || conversation.isSearching || conversation.dailyLimitReached) return;
+      if (!state.query || conversation.isSearching || conversation.rateLimited) return;
       const newCoords = { lat, lon };
       dispatch({
         type: 'SET_LOCATION',
@@ -364,7 +365,13 @@ export default function Home() {
       <AuthModal
         open={conversation.authGateOpen}
         onOpenChange={(open) => { if (!open) conversation.closeAuthGate(); }}
-        description="Sign in to search WhatSpot — search is available to signed-in users."
+        title="Sign in to search"
+        description="Searching is costly and reserved for logged in users."
+      />
+      <SearchCooldownDialog
+        open={conversation.cooldownOpen}
+        onOpenChange={(open) => { if (!open) conversation.closeCooldown(); }}
+        nextAllowedAt={conversation.nextAllowedAt}
       />
       <FilterDialog
         filters={state.filters}
