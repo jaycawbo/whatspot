@@ -17,9 +17,10 @@ function formatCountdown(msRemaining) {
   return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-// Shown once a signed-in user hits the search cooldown (one search per 4.8h —
-// see _shared/searchQuota.ts, issue #319). Ticks down live to nextAllowedAt
-// rather than showing a flat "come back tomorrow" message.
+// Shown once a signed-in user has spent all 5 searches in their bucket (each
+// slot refills independently 4.8h after it was used — see _shared/searchQuota.ts,
+// issue #319). Ticks down live to nextAllowedAt rather than showing a flat
+// "come back tomorrow" message.
 export default function SearchCooldownDialog({ open, onOpenChange, nextAllowedAt }) {
   const [remainingMs, setRemainingMs] = useState(0);
 
@@ -41,9 +42,9 @@ export default function SearchCooldownDialog({ open, onOpenChange, nextAllowedAt
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
             <Clock className="h-7 w-7 text-primary" />
           </div>
-          <DialogTitle className="text-xl">Next search unlocks soon</DialogTitle>
+          <DialogTitle className="text-xl">You're out of searches for now</DialogTitle>
           <DialogDescription>
-            Search is limited to one query every 4.8 hours per account.
+            Accounts get 5 searches, each refilling on its own 4.8 hours after it was used.
           </DialogDescription>
         </DialogHeader>
 
