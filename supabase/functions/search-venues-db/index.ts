@@ -10,6 +10,12 @@ const WEEKLY_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 // claim retries within the hour rather than waiting out the full 7-day window.
 const REFRESH_CLAIM_MS = 60 * 60 * 1000; // 1 hour
 
+// See the OR-match keyword filter below — these match almost every row on their own.
+const GENERIC_KEYWORDS = new Set([
+  'restaurant', 'restaurants', 'bar', 'bars', 'spot', 'spots',
+  'place', 'places', 'cafe', 'food', 'eats', 'venue', 'venues',
+]);
+
 function rowToVenue(row: any, distanceKm: number | null) {
   return {
     place_id: row.google_place_id,
@@ -66,9 +72,16 @@ Deno.serve(async (req) => {
     let qb = supabase.from('venues').select('*').eq('is_removed', false);
 
     if (keywords?.length > 0) {
+      // Drop generic terms (restaurant, bar, spot, ...) from the OR-match set — left in,
+      // one of these matches almost every row and drowns out a genuinely specific keyword
+      // OR'd alongside it (e.g. ["byob","restaurant"] effectively becoming "name contains
+      // restaurant"). Only fall back to the unfiltered set if nothing specific is left.
+      // See issue #331.
+      const specificKeywords = keywords.filter((kw: string) => !GENERIC_KEYWORDS.has(kw.toLowerCase()));
+      const matchKeywords = specificKeywords.length > 0 ? specificKeywords : keywords;
       // Name-only: address matching causes false positives when cuisine keywords
       // (e.g. "italian") match neighbourhood names (e.g. "Little Italy, Toronto").
-      const conditions = keywords.flatMap((kw: string) => [`name.ilike.%${kw}%`]).join(',');
+      const conditions = matchKeywords.flatMap((kw: string) => [`name.ilike.%${kw}%`]).join(',');
       qb = qb.or(conditions);
     }
 
