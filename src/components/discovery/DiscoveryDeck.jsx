@@ -75,6 +75,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [ratingSheetOpen, setRatingSheetOpen] = useState(false);
   const [ratingPendingVenue, setRatingPendingVenue] = useState(null);
+  const [feedbackSheetOpen, setFeedbackSheetOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [burst, setBurst] = useState(null); // { direction, origin: { x, y } }
   const handleBurstDone = useCallback(() => setBurst(null), []);
@@ -89,6 +90,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const blockCardTapUntilRef = useRef(0);
   const ratingWasSubmittedRef = useRef(false);
   const ratingSheetOpenRef = useRef(false);
+  const feedbackSheetOpenRef = useRef(false);
   const [venuePhotoOverrides, setVenuePhotoOverrides] = useState({});
   const [photoFetchSettledIds, setPhotoFetchSettledIds] = useState(() => new Set());
   const fetchedPlaceIdsRef = useRef(new Set());
@@ -383,6 +385,14 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     logRatingSheetOpened(venue);
   }, [logRatingSheetOpened]);
 
+  // Mirrors the ratingSheetOpen state+ref pair above — the ref avoids stale
+  // closures in handleCardBodyTap, the state drives the keyboard-shortcut
+  // guard and the drag/dim logic below.
+  const handleFeedbackSheetOpenChange = useCallback((isOpen) => {
+    feedbackSheetOpenRef.current = isOpen;
+    setFeedbackSheetOpen(isOpen);
+  }, []);
+
   // Handle interaction + animate out
   // exitDuration: drag gestures pass a velocity-derived value; button presses use the default 0.2s
   const performAction = useCallback(async (direction, venue, exitDuration = 0.2) => {
@@ -536,7 +546,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   }, [currentVenue, performAction, x, y, opacity]);
 
   const handleCardBodyTap = useCallback((venue) => {
-    if (ratingSheetOpenRef.current) return;
+    if (ratingSheetOpenRef.current || feedbackSheetOpenRef.current) return;
     if (Date.now() < blockCardTapUntilRef.current) return;
     const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
     try { sessionStorage.setItem('whatspot_deck_index', String(currentIndex)); } catch {}
@@ -560,7 +570,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         return;
       }
 
-      if (ratingSheetOpen) return;
+      if (ratingSheetOpen || feedbackSheetOpen) return;
 
       switch (e.key) {
         case 'ArrowRight':
@@ -591,7 +601,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [currentVenue, hasMore, performAction, handleCardBodyTap, ratingSheetOpen, handleRatingCancel]);
+  }, [currentVenue, hasMore, performAction, handleCardBodyTap, ratingSheetOpen, feedbackSheetOpen, handleRatingCancel]);
 
   // Auth modal callback
   const handleAuthClose = useCallback((open) => {
@@ -682,7 +692,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     );
   }
 
-  const isCardDimmed = ratingSheetOpen;
+  const isCardDimmed = ratingSheetOpen || feedbackSheetOpen;
 
   return (
     <div
@@ -718,7 +728,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
             ref={activeCardRef}
             className="absolute inset-0 z-10 touch-none"
             style={{ x, y, opacity }}
-            drag={!ratingSheetOpen && !exitDirection}
+            drag={!ratingSheetOpen && !feedbackSheetOpen && !exitDirection}
             dragMomentum={false}
             dragElastic={0.05}
             onDragStart={handleDragStart}
@@ -783,6 +793,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
               listLabel={listMembershipMap ? listMembershipMap.get((currentVenue?.place_id || currentVenue?.google_place_id || '').replace(/^places\//, '')) ?? null : null}
               onBeenHereClick={() => performAction('up', currentVenue)}
               onFadingChange={handleFadingChange}
+              onFeedbackSheetOpenChange={handleFeedbackSheetOpenChange}
             />
           </motion.div>
         ) : hasMore ? (

@@ -4,7 +4,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogPortal, DialogOverlay, DialogTitle } from '@/components/ui/dialog';
-import FlagVenueMenu from '@/components/venue/FlagVenueMenu';
+import FeedbackTrigger from '@/components/venue/FeedbackTrigger';
 
 export default function VenueImageCarousel({ images = [], forceLoading = false, venueId = null }) {
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true });
@@ -84,7 +84,7 @@ export default function VenueImageCarousel({ images = [], forceLoading = false, 
 
       {venueId && (
         <div className="absolute top-3 left-3 z-20">
-          <FlagVenueMenu venueId={venueId} />
+          <FeedbackTrigger venueId={venueId} />
         </div>
       )}
 
