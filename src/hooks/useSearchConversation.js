@@ -1,131 +1,118 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../lib/AuthContext'
 import { runConversationalSearch } from '../services/searchOrchestrator'
-
-const GUEST_SEARCH_LIMIT    = 5
-const GUEST_SEARCH_COUNT_KEY = 'ws_guest_searches'
-
-// --- sessionStorage helpers ---
-
-function readGuestSearchCount() {
-  try {
-    return parseInt(sessionStorage.getItem(GUEST_SEARCH_COUNT_KEY) || '0', 10) || 0
-  } catch {
-    return 0
-  }
-}
-
-function writeGuestSearchCount(n) {
-  try {
-    sessionStorage.setItem(GUEST_SEARCH_COUNT_KEY, String(n))
-  } catch {}
-}
-
-function clearGuestSearchCount() {
-  try {
-    sessionStorage.removeItem(GUEST_SEARCH_COUNT_KEY)
-  } catch {}
-}
+import { SearchGateError } from '../lib/parseSearchIntent'
 
 // --- Hook ---
+// Search requires sign-in and is capped server-side at one search per 4.8h/user
+// (admins bypass) — see supabase/functions/_shared/searchQuota.ts (issue #319).
+// This hook only reacts to what the server decides; it holds no client-side
+// quota of its own, since that was trivially bypassable (cleared localStorage/
+// private window) and didn't actually stop anonymous search spend.
 
 export function useSearchConversation() {
   const { isAuthenticated, user } = useAuth()
 
-  const [guestSearchCount, setGuestSearchCount] = useState(0)
   const [isSearching, setIsSearching] = useState(false)
+  const [authGateOpen, setAuthGateOpen] = useState(false)
+  const [rateLimited, setRateLimited] = useState(false)
+  const [nextAllowedAt, setNextAllowedAt] = useState(null)
+  const [cooldownOpen, setCooldownOpen] = useState(false)
 
-  const prevIsAuthRef = useRef(isAuthenticated)
+  const clearTimerRef = useRef(null)
 
-  // Derived
-  const isLimitReached = !isAuthenticated && guestSearchCount >= GUEST_SEARCH_LIMIT
-
-  // Sync guest count from sessionStorage; clear on login
+  // Auto-clear the block the instant the cooldown actually expires, so the
+  // user doesn't need to reload to search again.
   useEffect(() => {
-    const wasAuth = prevIsAuthRef.current
-    prevIsAuthRef.current = isAuthenticated
+    if (clearTimerRef.current) clearTimeout(clearTimerRef.current)
+    if (!nextAllowedAt) return
+
+    const msRemaining = new Date(nextAllowedAt).getTime() - Date.now()
+    if (msRemaining <= 0) {
+      setRateLimited(false)
+      setNextAllowedAt(null)
+      return
+    }
+    clearTimerRef.current = setTimeout(() => {
+      setRateLimited(false)
+      setNextAllowedAt(null)
+    }, msRemaining)
+
+    return () => clearTimeout(clearTimerRef.current)
+  }, [nextAllowedAt])
+
+  // Derived — blocks the search UI outright for guests or during the cooldown
+  const isLimitReached = !isAuthenticated || rateLimited
+
+  function closeAuthGate() {
+    setAuthGateOpen(false)
+  }
+
+  function closeCooldown() {
+    setCooldownOpen(false)
+  }
+
+  async function runGatedSearch(rawQuery, userCoordinates, userFilters) {
+    if (isSearching) return null
 
     if (!isAuthenticated) {
-      setGuestSearchCount(readGuestSearchCount())
-    } else if (!wasAuth && isAuthenticated) {
-      // User just logged in — clear any guest count
-      setGuestSearchCount(0)
-      clearGuestSearchCount()
+      setAuthGateOpen(true)
+      return null
     }
-  }, [isAuthenticated])
+    if (rateLimited) {
+      setCooldownOpen(true)
+      return null
+    }
+
+    setIsSearching(true)
+    try {
+      return await runConversationalSearch({
+        rawQuery,
+        userCoordinates,
+        conversationHistory: [],
+        userId: user?.id ?? null,
+        userFilters,
+      })
+    } catch (err) {
+      if (err instanceof SearchGateError) {
+        if (err.reason === 'auth_required') {
+          setAuthGateOpen(true)
+        } else if (err.reason === 'rate_limited') {
+          setRateLimited(true)
+          setNextAllowedAt(err.nextAllowedAt)
+          setCooldownOpen(true)
+        }
+        return null
+      }
+      return null
+    } finally {
+      setIsSearching(false)
+    }
+  }
 
   // Primary search — stateless per call, no history accumulation
   async function search(rawQuery, userCoordinates, userFilters = {}) {
-    if (isSearching) return null
-    if (isLimitReached) return null
-
-    // Gate guest searches
-    if (!isAuthenticated) {
-      const count = readGuestSearchCount()
-      if (count >= GUEST_SEARCH_LIMIT) {
-        setGuestSearchCount(count)
-        return null
-      }
-      const next = count + 1
-      writeGuestSearchCount(next)
-      setGuestSearchCount(next)
-    }
-
-    setIsSearching(true)
-    try {
-      return await runConversationalSearch({
-        rawQuery,
-        userCoordinates,
-        conversationHistory: [],
-        userId: user?.id ?? null,
-        userFilters,
-      })
-    } catch {
-      return null
-    } finally {
-      setIsSearching(false)
-    }
+    return runGatedSearch(rawQuery, userCoordinates, userFilters)
   }
 
-  // Re-run with new filters — counts against guest quota like any other search
+  // Re-run with new filters — same gate as any other search
   async function searchWithFilters(rawQuery, userCoordinates, userFilters) {
-    if (isSearching) return null
-    if (isLimitReached) return null
-
-    if (!isAuthenticated) {
-      const count = readGuestSearchCount()
-      if (count >= GUEST_SEARCH_LIMIT) {
-        setGuestSearchCount(count)
-        return null
-      }
-      const next = count + 1
-      writeGuestSearchCount(next)
-      setGuestSearchCount(next)
-    }
-
-    setIsSearching(true)
-    try {
-      return await runConversationalSearch({
-        rawQuery,
-        userCoordinates,
-        conversationHistory: [],
-        userId: user?.id ?? null,
-        userFilters,
-      })
-    } catch {
-      return null
-    } finally {
-      setIsSearching(false)
-    }
+    return runGatedSearch(rawQuery, userCoordinates, userFilters)
   }
 
   function resetSession() {
-    // guest search count intentionally not reset — cap persists for the browser session
+    // the cooldown is server-side and per-user — nothing to reset client-side
   }
 
   return {
     isLimitReached,
     isSearching,
+    authGateOpen,
+    closeAuthGate,
+    rateLimited,
+    nextAllowedAt,
+    cooldownOpen,
+    closeCooldown,
     search,
     searchWithFilters,
     resetSession,
