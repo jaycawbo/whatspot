@@ -37,6 +37,7 @@ export default function DiscoveryCard({
   onBeenHereClick = null,
   beenHereRating = null,
   onFadingChange = null,
+  wiggle = false,
 }) {
   const navigate = useNavigate();
   const photos = venue?.image_urls?.length > 0
@@ -237,7 +238,7 @@ export default function DiscoveryCard({
   }
 
   return (
-    <div ref={cardRef} className="relative w-full h-full rounded-2xl overflow-hidden bg-card border border-border shadow-xl flex flex-col">
+    <div ref={cardRef} className={cn('relative w-full h-full rounded-2xl overflow-hidden bg-card border border-border shadow-xl flex flex-col', wiggle && 'discovery-card-wiggle')}>
       {/* Photo zone */}
       <div
         className="relative bg-muted overflow-hidden"

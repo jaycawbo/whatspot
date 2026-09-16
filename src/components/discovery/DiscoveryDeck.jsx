@@ -20,6 +20,11 @@ const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
 const SWIPE_UP_THRESHOLD = 80;
 const RATING_CANCEL_TAP_BLOCK_MS = 500;
+// Idle nudge: active card wiggles after this many ms without interaction, then repeats
+// on the same cadence until the user interacts. WIGGLE_DURATION_MS must match the
+// .discovery-card-wiggle animation length in index.css.
+const WIGGLE_IDLE_MS = 5000;
+const WIGGLE_DURATION_MS = 500;
 
 // The icon's growth completing exactly at SWIPE_THRESHOLD (the min distance to trigger
 // a swipe) meant it saturated the moment the swipe became valid, well before most real
@@ -95,6 +100,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const isFadingRef = useRef(false);
   const pendingOverridesRef = useRef({});
   const currentVenueIdRef = useRef('');
+  const [isWiggling, setIsWiggling] = useState(false);
+  const wiggleIdleTimerRef = useRef(null);
+  const wiggleOffTimerRef = useRef(null);
 
   const {
     handleInterested,
@@ -109,6 +117,44 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     executePending,
     clearPending,
   } = useDiscoveryInteractions();
+
+  // Idle wiggle cue — teaches new users the card is swipeable without an explicit
+  // tutorial. Wiggles the active card after WIGGLE_IDLE_MS of no interaction, then
+  // keeps repeating on that cadence (ambient nudge, not a one-time hint) until the
+  // user interacts, which restarts the countdown from zero.
+  const clearWiggleTimers = useCallback(() => {
+    clearTimeout(wiggleIdleTimerRef.current);
+    clearTimeout(wiggleOffTimerRef.current);
+  }, []);
+
+  const scheduleWiggle = useCallback(() => {
+    clearWiggleTimers();
+    wiggleIdleTimerRef.current = setTimeout(() => {
+      setIsWiggling(true);
+      wiggleOffTimerRef.current = setTimeout(() => {
+        setIsWiggling(false);
+        scheduleWiggle();
+      }, WIGGLE_DURATION_MS);
+    }, WIGGLE_IDLE_MS);
+  }, [clearWiggleTimers]);
+
+  const resetWiggleTimer = useCallback(() => {
+    setIsWiggling(false);
+    scheduleWiggle();
+  }, [scheduleWiggle]);
+
+  // Pause while there's no active card or the card is obscured (rating sheet / auth
+  // modal); resume with a fresh 5s countdown once it's unobscured. Also fires whenever
+  // currentVenue changes, so a freshly-presented card gets its own full countdown.
+  useEffect(() => {
+    if (!currentVenue || ratingSheetOpen || authModalOpen) {
+      clearWiggleTimers();
+      setIsWiggling(false);
+      return;
+    }
+    resetWiggleTimer();
+    return clearWiggleTimers;
+  }, [currentVenue, ratingSheetOpen, authModalOpen, resetWiggleTimer, clearWiggleTimers]);
 
   // Write passive_skip when a new card becomes active
   const lastPassiveSkipRef = useRef(null);
@@ -388,6 +434,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const performAction = useCallback(async (direction, venue, exitDuration = 0.2) => {
     if (isAnimatingRef.current) return;
     isAnimatingRef.current = true;
+    resetWiggleTimer();
     x.stop();
     y.stop();
     opacity.stop();
@@ -454,7 +501,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     await exitAnim;
     advanceCard();
     if (success === false) setAuthModalOpen(true);
-  }, [handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, opacity, advanceCard]);
+  }, [handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, opacity, advanceCard, resetWiggleTimer]);
 
   const handleRate = useCallback(async (rating, notes) => {
     ratingWasSubmittedRef.current = true;
@@ -498,7 +545,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   // Drag handlers — track isDragging to disable transition during drag (Fix 2)
   const handleDragStart = useCallback(() => {
     setIsDragging(true);
-  }, []);
+    resetWiggleTimer();
+  }, [resetWiggleTimer]);
 
   const handleDragEnd = useCallback((event, info) => {
     if (!currentVenue || isAnimatingRef.current) { setIsDragging(false); return; }
@@ -538,6 +586,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const handleCardBodyTap = useCallback((venue) => {
     if (ratingSheetOpenRef.current) return;
     if (Date.now() < blockCardTapUntilRef.current) return;
+    resetWiggleTimer();
     const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
     try { sessionStorage.setItem('whatspot_deck_index', String(currentIndex)); } catch {}
     logEvent('click', {
@@ -546,7 +595,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       ...venueSnapshot(venue),
     });
     navigate(`/venue/${placeId}`, { state: { venue } });
-  }, [navigate, currentIndex]);
+  }, [navigate, currentIndex, resetWiggleTimer]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -783,6 +832,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
               listLabel={listMembershipMap ? listMembershipMap.get((currentVenue?.place_id || currentVenue?.google_place_id || '').replace(/^places\//, '')) ?? null : null}
               onBeenHereClick={() => performAction('up', currentVenue)}
               onFadingChange={handleFadingChange}
+              wiggle={isWiggling}
             />
           </motion.div>
         ) : hasMore ? (
