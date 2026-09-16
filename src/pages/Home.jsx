@@ -10,6 +10,7 @@ import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
 import ResultsList from '@/components/home/ResultsList';
 import MapView from '@/components/home/MapView';
 import AuthModal from '@/components/auth/AuthModal';
+import AdminHealthBanner from '@/components/admin/AdminHealthBanner';
 import SearchCooldownDialog from '@/components/search/SearchCooldownDialog';
 import PostSaveLabelSheet from '@/components/spots/PostSaveLabelSheet';
 import FeedModeTabs from '@/components/home/FeedModeTabs';
@@ -343,6 +344,7 @@ export default function Home() {
 
   return (
     <div className="bg-background flex flex-col" style={{ height: '100dvh', overflow: 'hidden' }}>
+      <AdminHealthBanner />
       <Header onLogoClick={handleLogoReset} onCloseSearch={() => setSearchDialogOpen(false)} />
 
       {/* Permanent search row — fixed below nav */}
