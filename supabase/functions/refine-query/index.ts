@@ -5,8 +5,13 @@
  * and parse structured intent from a natural language query.
  * Called by venueDataRouter.js (db_only) and api.js (live_fallback).
  *
- * Request:  { query: string, locationName: string, bypassCorrection?: boolean, userContext?: object }
+ * Request:  { query: string, locationName: string, bypassCorrection?: boolean, userContext?: object, billable_search?: boolean }
  * Response: { keywords: string[], corrected_query: string, correction_applied: boolean, intent: IntentObject }
+ *           | { blocked: true, reason: 'auth_required' | 'rate_limited', nextAllowedAt?: string, ... }
+ *
+ * billable_search: true marks this as a live user-initiated search (set by
+ * parseSearchIntent.js only), which requires sign-in and counts against the
+ * per-user daily search quota — see _shared/searchQuota.ts (issue #319).
  */
 
 const corsHeaders = {
@@ -158,13 +163,26 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { query, locationName, bypassCorrection, userContext } = body;
+    const { query, locationName, bypassCorrection, userContext, billable_search } = body;
 
     if (!query?.trim()) {
       return new Response(
         JSON.stringify({ keywords: [], corrected_query: '', correction_applied: false, intent: EMPTY_INTENT }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
+    }
+
+    // billable_search is set only by the live user-search flow (parseSearchIntent.js) —
+    // not by the free discovery feed's DB routing, which never sets it. See issue #319.
+    if (billable_search) {
+      const { gateBillableSearch } = await import('../_shared/searchQuota.ts');
+      const gate = await gateBillableSearch(req);
+      if (gate.blocked) {
+        return new Response(
+          JSON.stringify({ blocked: true, reason: gate.reason, nextAllowedAt: gate.nextAllowedAt, keywords: [], corrected_query: '', correction_applied: false, intent: EMPTY_INTENT }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
     }
 
     const cityName = locationName || 'the city';
