@@ -792,6 +792,45 @@ function dedup(venues: any[]): any[] {
 
 // ─── Search pipeline ───
 
+// Geocodes a detected neighbourhood/landmark name and returns the overridden lat/lon +
+// location_name, or null if geocoding failed or the result was implausibly far from the
+// user's current location. Mutates admission.maxRadius in place on success (narrows the
+// search radius to the named area) — matches the radius-narrowing behavior STEP 1b always
+// applied before this was pulled out into a shared helper. See issue #329.
+async function geocodeLocationOverride(
+  detectedLocation: string, location_name: string, lat: number, lon: number, admission: any,
+): Promise<{ lat: number; lon: number; location_name: string } | null> {
+  const geocodeQuery = location_name ? `${detectedLocation}, ${location_name}` : detectedLocation;
+  console.log(`📍 STEP 1b: Detected location: "${detectedLocation}", geocoding as "${geocodeQuery}"...`);
+  try {
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const geocodeResp = await fetch(`${SUPABASE_URL}/functions/v1/geocode-address`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: geocodeQuery, city_name: location_name || undefined }),
+    });
+    if (!geocodeResp.ok) return null;
+    const geocodeData = await geocodeResp.json();
+    if (!geocodeData.lat || !geocodeData.lon) return null;
+
+    const dLat = (geocodeData.lat - lat) * Math.PI / 180;
+    const dLon = (geocodeData.lon - lon) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180) * Math.cos(geocodeData.lat*Math.PI/180) * Math.sin(dLon/2)**2;
+    const distKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    if (distKm > 100) {
+      console.warn(`⚠️ STEP 1b: Geocode result too far from user location (${distKm.toFixed(1)}km), discarding override`);
+      return null;
+    }
+
+    admission.maxRadius = 2;
+    console.log(`📍 STEP 1b: Location override: ${detectedLocation} (${geocodeData.lat}, ${geocodeData.lon}), ${distKm.toFixed(1)}km from user`);
+    return { lat: geocodeData.lat, lon: geocodeData.lon, location_name: detectedLocation };
+  } catch (e: any) {
+    console.warn('⚠️ STEP 1b: Geocoding failed:', e.message);
+    return null;
+  }
+}
+
 async function handleSearch(params: {
   search_term:      string;
   lat:              number;
@@ -808,6 +847,7 @@ async function handleSearch(params: {
   affinity:         UserAffinity;
   GOOGLE_KEY:       string;
   refined_search_term?: string;
+  location_override?: string;
 }): Promise<{
   finalVenues:        any[];
   reserveVenues:      any[];
@@ -820,7 +860,7 @@ async function handleSearch(params: {
   const {
     search_term, exclude_ids, price_levels, cuisine_types,
     open_now, relaxation_level, intent, authUserId, affinity, GOOGLE_KEY,
-    refined_search_term,
+    refined_search_term, location_override,
   } = params;
 
   let lat = params.lat;
@@ -832,15 +872,27 @@ async function handleSearch(params: {
   let refinedSearchTerm = search_term;
 
   // ─── STEPS 1 & 1b: Query refinement + location detection ───
-  // Both steps are skipped when the caller (searchOrchestrator.js) already ran
-  // refine-query and passed its output through as refined_search_term — re-deriving the
-  // same keywords/location here would be a redundant Gemini call. See issue #288.
-  // Callers that don't pre-parse (e.g. mode: 'browse_category') still hit the Gemini
-  // fallback below, which also handles location detection since refine-query doesn't
-  // extract location today.
+  // STEP 1 (cuisine-keyword extraction) is skipped when the caller (searchOrchestrator.js)
+  // already ran refine-query and passed its output through as refined_search_term —
+  // re-deriving the same keywords here would be a redundant Gemini call. See issue #288.
+  // STEP 1b (neighbourhood/landmark geocoding) is a SEPARATE concern from STEP 1 and must
+  // not be skipped just because STEP 1 was — refine-query now also detects a location name
+  // and passes it through as location_override, so STEP 1b still runs (as a geocode-address
+  // fetch, no extra Gemini call) whenever one was detected. See issue #329.
   if (refined_search_term) {
     refinedSearchTerm = refined_search_term;
-    console.log(`⏭️ STEPS 1 & 1b skipped — using pre-refined term: "${refinedSearchTerm}"`);
+    console.log(`⏭️ STEP 1 skipped — using pre-refined term: "${refinedSearchTerm}"`);
+
+    if (location_override) {
+      const override = await geocodeLocationOverride(location_override, location_name, lat, lon, admission);
+      if (override) {
+        lat = override.lat;
+        lon = override.lon;
+        location_name = override.location_name;
+      }
+    } else {
+      console.log('⏭️ STEP 1b skipped — no location_override provided');
+    }
   } else {
     console.log('🤖 STEPS 1 & 1b: Running in parallel...');
     let refinedSearchTermResult = search_term;
@@ -871,36 +923,11 @@ async function handleSearch(params: {
     refinedSearchTerm = refinedSearchTermResult;
 
     if (locationDetectionResult?.detected_location && locationDetectionResult.detected_location !== 'NONE') {
-      const detectedLocation = locationDetectionResult.detected_location;
-      const geocodeQuery = location_name ? `${detectedLocation}, ${location_name}` : detectedLocation;
-      console.log(`📍 STEP 1b: Detected location: "${detectedLocation}", geocoding as "${geocodeQuery}"...`);
-      try {
-        const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
-        const geocodeResp = await fetch(`${SUPABASE_URL}/functions/v1/geocode-address`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ address: geocodeQuery, city_name: location_name || undefined }),
-        });
-        if (geocodeResp.ok) {
-          const geocodeData = await geocodeResp.json();
-          if (geocodeData.lat && geocodeData.lon) {
-            const dLat = (geocodeData.lat - lat) * Math.PI / 180;
-            const dLon = (geocodeData.lon - lon) * Math.PI / 180;
-            const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180) * Math.cos(geocodeData.lat*Math.PI/180) * Math.sin(dLon/2)**2;
-            const distKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            if (distKm > 100) {
-              console.warn(`⚠️ STEP 1b: Geocode result too far from user location (${distKm.toFixed(1)}km), discarding override`);
-            } else {
-              lat = geocodeData.lat;
-              lon = geocodeData.lon;
-              location_name = detectedLocation;
-              admission.maxRadius = 2;
-              console.log(`📍 STEP 1b: Location override: ${detectedLocation} (${lat}, ${lon}), ${distKm.toFixed(1)}km from user`);
-            }
-          }
-        }
-      } catch (e: any) {
-        console.warn('⚠️ STEP 1b: Geocoding failed:', e.message);
+      const override = await geocodeLocationOverride(locationDetectionResult.detected_location, location_name, lat, lon, admission);
+      if (override) {
+        lat = override.lat;
+        lon = override.lon;
+        location_name = override.location_name;
       }
     }
     console.log('✅ STEPS 1 & 1b complete');
@@ -2009,6 +2036,7 @@ Deno.serve(async (req) => {
       criteria_pass,
       intent,
       refined_search_term,
+      location_override,
       for_you = false,
       billable_search = false,
     } = await req.json();
@@ -2113,6 +2141,7 @@ Deno.serve(async (req) => {
         affinity,
         GOOGLE_KEY: GOOGLE_KEY || '',
         refined_search_term: refined_search_term || undefined,
+        location_override: location_override || undefined,
       });
 
       if (searchResult.gated) {

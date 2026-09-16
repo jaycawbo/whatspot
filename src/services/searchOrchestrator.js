@@ -129,6 +129,9 @@ export async function runConversationalSearch({
           exclude_ids: venues.map(v => v.place_id),
           cuisine_types: intent.cuisineTypes?.length > 0 ? intent.cuisineTypes : undefined,
           location_name: locationName || undefined,
+          // Neighbourhood/landmark already detected by refine-query (e.g. "Parkdale") — lets
+          // recommend's STEP 1b geocode it directly without a redundant Gemini detection call.
+          location_override: intent.areaOverride || undefined,
           intent: { vibe: intent.vibeKeywords },
           billable_search: true,
         },

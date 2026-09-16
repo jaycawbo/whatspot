@@ -134,7 +134,7 @@ export async function parseSearchIntent({ rawQuery, userCoordinates, userId = nu
       priceLevel: PRICE_SIGNAL_MAP[intent.price_signal] ?? null,
       radiusMetres: 5000,
       requireOpenNow: (intent.constraints ?? []).some(c => OPEN_NOW_CONSTRAINTS.has(c.toLowerCase())),
-      areaOverride: null,
+      areaOverride: typeof data.detected_location === 'string' && data.detected_location.trim() ? data.detected_location.trim() : null,
       vibeKeywords: intent.vibe ?? [],
       // Vibe-heavy with no occasion = ambiance matters more than review volume
       deprioritiseReviewCount: (intent.vibe?.length > 0) && !intent.occasion,
