@@ -13,6 +13,18 @@ const DISCOVERY_FALLBACK_MONTHLY_CAP = 500000; // broad Places Text Search, up t
 const HOURS_MONTHLY_CAP = 250000; // open_now-triggered Place Details refresh
 const LIVE_GROUNDING_MONTHLY_CAP = 200000; // Gemini grounding + place resolution
 const LLM_MONTHLY_CAP = 500000; // completeness_llm gap-fill pass
+// 'weekly' (issue #324): the on-demand path (search-venues-db) is now deduped
+// and batched, and indirectly bounded by the search rate limit upstream — this
+// no longer needs to share the generic 500/month default, which would starve
+// legitimate refreshes at any real search volume. Sized well above realistic
+// need (cron alone is ~217/month; this covers that plus real on-demand use)
+// while still catching a genuine bug/loop.
+const WEEKLY_REFRESH_MONTHLY_CAP = 10000;
+// 'photos_refresh': refresh-venue-photos previously had no cap at all, relying
+// solely on its quarterly-cron-only invocation (~17/month average) for safety.
+// This is insurance in case an on-demand trigger is ever added later, not a
+// response to any current volume.
+const PHOTOS_REFRESH_MONTHLY_CAP = 2000;
 
 // Log (not just block) once a call type crosses this share of its cap, so
 // saturation shows up in edge function logs before it actually blocks anything.
@@ -24,6 +36,8 @@ function monthlyCapFor(callType: string): number {
   if (callType === 'discovery_fallback') return DISCOVERY_FALLBACK_MONTHLY_CAP;
   if (callType === 'hours') return HOURS_MONTHLY_CAP;
   if (callType === 'live_grounding') return LIVE_GROUNDING_MONTHLY_CAP;
+  if (callType === 'weekly') return WEEKLY_REFRESH_MONTHLY_CAP;
+  if (callType === 'photos_refresh') return PHOTOS_REFRESH_MONTHLY_CAP;
   return DEFAULT_MONTHLY_CAP;
 }
 

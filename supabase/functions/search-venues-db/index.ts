@@ -3,6 +3,12 @@ import { corsHeaders, jsonResponse, errorResponse } from '../_shared/types.ts';
 import { boundingBox, haversineKm } from '../_shared/geo.ts';
 
 const WEEKLY_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+// A venue "claimed" for refresh within this window is skipped, so the same
+// stale venue served to many concurrent requests doesn't queue redundant
+// refresh-venue-weekly calls. Long enough for one refresh to finish (a single
+// Places API call + DB write, seconds), short enough that a failed/dropped
+// claim retries within the hour rather than waiting out the full 7-day window.
+const REFRESH_CLAIM_MS = 60 * 60 * 1000; // 1 hour
 
 function rowToVenue(row: any, distanceKm: number | null) {
   return {
@@ -32,6 +38,13 @@ function rowToVenue(row: any, distanceKm: number | null) {
 function isWeeklyStale(row: any): boolean {
   if (!row.rating_last_updated) return true;
   return Date.now() - new Date(row.rating_last_updated).getTime() > WEEKLY_STALE_MS;
+}
+
+// Unclaimed, or claimed long enough ago that the claim probably lapsed (failed
+// call, cap block, etc.) rather than still being in flight.
+function isRefreshClaimable(row: any): boolean {
+  if (!row.weekly_refresh_queued_at) return true;
+  return Date.now() - new Date(row.weekly_refresh_queued_at).getTime() > REFRESH_CLAIM_MS;
 }
 
 Deno.serve(async (req) => {
@@ -97,14 +110,27 @@ Deno.serve(async (req) => {
     }
 
     // Queue background weekly refresh for any stale venues (live_fallback only).
-    // Photos are never queued on-demand.
+    // Photos are never queued on-demand. Claimed + batched into one call so the
+    // same stale venue isn't re-queued by every concurrent request that serves
+    // it (issue #324) — previously this fired one separate invocation per
+    // stale venue per response, with no dedup.
     if (!is_db_only) {
-      for (const row of rows) {
-        if (isWeeklyStale(row)) {
-          supabase.functions
-            .invoke('refresh-venue-weekly', { body: { place_ids: [row.google_place_id] } })
-            .catch(() => {}); // best-effort, never throws
-        }
+      const staleIds = rows
+        .filter((row: any) => isWeeklyStale(row) && isRefreshClaimable(row))
+        .map((row: any) => row.google_place_id);
+
+      if (staleIds.length > 0) {
+        // best-effort claim — a lost race just means an occasional duplicate, not silence
+        Promise.resolve(
+          supabase
+            .from('venues')
+            .update({ weekly_refresh_queued_at: new Date().toISOString() })
+            .in('google_place_id', staleIds)
+        ).catch(() => {});
+
+        supabase.functions
+          .invoke('refresh-venue-weekly', { body: { place_ids: staleIds } })
+          .catch(() => {}); // best-effort, never throws
       }
     }
 
