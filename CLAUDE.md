@@ -40,6 +40,7 @@ Dev Environment
 Both Jake and Jamie run Claude Code by typing claude in the VS Code integrated terminal (PowerShell)
 App runs locally via npm run dev
 Deployment target: Vercel (production)
+New git worktrees don't carry .env (it's gitignored) — copy it in manually before running npm run dev there, or the app loads a blank white screen ("supabaseUrl is required")
 
 Tool Roles
 Claude Code: PRIMARY tool for all code edits, file changes, and deployments
