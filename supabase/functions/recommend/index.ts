@@ -1742,12 +1742,18 @@ async function handleSearch(params: {
   ), { rankings: [], descriptors: [], summary: null, chips: [] });
 
   const rankings = comprehensiveResult.rankings || [];
+  // Gemini's `rankings` is unvalidated model output for "every candidate venue" — if it
+  // repeats an `index` value, the same place_id would otherwise get pushed into
+  // finalVenues twice. Dedup by place_id here, mirroring the backfill's usedPlaceIds
+  // pattern just below. See issue #330.
+  const seenPlaceIds = new Set<string>();
   finalVenues = rankings
     .filter((r: any) => r.confidence >= 0.5)
     .slice(0, 8)
     .map((r: any, i: number) => {
       const venue = filteredCandidates[r.index - 1];
-      if (!venue) return null;
+      if (!venue || seenPlaceIds.has(venue.place_id)) return null;
+      seenPlaceIds.add(venue.place_id);
       return {
         ...venue,
         descriptors: comprehensiveResult.descriptors?.[i] || [],
