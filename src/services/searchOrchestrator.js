@@ -3,6 +3,7 @@ import { parseSearchIntent, SearchGateError } from '@/lib/parseSearchIntent';
 import { queryVenuesFromDb } from '@/services/venueDataRouter';
 import { scoreVenue } from '@/lib/scoreVenue';
 import { buildResponsePrompt } from '@/lib/buildResponsePrompt';
+import { matchObscureAttributes } from '@/lib/obscureAttributes';
 
 const DB_THRESHOLD = 12;
 
@@ -49,6 +50,7 @@ export async function runConversationalSearch({
       requireOpenNow: false,
       areaOverride: null,
       vibeKeywords: [],
+      constraints: [],
       deprioritiseReviewCount: false,
       intentSummary: null,
       correctionInfo: null,
@@ -148,6 +150,39 @@ export async function runConversationalSearch({
     } catch (err) {
       if (err instanceof SearchGateError) throw err;
       /* leave venues from DB only */
+    }
+  }
+
+  // Step 2c: verify obscure attributes (byob, dog-friendly, wifi, outlets, quiet,
+  // "hidden gem") that neither Supabase nor Places reliably tags. Only runs when the
+  // query's parsed constraints/vibe actually mention one — most searches never trigger
+  // this — and always as a single batched call covering every candidate venue, never
+  // one call per venue. See issue #331.
+  const obscureAttributes = matchObscureAttributes(intent.constraints, intent.vibeKeywords);
+  if (obscureAttributes.length > 0 && venues.length > 0) {
+    try {
+      const { data } = await supabase.functions.invoke('verify-venue-attributes', {
+        body: {
+          venues: venues.map(v => ({ place_id: v.place_id, name: v.name, types: v.types, ai_description: v.ai_description })),
+          attributes: obscureAttributes,
+        },
+      });
+      const verdictByPlaceId = new Map((data?.verdicts ?? []).map(v => [v.place_id, v]));
+      venues = venues
+        .map(v => {
+          const verdict = verdictByPlaceId.get(v.place_id);
+          // No verdict returned for this venue (e.g. call failed) — treat as unsure
+          // rather than drop it; we can't confirm absence either.
+          if (!verdict) return v;
+          const rejected = obscureAttributes.some(
+            a => !(verdict.matches ?? []).includes(a) && !(verdict.unsure ?? []).includes(a)
+          );
+          if (rejected) return null;
+          return v;
+        })
+        .filter(Boolean);
+    } catch {
+      // Verification is best-effort — leave venues unfiltered on failure.
     }
   }
 

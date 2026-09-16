@@ -104,6 +104,7 @@ export async function parseSearchIntent({ rawQuery, userCoordinates, userId = nu
     requireOpenNow: false,
     areaOverride: null,
     vibeKeywords: [],
+    constraints: [],
     deprioritiseReviewCount: false,
     intentSummary: null,
     correctionInfo: null,
@@ -136,6 +137,7 @@ export async function parseSearchIntent({ rawQuery, userCoordinates, userId = nu
       requireOpenNow: (intent.constraints ?? []).some(c => OPEN_NOW_CONSTRAINTS.has(c.toLowerCase())),
       areaOverride: null,
       vibeKeywords: intent.vibe ?? [],
+      constraints: intent.constraints ?? [],
       // Vibe-heavy with no occasion = ambiance matters more than review volume
       deprioritiseReviewCount: (intent.vibe?.length > 0) && !intent.occasion,
       intentSummary: intent.interpreted_summary || null,
