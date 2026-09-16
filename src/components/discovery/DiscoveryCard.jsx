@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Star, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import BeenHereButton from '@/components/ui/BeenHereButton';
-import FlagVenueMenu from '@/components/venue/FlagVenueMenu';
+import FeedbackTrigger from '@/components/venue/FeedbackTrigger';
 
 function formatPrice(level) {
   if (!level) return null;
@@ -37,6 +37,7 @@ export default function DiscoveryCard({
   onBeenHereClick = null,
   beenHereRating = null,
   onFadingChange = null,
+  onFeedbackSheetOpenChange = null,
   wiggle = false,
 }) {
   const navigate = useNavigate();
@@ -299,7 +300,13 @@ export default function DiscoveryCard({
                 {listLabel}
               </span>
             )}
-            {!isGhost && placeId && <FlagVenueMenu venueId={placeId} />}
+            {!isGhost && placeId && (
+              <FeedbackTrigger
+                venueId={placeId}
+                venueName={venue?.name}
+                onOpenChange={onFeedbackSheetOpenChange}
+              />
+            )}
           </div>
 
           {/* Spots list membership badge (top-right, when Been Here button isn't shown here) */}
