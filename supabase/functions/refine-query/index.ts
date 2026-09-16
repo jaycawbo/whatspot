@@ -6,7 +6,7 @@
  * Called by venueDataRouter.js (db_only) and api.js (live_fallback).
  *
  * Request:  { query: string, locationName: string, bypassCorrection?: boolean, userContext?: object, billable_search?: boolean }
- * Response: { keywords: string[], corrected_query: string, correction_applied: boolean, intent: IntentObject }
+ * Response: { keywords: string[], corrected_query: string, correction_applied: boolean, intent: IntentObject, detected_location: string | null }
  *           | { blocked: true, reason: 'auth_required' | 'rate_limited', nextAllowedAt?: string, ... }
  *
  * billable_search: true marks this as a live user-initiated search (set by
@@ -35,9 +35,10 @@ interface GeminiResult {
   corrected_query: string;
   correction_applied: boolean;
   intent: Intent;
+  detected_location: string | null;
 }
 
-function buildSystemPrompt(userContext: any): string {
+function buildSystemPrompt(userContext: any, cityName: string): string {
   let contextBlock = '';
 
   if (userContext && Object.keys(userContext).length > 0) {
@@ -76,13 +77,14 @@ For each query, return a JSON object with:
   - constraints: array of specific requirements mentioned, e.g. ["open late", "outdoor seating", "dog-friendly", "vegetarian options"] — empty array if none
   - price_signal: "budget" if cheap/affordable/inexpensive implied; "upscale" if fancy/fine dining/splurge implied; "mid" if moderate; null if not implied
   - time_of_day: "morning" (breakfast/brunch), "afternoon" (lunch), "evening" (dinner), "late_night" (after 10pm) — null if not implied
-  - interpreted_summary: one short sentence describing what the user is looking for, e.g. "Cozy Italian spot for a date night" or "Affordable late-night ramen"`;
+  - interpreted_summary: one short sentence describing what the user is looking for, e.g. "Cozy Italian spot for a date night" or "Affordable late-night ramen"
+- detected_location: a specific neighbourhood, district, or landmark name mentioned in the query that is more precise than "${cityName}" (e.g. "Parkdale", "High Park", "King West") — null if the query doesn't name one. Do not return the city name itself here.`;
 }
 
 async function getStructuredOutputFromGemini(query: string, cityName: string, userContext: any): Promise<GeminiResult> {
   const body = {
     system_instruction: {
-      parts: [{ text: buildSystemPrompt(userContext) }],
+      parts: [{ text: buildSystemPrompt(userContext, cityName) }],
     },
     contents: [{
       role: 'user',
@@ -111,8 +113,9 @@ async function getStructuredOutputFromGemini(query: string, cityName: string, us
             },
             required: ['occasion', 'vibe', 'constraints', 'price_signal', 'time_of_day', 'interpreted_summary'],
           },
+          detected_location: { type: 'string', nullable: true },
         },
-        required: ['keywords', 'corrected_query', 'correction_applied', 'intent'],
+        required: ['keywords', 'corrected_query', 'correction_applied', 'intent', 'detected_location'],
       },
     },
   };
@@ -158,7 +161,7 @@ Deno.serve(async (req) => {
       body = await req.json();
     } catch {
       return new Response(
-        JSON.stringify({ keywords: [], corrected_query: '', correction_applied: false, intent: EMPTY_INTENT }),
+        JSON.stringify({ keywords: [], corrected_query: '', correction_applied: false, intent: EMPTY_INTENT, detected_location: null }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -167,7 +170,7 @@ Deno.serve(async (req) => {
 
     if (!query?.trim()) {
       return new Response(
-        JSON.stringify({ keywords: [], corrected_query: '', correction_applied: false, intent: EMPTY_INTENT }),
+        JSON.stringify({ keywords: [], corrected_query: '', correction_applied: false, intent: EMPTY_INTENT, detected_location: null }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -179,7 +182,7 @@ Deno.serve(async (req) => {
       const gate = await gateBillableSearch(req);
       if (gate.blocked) {
         return new Response(
-          JSON.stringify({ blocked: true, reason: gate.reason, nextAllowedAt: gate.nextAllowedAt, keywords: [], corrected_query: '', correction_applied: false, intent: EMPTY_INTENT }),
+          JSON.stringify({ blocked: true, reason: gate.reason, nextAllowedAt: gate.nextAllowedAt, keywords: [], corrected_query: '', correction_applied: false, intent: EMPTY_INTENT, detected_location: null }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
       }
@@ -204,10 +207,17 @@ Deno.serve(async (req) => {
       interpreted_summary: result.intent?.interpreted_summary ?? '',
     };
 
-    console.log(`🔍 refine-query: "${query}" → [${keywords.join(', ')}] | corrected: "${correctedQuery}" applied: ${correctionApplied} | intent: ${JSON.stringify(intent)}`);
+    // Guard against Gemini echoing the city name back as the "more specific" location
+    // despite the prompt instruction — that would send recommend into a no-op geocode.
+    const rawDetectedLocation = typeof result.detected_location === 'string' ? result.detected_location.trim() : '';
+    const detectedLocation = rawDetectedLocation && rawDetectedLocation.toLowerCase() !== cityName.toLowerCase()
+      ? rawDetectedLocation
+      : null;
+
+    console.log(`🔍 refine-query: "${query}" → [${keywords.join(', ')}] | corrected: "${correctedQuery}" applied: ${correctionApplied} | intent: ${JSON.stringify(intent)} | detected_location: ${detectedLocation}`);
 
     return new Response(
-      JSON.stringify({ keywords, corrected_query: correctedQuery, correction_applied: correctionApplied, intent }),
+      JSON.stringify({ keywords, corrected_query: correctedQuery, correction_applied: correctionApplied, intent, detected_location: detectedLocation }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   } catch (error: any) {
