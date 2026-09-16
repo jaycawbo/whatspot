@@ -9,11 +9,11 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { address, lat, lon } = await req.json();
+    const { address, lat: reqLat, lon: reqLon } = await req.json();
 
     // Reverse geocode: lat/lon → place name
-    if (lat !== undefined && lon !== undefined) {
-      const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`;
+    if (reqLat !== undefined && reqLon !== undefined) {
+      const url = `https://nominatim.openstreetmap.org/reverse?lat=${reqLat}&lon=${reqLon}&format=json`;
       const response = await fetch(url, {
         headers: { 'User-Agent': 'WhatSpot/1.0 (whatspot.app)' },
       });
