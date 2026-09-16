@@ -1,14 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import {
-  getLimits,
-  setSwipes,
-  incrementSearch as _incrementSearch,
-  isSwipeLimitHit,
-  isSearchLimitHit,
-  SWIPE_LIMIT,
-  SEARCH_LIMIT,
-} from '@/lib/guestLimits';
+import { getLimits, setSwipes, SWIPE_LIMIT } from '@/lib/guestLimits';
 
 const SEEN_KEY = 'whatspot_skipped_venues';
 
@@ -22,10 +14,12 @@ function getSessionSwipeCount() {
   }
 }
 
+// Guest swipe gate for the free Discovery Feed (10/24h). Search has its own,
+// server-enforced gate now — see useSearchConversation.js / issue #319 — since
+// this same client-side-only approach was trivially bypassable for search.
 export function useGuestLimits() {
   const { isAuthenticated } = useAuth();
   const [showGate, setShowGate] = useState(false);
-  const [gateReason, setGateReason] = useState(null); // 'swipes' | 'searches'
   // Baseline = swipes already counted from prior sessions in this 24h window
   const baselineRef = useRef(null);
   // Track count at time of dismissal — gate only re-shows if count increases
@@ -55,7 +49,6 @@ export function useGuestLimits() {
         if (dismissedAtCountRef.current === null || total > dismissedAtCountRef.current) {
           dismissedAtCountRef.current = null;
           setShowGate(true);
-          setGateReason('swipes');
         }
       }
     };
@@ -63,25 +56,6 @@ export function useGuestLimits() {
     tick(); // run immediately
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [isAuthenticated]);
-
-  const incrementSearch = useCallback(() => {
-    if (isAuthenticated) return false;
-    if (isSearchLimitHit()) {
-      dismissedAtCountRef.current = null;
-      setShowGate(true);
-      setGateReason('searches');
-      return true; // blocked
-    }
-    _incrementSearch();
-    // Check again after increment
-    if (isSearchLimitHit()) {
-      dismissedAtCountRef.current = null;
-      setShowGate(true);
-      setGateReason('searches');
-      return true;
-    }
-    return false; // allowed
   }, [isAuthenticated]);
 
   const closeGate = useCallback(() => {
@@ -92,5 +66,5 @@ export function useGuestLimits() {
     setShowGate(false);
   }, []);
 
-  return { showGate, gateReason, closeGate, incrementSearch };
+  return { showGate, closeGate };
 }
