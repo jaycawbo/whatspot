@@ -52,7 +52,7 @@ export function useSearchConversation() {
     setCooldownOpen(false)
   }
 
-  async function runGatedSearch(rawQuery, userCoordinates, userFilters) {
+  async function runGatedSearch(rawQuery, userCoordinates, userFilters, locationName = '') {
     if (isSearching) return null
 
     if (!isAuthenticated) {
@@ -72,6 +72,7 @@ export function useSearchConversation() {
         conversationHistory: [],
         userId: user?.id ?? null,
         userFilters,
+        locationName,
       })
     } catch (err) {
       if (err instanceof SearchGateError) {
@@ -91,13 +92,13 @@ export function useSearchConversation() {
   }
 
   // Primary search — stateless per call, no history accumulation
-  async function search(rawQuery, userCoordinates, userFilters = {}) {
-    return runGatedSearch(rawQuery, userCoordinates, userFilters)
+  async function search(rawQuery, userCoordinates, userFilters = {}, locationName = '') {
+    return runGatedSearch(rawQuery, userCoordinates, userFilters, locationName)
   }
 
   // Re-run with new filters — same gate as any other search
-  async function searchWithFilters(rawQuery, userCoordinates, userFilters) {
-    return runGatedSearch(rawQuery, userCoordinates, userFilters)
+  async function searchWithFilters(rawQuery, userCoordinates, userFilters, locationName = '') {
+    return runGatedSearch(rawQuery, userCoordinates, userFilters, locationName)
   }
 
   function resetSession() {

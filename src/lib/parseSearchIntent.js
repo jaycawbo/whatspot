@@ -93,7 +93,7 @@ export class SearchGateError extends Error {
   }
 }
 
-export async function parseSearchIntent({ rawQuery, userCoordinates, userId = null }) {
+export async function parseSearchIntent({ rawQuery, userCoordinates, userId = null, locationName = '' }) {
   const fallbackKeywords = rawKeywordFallback(rawQuery);
   const fallback = {
     keywords: fallbackKeywords,
@@ -113,7 +113,7 @@ export async function parseSearchIntent({ rawQuery, userCoordinates, userId = nu
   try {
     const userContext = await buildSearchContext(userId);
     const { data, error } = await supabase.functions.invoke('refine-query', {
-      body: { query: rawQuery, locationName: '', userContext, billable_search: true },
+      body: { query: rawQuery, locationName, userContext, billable_search: true },
     });
 
     if (data?.blocked) throw new SearchGateError(data.reason, data.nextAllowedAt);

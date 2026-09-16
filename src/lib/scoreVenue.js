@@ -8,7 +8,14 @@ const REVIEW_WEIGHT = 0.40;
 export function scoreVenue(venue, { deprioritiseReviewCount = false } = {}) {
   const rating = venue.rating ?? 0;
   const reviewCount = venue.review_count ?? 0;
-  const normalizedRating = Math.max(0, ((rating - RATING_FLOOR) / (RATING_CEILING - RATING_FLOOR)) * 10);
+  // Bayesian shrinkage: blend the raw rating toward RATING_FLOOR, weighted by review
+  // count against REVIEW_FLOOR as the shrinkage constant. Without this, a near-perfect
+  // rating from a handful of reviews swings the full normalized range just like a
+  // real, well-reviewed venue.
+  const shrunkRating = rating
+    ? (rating * reviewCount + RATING_FLOOR * REVIEW_FLOOR) / (reviewCount + REVIEW_FLOOR)
+    : 0;
+  const normalizedRating = Math.max(0, ((shrunkRating - RATING_FLOOR) / (RATING_CEILING - RATING_FLOOR)) * 10);
   const normalizedReviews = Math.max(0, Math.min((reviewCount - REVIEW_FLOOR) / (REVIEW_CAP - REVIEW_FLOOR), 1.0)) * 10;
   // deprioritiseReviewCount (hidden-gem mode): shrink review weight so rating dominates
   const effectiveReviewWeight = deprioritiseReviewCount ? 0.05 : REVIEW_WEIGHT;

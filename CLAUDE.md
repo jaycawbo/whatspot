@@ -86,6 +86,10 @@ Issues are assigned to whoever owns the task
 Branch names always include the Issue number
 Issues close automatically when the linked PR merges — no manual cleanup needed
 
+Pending Verification
+Correction (Sept 13, 2026): Search was never actually disabled — it's live in the user-facing UI behind a "BETA" flag. The note below previously assumed it was disabled; that premise was wrong.
+PR #298 (issue #288, dedup redundant Gemini search-refinement calls): not yet confirmed via recommend edge function logs that STEP 1 keyword refinement and STEP 1b location detection are both skipped on Places-fallback searches (only 1 Gemini call — refine-query itself — should fire per search) and that search results are still correct. Since Search is live, this can be verified directly now.
+
 Protected Files — Never touch without explicit instruction
 src/components/discovery/DiscoveryDeck.jsx
 src/components/discovery/DiscoveryCard.jsx
