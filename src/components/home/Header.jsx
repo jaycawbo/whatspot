@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MapPin, List, ChevronDown, X, LogOut } from 'lucide-react';
+import { MapPin, List, ChevronDown, X, LogOut, MessageCircle } from 'lucide-react';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -15,12 +15,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import WhatspotLogo from '@/components/brand/WhatspotLogo';
 import LocationPickerSheet from '@/components/location/LocationPickerSheet';
 import AuthModal from '@/components/auth/AuthModal';
+import FeedbackSheet from '@/components/feedback/FeedbackSheet';
 
 export default function Header({ onLogoClick, onCloseSearch } = {}) {
   const { state, dispatch } = useGlobalState();
   const { user, isAuthenticated, signOut } = useAuth();
   const [editingLocation, setEditingLocation] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const navigate = useNavigate();
 
   const handleLogoClick = (e) => {
@@ -97,6 +99,11 @@ export default function Header({ onLogoClick, onCloseSearch } = {}) {
                 <p className="text-sm font-medium truncate">{user?.email}</p>
               </div>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setFeedbackOpen(true)}>
+                <MessageCircle className="h-4 w-4 mr-2" />
+                Give feedback
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleSignOut}>
                 <LogOut className="h-4 w-4 mr-2" />
                 Sign out
@@ -112,6 +119,7 @@ export default function Header({ onLogoClick, onCloseSearch } = {}) {
 
       <LocationPickerSheet open={editingLocation} onClose={() => setEditingLocation(false)} />
       <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
+      <FeedbackSheet open={feedbackOpen} onOpenChange={setFeedbackOpen} venueId={null} />
     </header>
   );
 }

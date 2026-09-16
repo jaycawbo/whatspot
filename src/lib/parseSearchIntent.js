@@ -81,6 +81,18 @@ function rawKeywordFallback(rawQuery) {
   return words.length > 0 ? words : [rawQuery];
 }
 
+// Thrown when refine-query reports the search itself is blocked (not signed in,
+// or the per-user search cooldown hasn't elapsed) — callers must stop the
+// search, not silently fall back to local keyword parsing and keep going
+// (issue #319).
+export class SearchGateError extends Error {
+  constructor(reason, nextAllowedAt) {
+    super(`search blocked: ${reason}`);
+    this.reason = reason; // 'auth_required' | 'rate_limited'
+    this.nextAllowedAt = nextAllowedAt ?? null; // ISO timestamp, set only for 'rate_limited'
+  }
+}
+
 export async function parseSearchIntent({ rawQuery, userCoordinates, userId = null, locationName = '' }) {
   const fallbackKeywords = rawKeywordFallback(rawQuery);
   const fallback = {
@@ -101,8 +113,10 @@ export async function parseSearchIntent({ rawQuery, userCoordinates, userId = nu
   try {
     const userContext = await buildSearchContext(userId);
     const { data, error } = await supabase.functions.invoke('refine-query', {
-      body: { query: rawQuery, locationName, userContext },
+      body: { query: rawQuery, locationName, userContext, billable_search: true },
     });
+
+    if (data?.blocked) throw new SearchGateError(data.reason, data.nextAllowedAt);
 
     if (error || !data) return fallback;
 
@@ -132,7 +146,8 @@ export async function parseSearchIntent({ rawQuery, userCoordinates, userId = nu
       // as the Places-fallback query without re-checking correctionApplied.
       correctedQuery: data.corrected_query || rawQuery,
     };
-  } catch {
+  } catch (err) {
+    if (err instanceof SearchGateError) throw err;
     return fallback;
   }
 }

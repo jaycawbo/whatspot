@@ -4,7 +4,7 @@ import { Star, MapPin, Bookmark, BookmarkCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { logEvent, venueSnapshot } from '@/lib/logEvent';
 import BeenHereButton from '@/components/ui/BeenHereButton';
-import FlagVenueMenu from '@/components/venue/FlagVenueMenu';
+import FeedbackTrigger from '@/components/venue/FeedbackTrigger';
 import RatingDialog from '@/components/discovery/RatingDialog';
 import { useSpots } from '@/hooks/useSpots';
 import { useBronco } from '@/context/BroncoContext';
@@ -162,7 +162,7 @@ export default function VenueCard({ venue, index, currentQuery }) {
           </>
         )}
         <div className="absolute top-1 right-1 flex flex-col gap-1">
-          <FlagVenueMenu venueId={placeId} />
+          <FeedbackTrigger venueId={placeId} venueName={venue.name} />
           <BeenHereButton
             rating={beenHereRating}
             onClick={handleBeenHereClick}

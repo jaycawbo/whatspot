@@ -17,9 +17,13 @@
  *   - Manual: POST with optional { place_ids?: string[], batch_size?: number }
  *   - NOT called from venueDataRouter — photos are never refreshed on-demand
  *     because the Atmosphere cost cannot be justified per-request.
+ *
+ * Guarded by apiCallLog's 'photos_refresh' cap (issue #324) — previously
+ * uncapped, relying solely on the quarterly-cron-only invocation for safety.
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { checkAndLog } from '../_shared/apiCallLog.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -112,6 +116,13 @@ Deno.serve(async (req) => {
     let updated = 0, failed = 0;
 
     for (const row of rows) {
+      const allowed = await checkAndLog(supabase, 'photos_refresh', row.google_place_id);
+      if (!allowed) {
+        console.warn(`[refresh-venue-photos] Monthly cap reached — skipping ${row.google_place_id}`);
+        failed++;
+        continue;
+      }
+
       try {
         const photoUrl = await fetchPhotoUrl(row.google_place_id, apiKey);
         // Even if no photo found, stamp photos_last_updated so we don't retry

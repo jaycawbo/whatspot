@@ -1,12 +1,11 @@
 const KEY = 'whatspot_guest_limits';
 export const SWIPE_LIMIT = 10;
-export const SEARCH_LIMIT = 3;
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function now() { return Date.now(); }
 
 function fresh() {
-  return { swipes: 0, searches: 0, resetAt: now() + WINDOW_MS };
+  return { swipes: 0, resetAt: now() + WINDOW_MS };
 }
 
 function read() {
@@ -39,17 +38,6 @@ export function setSwipes(count) {
   write(data);
 }
 
-export function incrementSearch() {
-  const data = read();
-  data.searches += 1;
-  write(data);
-  return data;
-}
-
 export function isSwipeLimitHit() {
   return read().swipes >= SWIPE_LIMIT;
-}
-
-export function isSearchLimitHit() {
-  return read().searches >= SEARCH_LIMIT;
 }

@@ -2010,11 +2010,27 @@ Deno.serve(async (req) => {
       intent,
       refined_search_term,
       for_you = false,
+      billable_search = false,
     } = await req.json();
 
     let lat = originalLat;
     let lon = originalLon;
     let location_name = originalLocationName;
+
+    // billable_search is set only by searchOrchestrator.js's Places-fallback call
+    // (mode: 'query') — never by the free discovery feed. Requires sign-in and
+    // counts against the per-user daily search quota. See _shared/searchQuota.ts
+    // (issue #319).
+    if (billable_search) {
+      const { gateBillableSearch } = await import('../_shared/searchQuota.ts');
+      const gate = await gateBillableSearch(req);
+      if (gate.blocked) {
+        return new Response(
+          JSON.stringify({ blocked: true, reason: gate.reason, nextAllowedAt: gate.nextAllowedAt, results: [] }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+    }
 
     // ─── Extract authenticated user ID for skip_history suppression ───
     let authUserId: string | null = null;

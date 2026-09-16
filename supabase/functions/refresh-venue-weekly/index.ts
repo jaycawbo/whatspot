@@ -18,8 +18,18 @@
  *
  * Invocation:
  *   - pg_cron: weekly, Monday 6am UTC
- *   - Fire-and-forget from venueDataRouter when serving a stale venue (live_fallback mode only)
+ *   - Fire-and-forget from search-venues-db, batched, when serving stale venues
+ *     (search's DB path only — feed-tabs/Popular/New never call this; they
+ *     depend solely on the cron). search-venues-db claims venues via
+ *     venues.weekly_refresh_queued_at before invoking so the same venue isn't
+ *     queued again by concurrent requests while a refresh is in flight
+ *     (issue #324).
  *   - Manual: POST with optional { place_ids?: string[], batch_size?: number }
+ *
+ * Guarded by apiCallLog's dedicated 'weekly' cap (10,000/month, issue #324) —
+ * previously shared the generic 500/month default with several unrelated call
+ * types, which would have throttled legitimate refreshes at any real search
+ * volume now that the on-demand path is deduped instead of relied on to fail.
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';

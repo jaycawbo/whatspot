@@ -20,6 +20,11 @@ const SWIPE_THRESHOLD = 100;
 const SWIPE_DOWN_THRESHOLD = 80;
 const SWIPE_UP_THRESHOLD = 80;
 const RATING_CANCEL_TAP_BLOCK_MS = 500;
+// Idle nudge: active card wiggles after this many ms without interaction, then repeats
+// on the same cadence until the user interacts. WIGGLE_DURATION_MS must match the
+// .discovery-card-wiggle animation length in index.css.
+const WIGGLE_IDLE_MS = 5000;
+const WIGGLE_DURATION_MS = 500;
 
 // The icon's growth completing exactly at SWIPE_THRESHOLD (the min distance to trigger
 // a swipe) meant it saturated the moment the swipe became valid, well before most real
@@ -75,6 +80,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [ratingSheetOpen, setRatingSheetOpen] = useState(false);
   const [ratingPendingVenue, setRatingPendingVenue] = useState(null);
+  const [feedbackSheetOpen, setFeedbackSheetOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [burst, setBurst] = useState(null); // { direction, origin: { x, y } }
   const handleBurstDone = useCallback(() => setBurst(null), []);
@@ -89,12 +95,16 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   const blockCardTapUntilRef = useRef(0);
   const ratingWasSubmittedRef = useRef(false);
   const ratingSheetOpenRef = useRef(false);
+  const feedbackSheetOpenRef = useRef(false);
   const [venuePhotoOverrides, setVenuePhotoOverrides] = useState({});
   const [photoFetchSettledIds, setPhotoFetchSettledIds] = useState(() => new Set());
   const fetchedPlaceIdsRef = useRef(new Set());
   const isFadingRef = useRef(false);
   const pendingOverridesRef = useRef({});
   const currentVenueIdRef = useRef('');
+  const [isWiggling, setIsWiggling] = useState(false);
+  const wiggleIdleTimerRef = useRef(null);
+  const wiggleOffTimerRef = useRef(null);
 
   const {
     handleInterested,
@@ -109,6 +119,45 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     executePending,
     clearPending,
   } = useDiscoveryInteractions();
+
+  // Idle wiggle cue — teaches new users the card is swipeable without an explicit
+  // tutorial. Wiggles the active card after WIGGLE_IDLE_MS of no interaction, then
+  // keeps repeating on that cadence (ambient nudge, not a one-time hint) until the
+  // user interacts, which restarts the countdown from zero.
+  const clearWiggleTimers = useCallback(() => {
+    clearTimeout(wiggleIdleTimerRef.current);
+    clearTimeout(wiggleOffTimerRef.current);
+  }, []);
+
+  const scheduleWiggle = useCallback(() => {
+    clearWiggleTimers();
+    wiggleIdleTimerRef.current = setTimeout(() => {
+      setIsWiggling(true);
+      wiggleOffTimerRef.current = setTimeout(() => {
+        setIsWiggling(false);
+        scheduleWiggle();
+      }, WIGGLE_DURATION_MS);
+    }, WIGGLE_IDLE_MS);
+  }, [clearWiggleTimers]);
+
+  const resetWiggleTimer = useCallback(() => {
+    setIsWiggling(false);
+    scheduleWiggle();
+  }, [scheduleWiggle]);
+
+  // Pause while there's no active card or the card is obscured (rating sheet / auth
+  // modal / feedback sheet); resume with a fresh 5s countdown once it's unobscured.
+  // Also fires whenever currentVenue changes, so a freshly-presented card gets its
+  // own full countdown.
+  useEffect(() => {
+    if (!currentVenue || ratingSheetOpen || authModalOpen || feedbackSheetOpen) {
+      clearWiggleTimers();
+      setIsWiggling(false);
+      return;
+    }
+    resetWiggleTimer();
+    return clearWiggleTimers;
+  }, [currentVenue, ratingSheetOpen, authModalOpen, feedbackSheetOpen, resetWiggleTimer, clearWiggleTimers]);
 
   // Write passive_skip when a new card becomes active
   const lastPassiveSkipRef = useRef(null);
@@ -383,11 +432,20 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     logRatingSheetOpened(venue);
   }, [logRatingSheetOpened]);
 
+  // Mirrors the ratingSheetOpen state+ref pair above — the ref avoids stale
+  // closures in handleCardBodyTap, the state drives the keyboard-shortcut
+  // guard and the drag/dim logic below.
+  const handleFeedbackSheetOpenChange = useCallback((isOpen) => {
+    feedbackSheetOpenRef.current = isOpen;
+    setFeedbackSheetOpen(isOpen);
+  }, []);
+
   // Handle interaction + animate out
   // exitDuration: drag gestures pass a velocity-derived value; button presses use the default 0.2s
   const performAction = useCallback(async (direction, venue, exitDuration = 0.2) => {
     if (isAnimatingRef.current) return;
     isAnimatingRef.current = true;
+    resetWiggleTimer();
     x.stop();
     y.stop();
     opacity.stop();
@@ -454,7 +512,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     await exitAnim;
     advanceCard();
     if (success === false) setAuthModalOpen(true);
-  }, [handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, opacity, advanceCard]);
+  }, [handleInterested, handleNotInterested, handleSkip, openRatingSheet, x, y, opacity, advanceCard, resetWiggleTimer]);
 
   const handleRate = useCallback(async (rating, notes) => {
     ratingWasSubmittedRef.current = true;
@@ -498,7 +556,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   // Drag handlers — track isDragging to disable transition during drag (Fix 2)
   const handleDragStart = useCallback(() => {
     setIsDragging(true);
-  }, []);
+    resetWiggleTimer();
+  }, [resetWiggleTimer]);
 
   const handleDragEnd = useCallback((event, info) => {
     if (!currentVenue || isAnimatingRef.current) { setIsDragging(false); return; }
@@ -536,8 +595,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   }, [currentVenue, performAction, x, y, opacity]);
 
   const handleCardBodyTap = useCallback((venue) => {
-    if (ratingSheetOpenRef.current) return;
+    if (ratingSheetOpenRef.current || feedbackSheetOpenRef.current) return;
     if (Date.now() < blockCardTapUntilRef.current) return;
+    resetWiggleTimer();
     const placeId = (venue.place_id || venue.google_place_id || '').replace(/^places\//, '');
     try { sessionStorage.setItem('whatspot_deck_index', String(currentIndex)); } catch {}
     logEvent('click', {
@@ -546,7 +606,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       ...venueSnapshot(venue),
     });
     navigate(`/venue/${placeId}`, { state: { venue } });
-  }, [navigate, currentIndex]);
+  }, [navigate, currentIndex, resetWiggleTimer]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -560,7 +620,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
         return;
       }
 
-      if (ratingSheetOpen) return;
+      if (ratingSheetOpen || feedbackSheetOpen) return;
 
       switch (e.key) {
         case 'ArrowRight':
@@ -591,7 +651,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [currentVenue, hasMore, performAction, handleCardBodyTap, ratingSheetOpen, handleRatingCancel]);
+  }, [currentVenue, hasMore, performAction, handleCardBodyTap, ratingSheetOpen, feedbackSheetOpen, handleRatingCancel]);
 
   // Auth modal callback
   const handleAuthClose = useCallback((open) => {
@@ -682,7 +742,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
     );
   }
 
-  const isCardDimmed = ratingSheetOpen;
+  const isCardDimmed = ratingSheetOpen || feedbackSheetOpen;
 
   return (
     <div
@@ -718,7 +778,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
             ref={activeCardRef}
             className="absolute inset-0 z-10 touch-none"
             style={{ x, y, opacity }}
-            drag={!ratingSheetOpen && !exitDirection}
+            drag={!ratingSheetOpen && !feedbackSheetOpen && !exitDirection}
             dragMomentum={false}
             dragElastic={0.05}
             onDragStart={handleDragStart}
@@ -783,6 +843,8 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
               listLabel={listMembershipMap ? listMembershipMap.get((currentVenue?.place_id || currentVenue?.google_place_id || '').replace(/^places\//, '')) ?? null : null}
               onBeenHereClick={() => performAction('up', currentVenue)}
               onFadingChange={handleFadingChange}
+              onFeedbackSheetOpenChange={handleFeedbackSheetOpenChange}
+              wiggle={isWiggling}
             />
           </motion.div>
         ) : hasMore ? (
