@@ -5,10 +5,24 @@ const DEFAULT_MONTHLY_CAP = 500;
 // Gemini calls are individually cheap (~$0.001-0.0015 each) — this cap is a circuit
 // breaker against runaway cost (bug/spike/abuse), not a routine per-search throttle.
 const LLM_MONTHLY_CAP = 75000;
+// 'weekly' (issue #324): the on-demand path (search-venues-db) is now deduped
+// and batched, and indirectly bounded by the search rate limit upstream — this
+// no longer needs to share the generic 500/month default, which would starve
+// legitimate refreshes at any real search volume. Sized well above realistic
+// need (cron alone is ~217/month; this covers that plus real on-demand use)
+// while still catching a genuine bug/loop.
+const WEEKLY_REFRESH_MONTHLY_CAP = 10000;
+// 'photos_refresh': refresh-venue-photos previously had no cap at all, relying
+// solely on its quarterly-cron-only invocation (~17/month average) for safety.
+// This is insurance in case an on-demand trigger is ever added later, not a
+// response to any current volume.
+const PHOTOS_REFRESH_MONTHLY_CAP = 2000;
 
 function monthlyCapFor(callType: string): number {
   if (callType === 'photos') return PHOTOS_MONTHLY_CAP;
   if (callType === 'completeness_llm') return LLM_MONTHLY_CAP;
+  if (callType === 'weekly') return WEEKLY_REFRESH_MONTHLY_CAP;
+  if (callType === 'photos_refresh') return PHOTOS_REFRESH_MONTHLY_CAP;
   return DEFAULT_MONTHLY_CAP;
 }
 
