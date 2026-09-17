@@ -2,7 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/types.ts';
 import { boundingBox, haversineKm } from '../_shared/geo.ts';
 
-const WEEKLY_STALE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const WEEKLY_STALE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days (issue #341, matches refresh-venue-weekly/venue-refresh-health)
 // A venue "claimed" for refresh within this window is skipped, so the same
 // stale venue served to many concurrent requests doesn't queue redundant
 // refresh-venue-weekly calls. Long enough for one refresh to finish (a single

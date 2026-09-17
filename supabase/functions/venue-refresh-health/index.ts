@@ -2,10 +2,18 @@
  * venue-refresh-health
  *
  * Admin-only. Reports what share of venues are past the weekly-refresh
- * staleness window (7 days, same definition as search-venues-db/
+ * staleness window (30 days, same definition as search-venues-db/
  * refresh-venue-weekly), so an in-app banner can surface a growing backlog
  * instead of it only being visible in edge function logs — this is a hobby
  * project and logs don't get checked regularly (issue #326).
+ *
+ * Scope (issue #341): both counts are restricted to venues eligible for the
+ * live Feed tabs (is_chain = false AND rating >= 4.0, same bar refresh-venue-
+ * weekly's candidate query uses), not the full venues table. The full table
+ * includes tens of thousands of chains and sub-4.0-rated venues that can
+ * never appear in New, Popular, Walk-In Friendly, or For You's primary pass
+ * — including them made this metric permanently near-100% stale regardless
+ * of any real backlog progress.
  *
  * Request:  none (Authorization header required)
  * Response: { stalePct: number, staleCount: number, totalCount: number }
@@ -19,7 +27,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const STALE_DAYS = 7;
+const STALE_DAYS = 30;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -52,13 +60,17 @@ Deno.serve(async (req) => {
     const { count: totalCount, error: totalError } = await supabase
       .from('venues')
       .select('*', { count: 'exact', head: true })
-      .eq('is_removed', false);
+      .eq('is_removed', false)
+      .eq('is_chain', false)
+      .gte('rating', 4.0);
     if (totalError) throw totalError;
 
     const { count: staleCount, error: staleError } = await supabase
       .from('venues')
       .select('*', { count: 'exact', head: true })
       .eq('is_removed', false)
+      .eq('is_chain', false)
+      .gte('rating', 4.0)
       .or(`rating_last_updated.is.null,rating_last_updated.lt.${staleThreshold}`);
     if (staleError) throw staleError;
 
