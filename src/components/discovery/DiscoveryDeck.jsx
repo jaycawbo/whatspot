@@ -844,6 +844,7 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
               onBeenHereClick={() => performAction('up', currentVenue)}
               onFadingChange={handleFadingChange}
               onFeedbackSheetOpenChange={handleFeedbackSheetOpenChange}
+              onInteraction={resetWiggleTimer}
               wiggle={isWiggling}
             />
           </motion.div>

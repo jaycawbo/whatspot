@@ -38,6 +38,7 @@ export default function DiscoveryCard({
   beenHereRating = null,
   onFadingChange = null,
   onFeedbackSheetOpenChange = null,
+  onInteraction = null,
   wiggle = false,
 }) {
   const navigate = useNavigate();
@@ -177,7 +178,8 @@ export default function DiscoveryCard({
     setIsFading(false);
     remainingTimeRef.current = CROSSFADE_INTERVAL;
     startTimer();
-  }, [currentPhoto, photos.length, placeId, startTimer]);
+    onInteraction?.();
+  }, [currentPhoto, photos.length, placeId, startTimer, onInteraction]);
 
   // Handle card body tap
   const handleBodyTap = useCallback(() => {
