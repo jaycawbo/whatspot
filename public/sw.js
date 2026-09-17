@@ -4,7 +4,7 @@ self.addEventListener('activate', (event) => event.waitUntil(clients.claim()));
 self.addEventListener('push', (event) => {
   const data = event.data?.json() ?? {};
   event.waitUntil(
-    self.registration.showNotification(data.title ?? 'WhatSpot', {
+    self.registration.showNotification(data.title ?? 'whatspot', {
       body: data.body ?? '',
       icon: '/whatspot_question_marker_icon.png',
       badge: '/whatspot_question_marker_icon.png',

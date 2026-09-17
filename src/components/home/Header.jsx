@@ -59,7 +59,7 @@ export default function Header({ onLogoClick, onCloseSearch } = {}) {
           href="/"
           onClick={handleLogoClick}
           className="pointer-events-auto leading-[0]"
-          aria-label="WhatSpot home"
+          aria-label="whatspot home"
         >
           <WhatspotLogo size="nav" />
         </a>

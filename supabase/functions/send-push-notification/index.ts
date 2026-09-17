@@ -189,7 +189,7 @@ Deno.serve(async (req) => {
       .single();
 
     if (diner?.sms_opt_in && diner.phone) {
-      await sendSmsStub(diner.phone, `WhatSpot: Your walk-in request was accepted! Head over now.`);
+      await sendSmsStub(diner.phone, `whatspot: Your walk-in request was accepted! Head over now.`);
     }
   }
 

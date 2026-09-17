@@ -1,5 +1,5 @@
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
-const USER_AGENT = 'WhatSpot/1.0';
+const USER_AGENT = 'whatspot/1.0';
 
 function buildNominatimLabel(address) {
   if (!address) return 'Current Location';
