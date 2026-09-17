@@ -218,5 +218,11 @@ export async function runConversationalSearch({
     refinement_suggestions: copy.refinement_suggestions ?? [],
     intentSummary: intent.intentSummary,
     correctionInfo: intent.correctionInfo,
+    parsed_intent: {
+      keywords: intent.keywords,
+      corrected_query: intent.correctedQuery,
+      detected_location: intent.areaOverride,
+      cuisine_types: intent.cuisineTypes,
+    },
   };
 }

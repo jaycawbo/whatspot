@@ -164,6 +164,18 @@ export default function Home() {
     [dispatch, state.locationName]
   );
 
+  const logSearchEvent = useCallback(
+    (queryText, result) => {
+      logEvent('search', {
+        search_query: queryText,
+        neighborhood_context: state.locationName,
+        results_returned: result?.venues?.length ?? 0,
+        metadata: { parsed_intent: result?.parsed_intent ?? null },
+      });
+    },
+    [state.locationName]
+  );
+
   const handleSearch = useCallback(
     async (queryText) => {
       const nextQuery = queryText.trim();
@@ -174,11 +186,11 @@ export default function Home() {
       dispatch({ type: 'SET_TILE_BASE_QUERY', payload: null });
       addSearchHistory(nextQuery);
       setReserveVenues([]);
-      logEvent('search', { search_query: nextQuery, neighborhood_context: state.locationName });
       const coords = state.userLocation?.lat
         ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
         : null;
       const result = await conversation.search(nextQuery, coords, state.filters, state.locationName);
+      logSearchEvent(nextQuery, result);
       if (result) {
         setConvResults(result.venues || []);
         setConvResponse(result.conversational_response || '');
@@ -186,7 +198,7 @@ export default function Home() {
         setConvQuery(nextQuery);
       }
     },
-    [conversation, dispatch, addSearchHistory, state.locationName, state.userLocation, state.filters]
+    [conversation, dispatch, addSearchHistory, state.locationName, state.userLocation, state.filters, logSearchEvent]
   );
 
   const handleSelectCategory = useCallback(
@@ -197,11 +209,11 @@ export default function Home() {
       dispatch({ type: 'SET_CATEGORY', payload: category.label });
       addSearchHistory(category.prompt);
       setReserveVenues([]);
-      logEvent('search', { search_query: category.prompt, neighborhood_context: state.locationName });
       const coords = state.userLocation?.lat
         ? { lat: state.userLocation.lat, lon: state.userLocation.lon ?? state.userLocation.lng }
         : null;
       const result = await conversation.search(category.prompt, coords, state.filters, state.locationName);
+      logSearchEvent(category.prompt, result);
       if (result) {
         setConvResults(result.venues || []);
         setConvResponse(result.conversational_response || '');
@@ -209,7 +221,7 @@ export default function Home() {
         setConvQuery(category.prompt);
       }
     },
-    [conversation, dispatch, addSearchHistory, state.locationName, state.userLocation, state.filters]
+    [conversation, dispatch, addSearchHistory, state.locationName, state.userLocation, state.filters, logSearchEvent]
   );
 
   const handleAppendChip = useCallback(

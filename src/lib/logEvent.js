@@ -23,7 +23,7 @@ export async function logEvent(eventType, payload = {}) {
 export function venueSnapshot(venue) {
   return {
     venue_name: (venue?.name || '').split('|')[0].trim() || null,
-    venue_cuisine_type: venue?.cuisine_type ?? null,
+    venue_cuisine_type: (venue?.cuisine_type ?? venue?.category ?? '').split('|')[0].trim() || null,
     venue_price_level: venue?.price_level ?? null,
     venue_distance_km: venue?.distance_km ?? null,
     venue_rating: venue?.rating ?? null,
