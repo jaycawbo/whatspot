@@ -15,7 +15,7 @@ Deno.serve(async (req) => {
     if (reqLat !== undefined && reqLon !== undefined) {
       const url = `https://nominatim.openstreetmap.org/reverse?lat=${reqLat}&lon=${reqLon}&format=json`;
       const response = await fetch(url, {
-        headers: { 'User-Agent': 'WhatSpot/1.0 (whatspot.app)' },
+        headers: { 'User-Agent': 'whatspot/1.0 (whatspot.app)' },
       });
       if (!response.ok) {
         return new Response(JSON.stringify({ success: true, name: 'Current Location' }), {
@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
     const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&addressdetails=1`;
 
     const response = await fetch(url, {
-      headers: { 'User-Agent': 'WhatSpot/1.0 (whatspot.app)' },
+      headers: { 'User-Agent': 'whatspot/1.0 (whatspot.app)' },
     });
 
     if (!response.ok) {

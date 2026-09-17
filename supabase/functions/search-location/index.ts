@@ -20,7 +20,7 @@ Deno.serve(async (req) => {
     const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&countrycodes=ca`;
 
     const response = await fetch(url, {
-      headers: { 'User-Agent': 'WhatSpot/1.0 (whatspot.app)' },
+      headers: { 'User-Agent': 'whatspot/1.0 (whatspot.app)' },
     });
 
     if (!response.ok) {

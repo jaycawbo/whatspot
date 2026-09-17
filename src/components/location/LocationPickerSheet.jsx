@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { useLocation } from '@/hooks/useLocation';
 
 const PHOTON_URL = 'https://photon.komoot.io/api/';
-const USER_AGENT = 'WhatSpot/1.0';
+const USER_AGENT = 'whatspot/1.0';
 const MIN_QUERY_LEN = 3;
 const DEBOUNCE_MS = 600;
 
