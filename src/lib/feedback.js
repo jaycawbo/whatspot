@@ -25,13 +25,15 @@ export const CLOSED_OPTIONS = {
     { value: 'other', label: 'Other' },
   ],
   feature_request: [
-    { value: 'new_capability', label: 'Something new I wish WhatSpot could do' },
+    { value: 'new_capability', label: "Something new I'd like to see" },
     { value: 'improve_existing', label: 'Improve something that already exists' },
+    { value: 'remove_feature', label: 'Remove a feature or experience' },
     { value: 'integration', label: 'Connect with another app/service' },
     { value: 'other', label: 'Other' },
   ],
   venue_issue: [
-    { value: 'wrong_category', label: 'Wrong category (not a restaurant/bar/cafe)' },
+    { value: 'wrong_category', label: 'Not expected/relevant' },
+    { value: 'incorrect_info', label: 'Incorrect information' },
     { value: 'permanently_closed', label: 'Permanently closed' },
     { value: 'duplicate', label: 'Duplicate listing' },
     { value: 'inappropriate', label: 'Inappropriate content' },
@@ -39,7 +41,7 @@ export const CLOSED_OPTIONS = {
   ],
   general: [
     { value: 'love_it', label: 'Love it' },
-    { value: 'confusing', label: 'Something was confusing' },
+    { value: 'confusing', label: 'Flag a problem' },
     { value: 'suggestion', label: 'Suggestion' },
     { value: 'other', label: 'Other' },
   ],
