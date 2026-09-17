@@ -14,13 +14,24 @@
  *   and are handled by refresh-venue-photos on a quarterly schedule.
  *   AI descriptions are never fetched from the API; generated internally.
  *
- * Staleness window: 7 days
+ * Staleness window: 30 days
+ *
+ * Candidate scope (issue #341): only venues eligible to appear in the live
+ * Feed tabs — New, Popular, Walk-In Friendly (feed-tabs) and For You's
+ * primary admission pass (recommend's DISCOVERY_CRITERIA[0], same bar) —
+ * i.e. is_chain = false AND rating >= 4.0 AND is_removed = false. Trending is
+ * disabled, so its old requirement for broad, unscoped review_count sampling
+ * no longer applies. Chains and sub-4.0-rated venues never surface in any
+ * live tab and are refreshed lazily on-demand only if actually served via
+ * Search (search-venues-db), never by this cron. This keeps the cron's
+ * candidate pool at roughly ~5k venues instead of the full venues table
+ * (~39k, 98% of which were never eligible for any live Feed surface).
  *
  * Invocation:
  *   - pg_cron: weekly, Monday 6am UTC
  *   - Fire-and-forget from search-venues-db, batched, when serving stale venues
- *     (search's DB path only — feed-tabs/Popular/New never call this; they
- *     depend solely on the cron). search-venues-db claims venues via
+ *     (search's DB path only — feed-tabs/Popular/New/For You never call this;
+ *     they depend solely on the cron). search-venues-db claims venues via
  *     venues.weekly_refresh_queued_at before invoking so the same venue isn't
  *     queued again by concurrent requests while a refresh is in flight
  *     (issue #324).
@@ -40,7 +51,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const STALE_DAYS    = 7;
+const STALE_DAYS    = 30;
 const DEFAULT_BATCH = 50;
 
 // Fields that belong to the Enterprise tier — never mix photos into this call.
@@ -134,6 +145,9 @@ Deno.serve(async (req) => {
       const { data, error } = await supabase
         .from('venues')
         .select('google_place_id')
+        .eq('is_removed', false)
+        .eq('is_chain', false)
+        .gte('rating', 4.0)
         .or(`rating_last_updated.is.null,rating_last_updated.lt.${staleThreshold}`)
         .order('rating_last_updated', { ascending: true, nullsFirst: true })
         .limit(batchSize);

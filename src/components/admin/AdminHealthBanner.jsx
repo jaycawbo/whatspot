@@ -17,7 +17,7 @@ export default function AdminHealthBanner() {
         <div className="flex items-start gap-2 px-3 py-2 rounded-lg shadow-lg bg-amber-100 text-amber-900 border border-amber-300 text-sm dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800 max-w-[min(90vw,20rem)]">
           <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
           <span className="flex-1 leading-snug">
-            Admin only: {stalePct}% of venues are past their 7-day refresh window — the weekly cron may not be keeping up with venue table growth.
+            Admin only: {stalePct}% of Feed-eligible venues (non-chain, rating 4.0+) are past their 30-day refresh window — the weekly cron may not be keeping up.
           </span>
           <button
             onClick={dismiss}
