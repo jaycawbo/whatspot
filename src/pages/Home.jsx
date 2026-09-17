@@ -56,6 +56,7 @@ export default function Home() {
     getReserveVenues,
     getPrefetchedVenues,
     prefetchNextBatch,
+    fetchMoreTabVenues,
   } = useDiscoveryFeed();
 
   const { showGate, closeGate } = useGuestLimits();
@@ -134,6 +135,19 @@ export default function Home() {
   }, [feedVenues, reserveVenues]);
 
   const handleRequestMoreVenues = useCallback(async () => {
+    // Popular is fed by feed-tabs, not the discovery/For You recommend() pipeline —
+    // give it its own load-more path instead of falling through to reserve/prefetch
+    // pools that pipeline never populates for this tab. See issue #352.
+    if (state.feedTab === 'popular') {
+      const result = await fetchMoreTabVenues('popular');
+      const fresh = (result?.venues || []).filter(v => {
+        const id = normalizeId(v);
+        return id && !activeIds.has(id);
+      });
+      if (fresh.length > 0) setReserveVenues(prev => [...prev, ...fresh]);
+      return;
+    }
+
     const reserve = getReserveVenues(activeIds);
     const prefetched = getPrefetchedVenues(activeIds);
     const immediate = [...reserve, ...prefetched];
@@ -151,7 +165,7 @@ export default function Home() {
     } else if (immediate.length === 0) {
       expandSearch();
     }
-  }, [getReserveVenues, getPrefetchedVenues, prefetchNextBatch, expandSearch, currentQuery, activeIds]);
+  }, [state.feedTab, fetchMoreTabVenues, getReserveVenues, getPrefetchedVenues, prefetchNextBatch, expandSearch, currentQuery, activeIds]);
 
   const addSearchHistory = useCallback(
     (queryText) => {

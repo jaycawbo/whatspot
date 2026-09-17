@@ -148,7 +148,7 @@ function getLocalHourAndDay() {
   return { hour, day: weekdayMap[dayStr] ?? 1 };
 }
 
-async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
+async function fetchTabVenues(tab, { anchor, filters, skippedIds, excludeIds }) {
   const { lat, lon } = anchor;
   const { hour, day } = getLocalHourAndDay();
   const { data, error } = await supabase.functions.invoke('feed-tabs', {
@@ -160,6 +160,7 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds }) {
       price_levels: filters?.priceLevels,
       cuisines: filters?.cuisines,
       skipped_ids: skippedIds,
+      exclude_ids: excludeIds,
       local_hour: hour,
       local_day: day,
     },
@@ -192,6 +193,9 @@ export function useDiscoveryFeed() {
   const [tabDataMap, setTabDataMap] = useState({});
   const tabDataMapRef = useRef({});
   const tabPrefetchKeyRef = useRef(null);
+  // Per-DB-tab (popular/new/trending/walkin) load-more state — issue #352 phase 1 (popular only)
+  const tabServedIdsRef = useRef({});
+  const tabRingIndexRef = useRef({});
   const radiusRef = useRef(state.filters?.radius || 5);
   const abortRef = useRef(null);
   const hasFetchedRef = useRef(!!cached);
@@ -384,6 +388,8 @@ export function useDiscoveryFeed() {
     fullScoredPoolRef.current = [];
     radiusRingIndexRef.current = 0;
     criteriaPassRef.current = 1;
+    tabServedIdsRef.current = {};
+    tabRingIndexRef.current = {};
     setVenues([]);
     try { sessionStorage.removeItem(FEED_CACHE_KEY); } catch {}
     try { sessionStorage.removeItem('whatspot_seen_venues'); } catch {}
@@ -431,6 +437,8 @@ export function useDiscoveryFeed() {
       return;
     }
     tabPrefetchKeyRef.current = prefetchKey;
+    tabServedIdsRef.current = {};
+    tabRingIndexRef.current = {};
 
     setIsLoading(true);
     setTabEmpty(false);
@@ -449,6 +457,13 @@ export function useDiscoveryFeed() {
     ).then((entries) => {
       const map = Object.fromEntries(entries);
       console.log('[TabFeed] Prefetched tabs:', entries.map(([t, r]) => `${t}=${r.venues.length}${r.isEmpty ? ' (empty)' : ''}`).join(', '));
+      DB_TABS.forEach((t) => {
+        const ids = new Set((map[t]?.venues || []).map((v) =>
+          (v.place_id || v.google_place_id || '').replace(/^places\//, '')
+        ));
+        tabServedIdsRef.current[t] = ids;
+        tabRingIndexRef.current[t] = 0;
+      });
       tabDataMapRef.current = map;
       setTabDataMap(map);
       applyActiveTab(map);
@@ -890,6 +905,42 @@ export function useDiscoveryFeed() {
     return prefetched;
   }, []);
 
+  // Load more for a feed-tabs-backed tab (currently: popular only — issue #352 phase 1).
+  // Advances that tab's own radius ring + excludes everything already served to it,
+  // mirroring the discovery pipeline's ring-expansion pattern but keeping its own
+  // independent state so it never touches for_you's radiusRingIndexRef/criteriaPassRef.
+  const fetchMoreTabVenues = useCallback(async (tab) => {
+    const anchor = anchorPointRef.current ?? state.userLocation;
+    if (!anchor) return { venues: [], isEmpty: true };
+
+    const servedSet = tabServedIdsRef.current[tab] ?? (tabServedIdsRef.current[tab] = new Set());
+    const ringIndex = Math.min((tabRingIndexRef.current[tab] ?? 0) + 1, RADIUS_RINGS.length - 1);
+    tabRingIndexRef.current[tab] = ringIndex;
+    // Never request a smaller radius than the tab's base fetch (RADIUS_RINGS[1] is 4km,
+    // which can be less than a 5km default filter radius on the very first load-more call).
+    const radiusKm = Math.max(RADIUS_RINGS[ringIndex], state.filters?.radius || 5);
+
+    let skippedIds = [];
+    try {
+      const raw = sessionStorage.getItem('whatspot_skipped_venues');
+      if (raw) skippedIds = JSON.parse(raw);
+    } catch {}
+
+    const result = await fetchTabVenues(tab, {
+      anchor,
+      filters: { ...state.filters, radius: radiusKm },
+      skippedIds,
+      excludeIds: Array.from(servedSet),
+    });
+
+    (result.venues || []).forEach(v => {
+      const id = (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+      if (id) servedSet.add(id);
+    });
+
+    return result;
+  }, [state.userLocation, state.filters]);
+
   return {
     venues,
     overflowVenues,
@@ -906,5 +957,6 @@ export function useDiscoveryFeed() {
     getReserveVenues,
     getPrefetchedVenues,
     prefetchNextBatch,
+    fetchMoreTabVenues,
   };
 }
