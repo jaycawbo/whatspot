@@ -10,6 +10,7 @@ import { Upload } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { parseTakeoutCsv, MAX_IMPORT_ROWS } from '@/lib/googleListImport';
 import { useBroncoSpotLists } from '@/hooks/useBroncoSpotLists';
+import { logEvent, venueSnapshot } from '@/lib/logEvent';
 import { toast } from 'sonner';
 
 // Delay between sequential Places API calls during import — avoids bursting
@@ -138,7 +139,13 @@ export default function ImportListDialog({ open, onOpenChange, existingSpots = [
             }
           }
         } else {
-          await onSaveVenue({ place_id: data.place_id, name: data.name }, statusLabel);
+          const importedVenue = { place_id: data.place_id, name: data.name };
+          await onSaveVenue(importedVenue, statusLabel);
+          logEvent('save', {
+            venue_id: data.place_id,
+            metadata: { labels: [statusLabel], source: 'spot_hop_import' },
+            ...venueSnapshot(importedVenue),
+          });
           imported.push(data.name || entry.title);
         }
       } catch {

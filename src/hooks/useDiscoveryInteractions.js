@@ -130,8 +130,19 @@ export function useDiscoveryInteractions() {
     try {
       if (isSaved(placeId)) {
         await updateLabels({ placeId, labels: [label] });
+        logEvent('label_updated', {
+          venue_id: placeId,
+          metadata: { labels: [label] },
+          ...venueSnapshot(venue),
+        });
       } else {
         await saveSpot({ venue, labels: [label] });
+        logEvent('save', {
+          venue_id: placeId,
+          neighborhood_context: venue.address,
+          metadata: { labels: [label] },
+          ...venueSnapshot(venue),
+        });
       }
     } catch (err) {
       console.error('Failed to save interaction:', err);
