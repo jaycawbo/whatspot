@@ -134,17 +134,24 @@ export default function Home() {
     return ids;
   }, [feedVenues, reserveVenues]);
 
+  // Popular is fed by feed-tabs, not the discovery/For You recommend() pipeline — this is
+  // its own load-more path, shared by the proactive deck trigger and the terminal empty
+  // state's "Explore further" CTA, instead of either falling through to reserve/prefetch
+  // pools that pipeline never populates for this tab, or (for the CTA) calling expandSearch()
+  // and hitting recommend() directly. See issue #352.
+  const requestMorePopularVenues = useCallback(async () => {
+    const result = await fetchMoreTabVenues('popular');
+    const fresh = (result?.venues || []).filter(v => {
+      const id = normalizeId(v);
+      return id && !activeIds.has(id);
+    });
+    if (fresh.length > 0) setReserveVenues(prev => [...prev, ...fresh]);
+    return result;
+  }, [fetchMoreTabVenues, activeIds]);
+
   const handleRequestMoreVenues = useCallback(async () => {
-    // Popular is fed by feed-tabs, not the discovery/For You recommend() pipeline —
-    // give it its own load-more path instead of falling through to reserve/prefetch
-    // pools that pipeline never populates for this tab. See issue #352.
     if (state.feedTab === 'popular') {
-      const result = await fetchMoreTabVenues('popular');
-      const fresh = (result?.venues || []).filter(v => {
-        const id = normalizeId(v);
-        return id && !activeIds.has(id);
-      });
-      if (fresh.length > 0) setReserveVenues(prev => [...prev, ...fresh]);
+      await requestMorePopularVenues();
       return;
     }
 
@@ -165,7 +172,15 @@ export default function Home() {
     } else if (immediate.length === 0) {
       expandSearch();
     }
-  }, [state.feedTab, fetchMoreTabVenues, getReserveVenues, getPrefetchedVenues, prefetchNextBatch, expandSearch, currentQuery, activeIds]);
+  }, [state.feedTab, requestMorePopularVenues, getReserveVenues, getPrefetchedVenues, prefetchNextBatch, expandSearch, currentQuery, activeIds]);
+
+  const handleExpandSearch = useCallback(() => {
+    if (state.feedTab === 'popular') {
+      requestMorePopularVenues();
+      return;
+    }
+    expandSearch();
+  }, [state.feedTab, requestMorePopularVenues, expandSearch]);
 
   const addSearchHistory = useCallback(
     (queryText) => {
@@ -544,7 +559,7 @@ export default function Home() {
                     searchFeed(tag);
                     setReserveVenues([]);
                   }}
-                  onExpandSearch={expandSearch}
+                  onExpandSearch={handleExpandSearch}
                   onNewSearch={() => setSearchDialogOpen(true)}
                   onRequestMoreVenues={handleRequestMoreVenues}
                 />
