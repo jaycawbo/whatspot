@@ -16,6 +16,19 @@ const GENERIC_KEYWORDS = new Set([
   'place', 'places', 'cafe', 'food', 'eats', 'venue', 'venues',
 ]);
 
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// True if `keyword` appears in `name` as a standalone word, not merely as a substring
+// inside a larger word — e.g. "dog" should match "Dog & Bear Pub" but not "Hotdog Stand".
+// The DB query's ilike match above is a coarse pre-filter on the same column; this is
+// the precise re-check applied to that already-small result set. See issue #343.
+function matchesAsWord(name: string, keyword: string): boolean {
+  const pattern = new RegExp(`(^|[^a-z0-9])${escapeRegex(keyword.toLowerCase())}([^a-z0-9]|$)`, 'i');
+  return pattern.test(name);
+}
+
 function rowToVenue(row: any, distanceKm: number | null) {
   return {
     place_id: row.google_place_id,
@@ -71,6 +84,10 @@ Deno.serve(async (req) => {
 
     let qb = supabase.from('venues').select('*').eq('is_removed', false);
 
+    // Populated below when keywords are present, and re-used after the fetch to apply a
+    // precise word-boundary check (see matchesAsWord) on top of the coarse ilike match.
+    let matchKeywords: string[] | null = null;
+
     if (keywords?.length > 0) {
       // Drop generic terms (restaurant, bar, spot, ...) from the OR-match set — left in,
       // one of these matches almost every row and drowns out a genuinely specific keyword
@@ -78,10 +95,11 @@ Deno.serve(async (req) => {
       // restaurant"). Only fall back to the unfiltered set if nothing specific is left.
       // See issue #331.
       const specificKeywords = keywords.filter((kw: string) => !GENERIC_KEYWORDS.has(kw.toLowerCase()));
-      const matchKeywords = specificKeywords.length > 0 ? specificKeywords : keywords;
+      const keywordsForQuery: string[] = specificKeywords.length > 0 ? specificKeywords : keywords;
+      matchKeywords = keywordsForQuery;
       // Name-only: address matching causes false positives when cuisine keywords
       // (e.g. "italian") match neighbourhood names (e.g. "Little Italy, Toronto").
-      const conditions = matchKeywords.flatMap((kw: string) => [`name.ilike.%${kw}%`]).join(',');
+      const conditions = keywordsForQuery.flatMap((kw: string) => [`name.ilike.%${kw}%`]).join(',');
       qb = qb.or(conditions);
     }
 
@@ -120,6 +138,13 @@ Deno.serve(async (req) => {
         if (row.lat == null || row.lng == null) return true;
         return haversineKm(lat, lon, row.lat, row.lng) <= radius_km;
       });
+    }
+
+    // Precise word-boundary re-check on top of the coarse ilike match above — drops
+    // compound-word false positives like "dog" matching inside "Hotdog Stand". See #343.
+    if (matchKeywords && matchKeywords.length > 0) {
+      const keywordsForBoundaryCheck = matchKeywords;
+      rows = rows.filter((row: any) => keywordsForBoundaryCheck.some((kw: string) => matchesAsWord(row.name || '', kw)));
     }
 
     // Queue background weekly refresh for any stale venues (live_fallback only).
