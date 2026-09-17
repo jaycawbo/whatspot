@@ -100,17 +100,24 @@ export default function Home() {
     return () => window.removeEventListener('whatspot:show-label-sheet', handler);
   }, [isAuthenticated]);
 
-  // Seed reserve buffer on first feed load
+  // Seed reserve buffer on first feed load. Only For You actually draws from the
+  // discovery/recommend() pipeline's reserve+prefetch pools — the mount effect in
+  // useDiscoveryFeed always runs that pipeline once regardless of active tab, so without
+  // this guard, landing directly on a feed-tabs-backed tab (Popular/New/Trending/Walk-In)
+  // silently pads its deck with unrelated discovery-mode venues the first time feedVenues
+  // goes non-empty, masking whether that tab's own load-more path is actually being
+  // exercised. See issue #352.
   useEffect(() => {
     if (feedVenues.length > 0 && !hasInitializedReserve.current) {
       hasInitializedReserve.current = true;
+      if (state.feedTab !== 'for_you') return;
       const activeIds = new Set(feedVenues.map(normalizeId).filter(Boolean));
       const reserve = getReserveVenues(activeIds);
       const prefetched = getPrefetchedVenues(activeIds);
       const combined = [...reserve, ...prefetched];
       if (combined.length > 0) setReserveVenues(combined);
     }
-  }, [feedVenues, getReserveVenues, getPrefetchedVenues]);
+  }, [feedVenues, getReserveVenues, getPrefetchedVenues, state.feedTab]);
 
   // Persist conv results to sessionStorage so they survive back-navigation
   useEffect(() => {
