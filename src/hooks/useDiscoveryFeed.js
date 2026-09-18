@@ -149,7 +149,6 @@ function getLocalHourAndDay() {
 }
 
 async function fetchTabVenues(tab, { anchor, filters, skippedIds, excludeIds }) {
-  console.log('[LoadMoreDiag] fetchTabVenues invoking feed-tabs', { tab, anchor, radius: filters?.radius, excludeCount: excludeIds?.length }); // TEMP — issue #352, remove before merge
   const { lat, lon } = anchor;
   const { hour, day } = getLocalHourAndDay();
   const { data, error } = await supabase.functions.invoke('feed-tabs', {
@@ -912,7 +911,6 @@ export function useDiscoveryFeed() {
   // independent state so it never touches for_you's radiusRingIndexRef/criteriaPassRef.
   const fetchMoreTabVenues = useCallback(async (tab) => {
     const anchor = anchorPointRef.current ?? state.userLocation;
-    console.log('[LoadMoreDiag] fetchMoreTabVenues called', { tab, anchor, anchorPointRefCurrent: anchorPointRef.current, userLocation: state.userLocation }); // TEMP — issue #352, remove before merge
     if (!anchor) return { venues: [], isEmpty: true };
 
     const servedSet = tabServedIdsRef.current[tab] ?? (tabServedIdsRef.current[tab] = new Set());
