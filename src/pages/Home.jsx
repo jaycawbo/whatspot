@@ -15,7 +15,6 @@ import SearchCooldownDialog from '@/components/search/SearchCooldownDialog';
 import PostSaveLabelSheet from '@/components/spots/PostSaveLabelSheet';
 import FeedModeTabs from '@/components/home/FeedModeTabs';
 import FilterDialog from '@/components/home/FilterDialog';
-import CollectionsSection from '@/components/bronco/CollectionsSection';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
 import { useGuestLimits } from '@/hooks/useGuestLimits';
@@ -537,9 +536,6 @@ export default function Home() {
           <div className="flex items-center justify-center gap-3 px-4 py-2">
             <FeedModeTabs onTabChange={handleTabChange} tabDataMap={tabDataMap} />
           </div>
-
-          {/* Editorial collections — hidden when empty */}
-          <CollectionsSection />
 
           <div
             className={`flex-1 flex items-center justify-center px-4 overflow-hidden ${isMobile ? 'pb-20' : ''}`}

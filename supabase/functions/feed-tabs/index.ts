@@ -1,14 +1,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/types.ts';
-import { boundingBox, haversineKm } from '../_shared/geo.ts';
+import { haversineKm } from '../_shared/geo.ts';
 import { getSuppressedVenueIds } from '../_shared/skipHistory.ts';
 import { weightedShuffleTopK } from '../_shared/weightedShuffle.ts';
 
 const PRICE_CHIP_TO_INT: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
 
 const WALKIN_BAR_TYPES = new Set(['bar', 'pub', 'cocktail_bar', 'wine_bar', 'brewery', 'tavern']);
-
-const VENUE_COLUMNS = 'google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors, regular_opening_hours, is_temporarily_closed, trending_score, created_at';
 
 // hour/day are the viewing user's own local time, supplied by the client — a Deno
 // edge function has no notion of "the user's local time" on its own, so this must
@@ -79,21 +77,13 @@ Deno.serve(async (req) => {
     const suppressedIds = authUserId ? await getSuppressedVenueIds(authUserId) : new Set<string>();
 
     const radiusKm = radius_km || 5;
-    const bb = boundingBox(lat, lon, radiusKm);
-    const withinRadius = (v: { lat: number; lng: number }) => haversineKm(lat, lon, v.lat, v.lng) <= radiusKm;
     const skipSet = new Set([...(skipped_ids || []), ...(exclude_ids || []), ...suppressedIds]);
+    const excludeIds = skipSet.size ? Array.from(skipSet) : null;
 
-    const applyPriceAndCuisine = (qb: any) => {
-      if (price_levels?.length) {
-        const ints = price_levels.map((p: string) => PRICE_CHIP_TO_INT[p]).filter(Boolean);
-        if (ints.length) qb = qb.in('price_level', ints);
-      }
-      if (cuisines?.length) {
-        const cuisineFilter = cuisines.map((c: string) => `types.cs.${JSON.stringify([c])}`).join(',');
-        qb = qb.or(cuisineFilter);
-      }
-      return qb;
-    };
+    const priceInts = (price_levels?.length
+      ? price_levels.map((p: string) => PRICE_CHIP_TO_INT[p]).filter(Boolean)
+      : null) as number[] | null;
+    const cuisineTypes = cuisines?.length ? cuisines : null;
 
     const toShape = (v: any) => ({
       google_place_id: v.google_place_id,
@@ -112,37 +102,48 @@ Deno.serve(async (req) => {
       photos_complete: v.photos_complete ?? false,
     });
 
+    // Shared RPC (see supabase/migrations/20260918000001_venues_geo_postgis.sql) — does
+    // exact-circle radius filtering via PostGIS ST_DWithin, plus chain/removed/rating/
+    // price/cuisine/exclusion filtering, entirely in SQL. Replaces the old bounding-box
+    // query + JS haversine/skipSet filter pattern that let popular venues sitting in the
+    // box's corners (outside the true radius) eat LIMIT slots before the JS correction
+    // ever ran. See issue #356.
+    const venuesNear = (params: {
+      minReviewCount?: number | null;
+      requireReviewCount?: boolean;
+      maxReviewCountAtIngestion?: number | null;
+      requireTrendingScore?: boolean;
+      createdAfter?: string | null;
+      orderByColumn?: string;
+      resultLimit: number;
+    }) => supabase.rpc('venues_near', {
+      center_lat: lat,
+      center_lng: lon,
+      radius_km: radiusKm,
+      min_rating: 4.0,
+      min_review_count: params.minReviewCount ?? null,
+      require_review_count: params.requireReviewCount ?? false,
+      max_review_count_at_ingestion: params.maxReviewCountAtIngestion ?? null,
+      require_trending_score: params.requireTrendingScore ?? false,
+      created_after: params.createdAfter ?? null,
+      price_levels: priceInts,
+      cuisine_types: cuisineTypes,
+      exclude_ids: excludeIds,
+      order_by_column: params.orderByColumn ?? 'review_count',
+      result_limit: params.resultLimit,
+    });
+
     if (tab === 'popular') {
-      // Typed `any` — an extra chained .not() call below on top of the already-long base
-      // chain pushes TS's query-builder type inference past its instantiation-depth limit.
-      let query: any = supabase
-        .from('venues')
-        .select(VENUE_COLUMNS)
-        .gte('lat', bb.latMin).lte('lat', bb.latMax)
-        .gte('lng', bb.lngMin).lte('lng', bb.lngMax)
-        .eq('is_chain', false)
-        .eq('is_removed', false)
-        .not('review_count', 'is', null)
-        .gte('rating', 4.0)
-        .order('review_count', { ascending: false })
-        .limit(40);
-      query = applyPriceAndCuisine(query);
-      // Push already-served exclusions into the SQL query itself — otherwise, once enough
-      // venues are served, the fixed limit(40) budget gets spent re-fetching rows the
-      // in-memory skipSet filter below would just discard anyway. See issue #352.
-      if (skipSet.size) {
-        query = query.not('google_place_id', 'in', `(${Array.from(skipSet).join(',')})`);
-      }
-      const { data, error } = await query;
+      const { data, error } = await venuesNear({
+        requireReviewCount: true,
+        orderByColumn: 'review_count',
+        resultLimit: 40,
+      });
       if (error) {
         console.error('[feed-tabs] Popular query error:', error);
         return jsonResponse({ venues: [], isEmpty: true });
       }
-      const filtered = (data || []).filter((v: any) => {
-        const id = (v.google_place_id || '').replace(/^places\//, '');
-        return !skipSet.has(id) && withinRadius(v);
-      });
-      const shaped = filtered.map(toShape);
+      const shaped = (data || []).map(toShape);
       const selected = weightedShuffleTopK(shaped, (v: any) => v.review_count ?? 0, 20);
       return jsonResponse({ venues: selected, isEmpty: false });
     }
@@ -153,21 +154,12 @@ Deno.serve(async (req) => {
       for (let years = 1; years <= 10; years++) {
         yearWindow = years;
         const cutoff = new Date(Date.now() - years * 365.25 * 24 * 60 * 60 * 1000).toISOString();
-        let newQuery = supabase
-          .from('venues')
-          .select(VENUE_COLUMNS)
-          .gte('lat', bb.latMin).lte('lat', bb.latMax)
-          .gte('lng', bb.lngMin).lte('lng', bb.lngMax)
-          .eq('is_chain', false)
-          .eq('is_removed', false)
-          .gte('rating', 4.0)
-          .not('review_count_at_ingestion', 'is', null)
-          .lt('review_count_at_ingestion', 75)
-          .gte('created_at', cutoff)
-          .order('created_at', { ascending: false })
-          .limit(30);
-        newQuery = applyPriceAndCuisine(newQuery);
-        const { data: newData, error: newError } = await newQuery;
+        const { data: newData, error: newError } = await venuesNear({
+          maxReviewCountAtIngestion: 75,
+          createdAfter: cutoff,
+          orderByColumn: 'created_at',
+          resultLimit: 30,
+        });
         if (newError) {
           console.error('[feed-tabs] New query error:', newError);
           break;
@@ -176,12 +168,8 @@ Deno.serve(async (req) => {
         if (results.length >= 30) break;
       }
       console.log('[feed-tabs] New: found', results.length, 'venues within', yearWindow, 'year(s)');
-      const filtered = results.filter((v: any) => {
-        const id = (v.google_place_id || '').replace(/^places\//, '');
-        return !skipSet.has(id) && withinRadius(v);
-      });
       const now = Date.now();
-      const shaped = filtered.map((v: any) => ({
+      const shaped = results.map((v: any) => ({
         ...toShape(v),
         _recencyWeight: 1 / ((now - new Date(v.created_at).getTime()) / 86_400_000 + 1),
       }));
@@ -190,29 +178,17 @@ Deno.serve(async (req) => {
     }
 
     if (tab === 'trending') {
-      let query = supabase
-        .from('venues')
-        .select(VENUE_COLUMNS)
-        .gte('lat', bb.latMin).lte('lat', bb.latMax)
-        .gte('lng', bb.lngMin).lte('lng', bb.lngMax)
-        .eq('is_chain', false)
-        .eq('is_removed', false)
-        .not('trending_score', 'is', null)
-        .not('review_count_30d_ago', 'is', null)
-        .gte('review_count', 50)
-        .gte('rating', 4.0)
-        .order('trending_score', { ascending: false })
-        .limit(30);
-      query = applyPriceAndCuisine(query);
-      const { data, error } = await query;
+      const { data, error } = await venuesNear({
+        minReviewCount: 50,
+        requireTrendingScore: true,
+        orderByColumn: 'trending_score',
+        resultLimit: 30,
+      });
       if (error) {
         console.error('[feed-tabs] Trending query error:', error);
         return jsonResponse({ venues: [], isEmpty: true });
       }
-      let filtered = (data || []).filter((v: any) => {
-        const id = (v.google_place_id || '').replace(/^places\//, '');
-        return !skipSet.has(id) && withinRadius(v);
-      });
+      let filtered = data || [];
 
       const hasRealScores = filtered.some((v: any) => v.trending_score != null);
       if (hasRealScores) {
@@ -228,22 +204,13 @@ Deno.serve(async (req) => {
         }
       } else {
         // No real trending scores yet — proxy fallback: top-rated with review_count >= 50
-        const { data: fallbackData, error: fallbackError } = await supabase
-          .from('venues')
-          .select(VENUE_COLUMNS)
-          .gte('lat', bb.latMin).lte('lat', bb.latMax)
-          .gte('lng', bb.lngMin).lte('lng', bb.lngMax)
-          .eq('is_removed', false)
-          .gte('review_count', 50)
-          .gte('rating', 4.0)
-          .order('rating', { ascending: false })
-          .order('review_count', { ascending: false })
-          .limit(30);
+        const { data: fallbackData, error: fallbackError } = await venuesNear({
+          minReviewCount: 50,
+          orderByColumn: 'rating_review',
+          resultLimit: 30,
+        });
         if (!fallbackError && fallbackData?.length) {
-          filtered = fallbackData.filter((v: any) => {
-            const id = (v.google_place_id || '').replace(/^places\//, '');
-            return !skipSet.has(id) && withinRadius(v);
-          });
+          filtered = fallbackData;
         }
       }
       const shaped = filtered.map((v: any) => ({
@@ -255,31 +222,16 @@ Deno.serve(async (req) => {
     }
 
     if (tab === 'walkin') {
-      let walkinQuery = supabase
-        .from('venues')
-        .select('google_place_id, name, address, lat, lng, rating, review_count, price_level, venue_types, photo_urls, photos_complete, descriptors')
-        .eq('is_chain', false)
-        .eq('is_removed', false)
-        .gte('rating', 4.0)
-        .gte('review_count', 50)
-        .gte('lat', bb.latMin).lte('lat', bb.latMax)
-        .gte('lng', bb.lngMin).lte('lng', bb.lngMax)
-        .order('review_count', { ascending: false })
-        .limit(60);
-      if (price_levels?.length) {
-        const ints = price_levels.map((p: string) => PRICE_CHIP_TO_INT[p]).filter(Boolean);
-        if (ints.length) walkinQuery = walkinQuery.in('price_level', ints);
-      }
-      const { data: walkinData, error: walkinError } = await walkinQuery;
+      const { data: walkinData, error: walkinError } = await venuesNear({
+        minReviewCount: 50,
+        orderByColumn: 'review_count',
+        resultLimit: 60,
+      });
       if (walkinError) {
         console.error('[feed-tabs] Walkin query error:', walkinError);
         return jsonResponse({ venues: [], isEmpty: true });
       }
       const scored = (walkinData || [])
-        .filter((v: any) => {
-          const id = (v.google_place_id || '').replace(/^places\//, '');
-          return !skipSet.has(id) && withinRadius(v);
-        })
         .map((v: any) => {
           const shaped = toShape(v);
           return { ...shaped, _walkinScore: computeInlineWalkinScore(shaped, local_hour ?? 12, local_day ?? 1) };
