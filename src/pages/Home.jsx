@@ -147,7 +147,9 @@ export default function Home() {
   // pools that pipeline never populates for this tab, or (for the CTA) calling expandSearch()
   // and hitting recommend() directly. See issue #352.
   const requestMorePopularVenues = useCallback(async () => {
+    console.log('[LoadMoreDiag] requestMorePopularVenues called'); // TEMP — issue #352, remove before merge
     const result = await fetchMoreTabVenues('popular');
+    console.log('[LoadMoreDiag] fetchMoreTabVenues resolved', result); // TEMP — issue #352, remove before merge
     const fresh = (result?.venues || []).filter(v => {
       const id = normalizeId(v);
       return id && !activeIds.has(id);
@@ -157,6 +159,7 @@ export default function Home() {
   }, [fetchMoreTabVenues, activeIds]);
 
   const handleRequestMoreVenues = useCallback(async () => {
+    console.log('[LoadMoreDiag] handleRequestMoreVenues called, feedTab =', state.feedTab); // TEMP — issue #352, remove before merge
     if (state.feedTab === 'popular') {
       await requestMorePopularVenues();
       return;
