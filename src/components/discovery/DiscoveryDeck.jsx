@@ -336,12 +336,22 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
   // Suppressed on back-nav restore until the user swipes (avoids triggering expandSearch
   // immediately, which would replace the restored venue array asynchronously).
   useEffect(() => {
+    // TEMP DIAGNOSTIC — issue #352 Finding 1, remove before merge.
+    console.log('[ProactiveLoad]', {
+      hasCallback: !!onRequestMoreVenues,
+      moreRequested: moreRequestedRef.current,
+      suppressed: suppressProactiveLoadRef.current,
+      venuesLength: venues.length,
+      currentIndex,
+    });
     if (!onRequestMoreVenues || moreRequestedRef.current || venues.length === 0) return;
     if (suppressProactiveLoadRef.current) return;
     const remaining = venues.length - currentIndex;
     const earlyTrigger = currentIndex > 0 && currentIndex >= Math.floor(venues.length / 4);
+    console.log('[ProactiveLoad] thresholds', { remaining, earlyTrigger });
     if (remaining <= 8 || earlyTrigger) {
       moreRequestedRef.current = true;
+      console.log('[ProactiveLoad] FIRING onRequestMoreVenues()');
       onRequestMoreVenues();
     }
   }, [currentIndex, venues.length, onRequestMoreVenues]);
