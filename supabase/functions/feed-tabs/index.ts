@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { tab, lat, lon, radius_km, price_levels, cuisines, skipped_ids, local_hour, local_day } = await req.json();
+    const { tab, lat, lon, radius_km, price_levels, cuisines, skipped_ids, exclude_ids, local_hour, local_day } = await req.json();
     if (!tab || lat == null || lon == null) {
       return errorResponse('tab, lat, and lon are required', 400);
     }
@@ -81,7 +81,7 @@ Deno.serve(async (req) => {
     const radiusKm = radius_km || 5;
     const bb = boundingBox(lat, lon, radiusKm);
     const withinRadius = (v: { lat: number; lng: number }) => haversineKm(lat, lon, v.lat, v.lng) <= radiusKm;
-    const skipSet = new Set([...(skipped_ids || []), ...suppressedIds]);
+    const skipSet = new Set([...(skipped_ids || []), ...(exclude_ids || []), ...suppressedIds]);
 
     const applyPriceAndCuisine = (qb: any) => {
       if (price_levels?.length) {
@@ -113,7 +113,9 @@ Deno.serve(async (req) => {
     });
 
     if (tab === 'popular') {
-      let query = supabase
+      // Typed `any` — an extra chained .not() call below on top of the already-long base
+      // chain pushes TS's query-builder type inference past its instantiation-depth limit.
+      let query: any = supabase
         .from('venues')
         .select(VENUE_COLUMNS)
         .gte('lat', bb.latMin).lte('lat', bb.latMax)
@@ -125,6 +127,12 @@ Deno.serve(async (req) => {
         .order('review_count', { ascending: false })
         .limit(40);
       query = applyPriceAndCuisine(query);
+      // Push already-served exclusions into the SQL query itself — otherwise, once enough
+      // venues are served, the fixed limit(40) budget gets spent re-fetching rows the
+      // in-memory skipSet filter below would just discard anyway. See issue #352.
+      if (skipSet.size) {
+        query = query.not('google_place_id', 'in', `(${Array.from(skipSet).join(',')})`);
+      }
       const { data, error } = await query;
       if (error) {
         console.error('[feed-tabs] Popular query error:', error);

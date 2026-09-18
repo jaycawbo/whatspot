@@ -56,6 +56,7 @@ export default function Home() {
     getReserveVenues,
     getPrefetchedVenues,
     prefetchNextBatch,
+    fetchMoreTabVenues,
   } = useDiscoveryFeed();
 
   const { showGate, closeGate } = useGuestLimits();
@@ -99,17 +100,24 @@ export default function Home() {
     return () => window.removeEventListener('whatspot:show-label-sheet', handler);
   }, [isAuthenticated]);
 
-  // Seed reserve buffer on first feed load
+  // Seed reserve buffer on first feed load. Only For You actually draws from the
+  // discovery/recommend() pipeline's reserve+prefetch pools — the mount effect in
+  // useDiscoveryFeed always runs that pipeline once regardless of active tab, so without
+  // this guard, landing directly on a feed-tabs-backed tab (Popular/New/Trending/Walk-In)
+  // silently pads its deck with unrelated discovery-mode venues the first time feedVenues
+  // goes non-empty, masking whether that tab's own load-more path is actually being
+  // exercised. See issue #352.
   useEffect(() => {
     if (feedVenues.length > 0 && !hasInitializedReserve.current) {
       hasInitializedReserve.current = true;
+      if (state.feedTab !== 'for_you') return;
       const activeIds = new Set(feedVenues.map(normalizeId).filter(Boolean));
       const reserve = getReserveVenues(activeIds);
       const prefetched = getPrefetchedVenues(activeIds);
       const combined = [...reserve, ...prefetched];
       if (combined.length > 0) setReserveVenues(combined);
     }
-  }, [feedVenues, getReserveVenues, getPrefetchedVenues]);
+  }, [feedVenues, getReserveVenues, getPrefetchedVenues, state.feedTab]);
 
   // Persist conv results to sessionStorage so they survive back-navigation
   useEffect(() => {
@@ -133,7 +141,27 @@ export default function Home() {
     return ids;
   }, [feedVenues, reserveVenues]);
 
+  // Popular is fed by feed-tabs, not the discovery/For You recommend() pipeline — this is
+  // its own load-more path, shared by the proactive deck trigger and the terminal empty
+  // state's "Explore further" CTA, instead of either falling through to reserve/prefetch
+  // pools that pipeline never populates for this tab, or (for the CTA) calling expandSearch()
+  // and hitting recommend() directly. See issue #352.
+  const requestMorePopularVenues = useCallback(async () => {
+    const result = await fetchMoreTabVenues('popular');
+    const fresh = (result?.venues || []).filter(v => {
+      const id = normalizeId(v);
+      return id && !activeIds.has(id);
+    });
+    if (fresh.length > 0) setReserveVenues(prev => [...prev, ...fresh]);
+    return result;
+  }, [fetchMoreTabVenues, activeIds]);
+
   const handleRequestMoreVenues = useCallback(async () => {
+    if (state.feedTab === 'popular') {
+      await requestMorePopularVenues();
+      return;
+    }
+
     const reserve = getReserveVenues(activeIds);
     const prefetched = getPrefetchedVenues(activeIds);
     const immediate = [...reserve, ...prefetched];
@@ -151,7 +179,15 @@ export default function Home() {
     } else if (immediate.length === 0) {
       expandSearch();
     }
-  }, [getReserveVenues, getPrefetchedVenues, prefetchNextBatch, expandSearch, currentQuery, activeIds]);
+  }, [state.feedTab, requestMorePopularVenues, getReserveVenues, getPrefetchedVenues, prefetchNextBatch, expandSearch, currentQuery, activeIds]);
+
+  const handleExpandSearch = useCallback(() => {
+    if (state.feedTab === 'popular') {
+      requestMorePopularVenues();
+      return;
+    }
+    expandSearch();
+  }, [state.feedTab, requestMorePopularVenues, expandSearch]);
 
   const addSearchHistory = useCallback(
     (queryText) => {
@@ -530,7 +566,7 @@ export default function Home() {
                     searchFeed(tag);
                     setReserveVenues([]);
                   }}
-                  onExpandSearch={expandSearch}
+                  onExpandSearch={handleExpandSearch}
                   onNewSearch={() => setSearchDialogOpen(true)}
                   onRequestMoreVenues={handleRequestMoreVenues}
                 />
