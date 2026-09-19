@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import WhatspotLogo from '@/components/brand/WhatspotLogo';
-import { getReferralSource, joinWaitlist, redeemInviteCode } from '@/lib/accessGate';
+import { enterWithCode, getReferralSource, joinWaitlist, signInWithGoogle } from '@/lib/accessGate';
 
 const PILLARS = [
   { title: 'Discover', body: "Swipe through places you didn't know about, locally or abroad." },
@@ -8,14 +8,15 @@ const PILLARS = [
   { title: 'Share', body: 'See where friends have been and tell them where to go next.' },
 ];
 
-export default function WaitlistPage({ onGranted }) {
+export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, onSignOut }) {
   const [email, setEmail] = useState('');
   const [honeypot, setHoneypot] = useState('');
   const [state, setState] = useState('idle'); // idle | sending | done | error
   const [showCode, setShowCode] = useState(false);
   const [code, setCode] = useState('');
-  const [codeError, setCodeError] = useState(false);
+  const [codeError, setCodeError] = useState(null);
   const [codeBusy, setCodeBusy] = useState(false);
+  const [signInError, setSignInError] = useState(null);
 
   const submitEmail = async (e) => {
     e.preventDefault();
@@ -28,11 +29,18 @@ export default function WaitlistPage({ onGranted }) {
   const submitCode = async (e) => {
     e.preventDefault();
     setCodeBusy(true);
-    setCodeError(false);
-    const ok = await redeemInviteCode(code);
+    setCodeError(null);
+    const result = await enterWithCode(code);
     setCodeBusy(false);
-    if (ok) onGranted();
-    else setCodeError(true);
+    if (result === 'ok') onGranted();
+    else if (result === 'taken') onTaken();
+    else setCodeError('That code was not recognized.');
+  };
+
+  const handleSignIn = async () => {
+    setSignInError(null);
+    const err = await signInWithGoogle();
+    if (err) setSignInError(err);
   };
 
   return (
@@ -89,7 +97,37 @@ export default function WaitlistPage({ onGranted }) {
           ))}
         </ul>
 
-        <div className="mt-12 w-full">
+        {notice === 'taken' && (
+          <p className="mt-8 w-full rounded-lg border border-border px-4 py-3 text-sm text-destructive">
+            That invite code is already linked to a different account.
+          </p>
+        )}
+
+        <div className="mt-12 w-full flex flex-col items-center gap-2">
+          {userEmail ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Signed in as {userEmail}. This account has no invite yet. Enter a code below to link it.
+              </p>
+              <button type="button" onClick={onSignOut} className="text-sm text-muted-foreground underline">
+                Sign out
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={handleSignIn}
+                className="w-full rounded-lg border border-border px-4 py-3 font-medium"
+              >
+                Already a tester? Sign in with Google
+              </button>
+              {signInError && <p className="text-sm text-destructive">{signInError}</p>}
+            </>
+          )}
+        </div>
+
+        <div className="mt-6 w-full">
           {showCode ? (
             <form onSubmit={submitCode} className="flex flex-col gap-2">
               <input
@@ -109,7 +147,7 @@ export default function WaitlistPage({ onGranted }) {
               >
                 {codeBusy ? 'Checking...' : 'Enter'}
               </button>
-              {codeError && <p className="text-sm text-destructive">That code was not recognized.</p>}
+              {codeError && <p className="text-sm text-destructive">{codeError}</p>}
             </form>
           ) : (
             <button
