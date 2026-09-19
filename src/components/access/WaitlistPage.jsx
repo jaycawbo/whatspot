@@ -2,12 +2,6 @@ import React, { useState } from 'react';
 import WhatspotLogo from '@/components/brand/WhatspotLogo';
 import { enterWithCode, getReferralSource, joinWaitlist, signInWithGoogle } from '@/lib/accessGate';
 
-const PILLARS = [
-  { title: 'Discover', body: "Swipe through places you didn't know about, locally or abroad." },
-  { title: 'Organize', body: "Keep everywhere you've been and want to go in one place." },
-  { title: 'Share', body: 'See where friends have been and tell them where to go next.' },
-];
-
 export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, onSignOut }) {
   const [email, setEmail] = useState('');
   const [honeypot, setHoneypot] = useState('');
@@ -47,7 +41,7 @@ export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, on
     <div className="min-h-screen bg-background text-foreground flex flex-col items-center px-6 py-12">
       <div className="w-full max-w-md flex flex-col items-center text-center">
         <WhatspotLogo size="hero" />
-        <h1 className="mt-8 text-3xl font-semibold">Discover, organize and share the places you love.</h1>
+        <h1 className="mt-8 text-2xl font-semibold">Discover, organize and share the spots you love.</h1>
         <p className="mt-3 text-muted-foreground">
           whatspot is in a closed test. Join the waitlist and we will let you know when it opens up.
         </p>
@@ -88,15 +82,6 @@ export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, on
           </form>
         )}
 
-        <ul className="mt-12 w-full flex flex-col gap-4 text-left">
-          {PILLARS.map((p) => (
-            <li key={p.title} className="rounded-lg border border-border px-4 py-3">
-              <p className="font-medium">{p.title}</p>
-              <p className="text-sm text-muted-foreground">{p.body}</p>
-            </li>
-          ))}
-        </ul>
-
         {notice === 'taken' && (
           <p className="mt-8 w-full rounded-lg border border-border px-4 py-3 text-sm text-destructive">
             That invite code is already linked to a different account.
@@ -120,7 +105,7 @@ export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, on
                 onClick={handleSignIn}
                 className="w-full rounded-lg border border-border px-4 py-3 font-medium"
               >
-                Already a tester? Sign in with Google
+                Sign in with Google
               </button>
               {signInError && <p className="text-sm text-destructive">{signInError}</p>}
             </>
@@ -153,7 +138,7 @@ export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, on
             <button
               type="button"
               onClick={() => setShowCode(true)}
-              className="text-sm text-muted-foreground underline"
+              className="text-base text-muted-foreground underline"
             >
               Have an invite code?
             </button>
