@@ -182,9 +182,11 @@ export async function signOutUser() {
   try { await supabase.auth.signOut(); } catch {}
 }
 
-export function onSignedIn(callback) {
+// Subscribes to sign-in / sign-out events. Returns an unsubscribe function.
+export function onAuthChange({ onSignedIn, onSignedOut }) {
   const { data } = supabase.auth.onAuthStateChange((event) => {
-    if (event === 'SIGNED_IN') callback();
+    if (event === 'SIGNED_IN') onSignedIn?.();
+    if (event === 'SIGNED_OUT') onSignedOut?.();
   });
   return () => data.subscription.unsubscribe();
 }

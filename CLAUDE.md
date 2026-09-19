@@ -93,6 +93,7 @@ Gate is client-side only: localStorage flag whatspot_access (value is the invite
 AccessGate (src/components/access/AccessGate.jsx) wraps everything in App.jsx above all providers, so visitors never mount the app or trigger paid API calls. Logic lives in src/lib/accessGate.js.
 Ways in: ?invite=CODE URL param, typing a code on the waitlist page, or signing in (Google) with an account that is linked to a code or is an admin.
 Flow: visitor enters valid code > signs in > claim_invite_code() links the account to the code (invite_codes.claimed_by). One account per code and one code per account. Later sessions on any device: sign in on the waitlist page and get_my_access() restores access. A code claimed by a different account is refused.
+Signing out clears the access flag and returns the visitor to the waitlist page (they sign in again, or re-enter a code, to get back in).
 Revocation: set invite_codes.active = false. The stored flag is re-checked once per browser session; network errors fail open.
 Tables: invite_codes (no anon access), waitlist (email, referral_source, created_at; unique on lower(email)). Anon reaches them only through RPCs: redeem_invite_code, join_waitlist. Signed-in users: claim_invite_code, get_my_access.
 Generating codes: npm run invite-codes -- <count> [label-prefix] [base-url] prints INSERT SQL and invite links. Paste the SQL into the Supabase SQL editor. Codes are never committed to git.

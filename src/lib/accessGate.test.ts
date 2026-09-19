@@ -2,10 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const rpc = vi.fn();
 const getSession = vi.fn();
+let authListener: ((e: string) => void) | null = null;
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     rpc: (...a: unknown[]) => rpc(...a),
-    auth: { getSession: () => getSession() },
+    auth: {
+      getSession: () => getSession(),
+      onAuthStateChange: (cb: (e: string) => void) => {
+        authListener = cb;
+        return { data: { subscription: { unsubscribe: () => { authListener = null; } } } };
+      },
+    },
   },
 }));
 
@@ -23,6 +30,7 @@ import {
   getAccessCode,
   enterWithCode,
   joinWaitlist,
+  onAuthChange,
   restoreAccessFromAccount,
   revalidateAccess,
   syncClaim,
@@ -183,5 +191,20 @@ describe('joinWaitlist', () => {
     expect(await joinWaitlist('a@b.co', 'x')).toBe(true);
     rpc.mockResolvedValue({ data: false, error: null });
     expect(await joinWaitlist('bad', null)).toBe(false);
+  });
+});
+
+describe('onAuthChange', () => {
+  it('routes sign-in and sign-out events and can unsubscribe', () => {
+    const onSignedIn = vi.fn();
+    const onSignedOut = vi.fn();
+    const stop = onAuthChange({ onSignedIn, onSignedOut });
+    authListener?.('SIGNED_IN');
+    authListener?.('TOKEN_REFRESHED');
+    authListener?.('SIGNED_OUT');
+    expect(onSignedIn).toHaveBeenCalledTimes(1);
+    expect(onSignedOut).toHaveBeenCalledTimes(1);
+    stop();
+    expect(authListener).toBeNull();
   });
 });

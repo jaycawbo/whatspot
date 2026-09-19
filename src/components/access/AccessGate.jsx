@@ -4,7 +4,8 @@ import {
   enterWithCode,
   getAccessCode,
   getSessionUser,
-  onSignedIn,
+  onAuthChange,
+  clearAccessCode,
   restoreAccessFromAccount,
   revalidateAccess,
   signOutUser,
@@ -56,7 +57,17 @@ export default function AccessGate({ children }) {
 
     reconcile();
     // OAuth returns to the page with a fresh session: link the code / restore access.
-    const stopListening = onSignedIn(reconcile);
+    // Signing out drops the access flag too, so the visitor returns to the waitlist.
+    const stopListening = onAuthChange({
+      onSignedIn: reconcile,
+      onSignedOut: () => {
+        clearAccessCode();
+        if (cancelled) return;
+        setUserEmail(null);
+        setNotice(null);
+        setStatus('denied');
+      },
+    });
     return () => { cancelled = true; stopListening(); };
   }, []);
 
