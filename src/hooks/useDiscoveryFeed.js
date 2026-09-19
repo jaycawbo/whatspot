@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { recommend } from '@/services/api';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { supabase } from '@/integrations/supabase/client';
+import { useForYouEligibility } from '@/hooks/useForYouEligibility';
 
 // Used only when the browser's geolocation hasn't resolved (or was denied) — a real
 // fallback location is required to fetch any feed at all. Toronto is the current home
@@ -105,6 +106,7 @@ let _sessionFetchedAt = 0;    // timestamp of last successful fetchFeed; 0 = nev
 let _sessionVenues = null;    // in-memory venue fallback when sessionStorage cache fails
 let _suppressPrefetchUntilInteraction = false; // blocks prefetch on back-nav until first swipe
 let _isBackNav = false; // true from mount until first swipe when restoring a session
+let _sessionTabDataMap = {}; // last prefetched feed-tabs map, so the tab bar can render on back-nav remount
 // Client-initiated skips (down-swipe) — ensures API exclude_ids covers them even if
 // allServedIdsRef is re-seeded from cache (e.g., after back-nav).
 const _clientSkippedIds = new Set();
@@ -180,7 +182,12 @@ function persistGuestSeenIds(servedIdsSet) {
 }
 
 export function useDiscoveryFeed() {
-  const { state } = useGlobalState();
+  const { state, dispatch } = useGlobalState();
+  // For You is personalized — only exists for authenticated users past the engagement threshold.
+  // Nothing For You related fetches or renders until this has resolved.
+  const { eligible: forYouEligible, resolved: forYouResolved } = useForYouEligibility();
+  const feedTabRef = useRef(state.feedTab);
+  feedTabRef.current = state.feedTab;
   const cached = useRef(loadFeedCache()).current;
   const [venues, setVenues] = useState(cached?.venues || []);
   const [overflowVenues, setOverflowVenues] = useState(cached?.overflowVenues || []);
@@ -190,8 +197,8 @@ export function useDiscoveryFeed() {
   const [tabEmpty, setTabEmpty] = useState(false);
   // { [tabKey]: { venues, isEmpty } } — prefetched in parallel for all DB-driven tabs so
   // FeedModeTabs can hide empty tabs from the bar before they're ever selected.
-  const [tabDataMap, setTabDataMap] = useState({});
-  const tabDataMapRef = useRef({});
+  const [tabDataMap, setTabDataMap] = useState(_sessionTabDataMap);
+  const tabDataMapRef = useRef(_sessionTabDataMap);
   const tabPrefetchKeyRef = useRef(null);
   // Per-DB-tab (popular/new/trending/walkin) load-more state — issue #352 phase 1 (popular only)
   const tabServedIdsRef = useRef({});
@@ -410,8 +417,18 @@ export function useDiscoveryFeed() {
   // data from the resulting map. Re-prefetches only when the anchor/filters actually
   // change; switching between already-fetched tabs just reads the cached map.
   // For You uses the existing recommend pipeline and is skipped here.
+  // Ineligible users (guests, or below the engagement threshold) never land on For You —
+  // the default tab is for_you, so redirect to Walk-In Friendly once eligibility resolves.
+  useEffect(() => {
+    if (forYouResolved && !forYouEligible && state.feedTab === 'for_you') {
+      dispatch({ type: 'SET_FEED_TAB', payload: 'walkin' });
+    }
+  }, [forYouResolved, forYouEligible, state.feedTab, dispatch]);
+
   useEffect(() => {
     const tab = state.feedTab;
+    // Wait for eligibility so an ineligible user's default for_you tab is redirected first.
+    if (!forYouResolved || (tab === 'for_you' && !forYouEligible)) return;
     // Block ALL tab fetches while back-nav restore is active — cleared on first swipe.
     if (_isBackNav) return;
     const anchor = anchorPointRef.current ?? state.userLocation;
@@ -440,7 +457,9 @@ export function useDiscoveryFeed() {
     tabServedIdsRef.current = {};
     tabRingIndexRef.current = {};
 
-    setIsLoading(true);
+    // For You is loaded by fetchFeed, which owns isLoading for it — touching the flag here
+    // would let this prefetch's completion hide the loader while For You is still in flight.
+    if (tab !== 'for_you') setIsLoading(true);
     setTabEmpty(false);
 
     let skippedIds = [];
@@ -465,6 +484,7 @@ export function useDiscoveryFeed() {
         tabRingIndexRef.current[t] = 0;
       });
       tabDataMapRef.current = map;
+      _sessionTabDataMap = map;
       setTabDataMap(map);
       applyActiveTab(map);
       // Ensure back-nav detection fires on remount even when fetchFeed was never called
@@ -473,13 +493,19 @@ export function useDiscoveryFeed() {
       if (!_sessionAnchor && anchorPointRef.current) _sessionAnchor = anchorPointRef.current;
     }).catch((err) => {
       console.error('[TabFeed] Error:', err);
-      setVenues([]);
-      setTabEmpty(true);
+      // Settle the tab bar (it stays hidden until a map exists) rather than hiding it forever.
+      const emptyMap = Object.fromEntries(DB_TABS.map((t) => [t, { venues: [], isEmpty: true }]));
+      tabDataMapRef.current = emptyMap;
+      setTabDataMap(emptyMap);
+      if (feedTabRef.current !== 'for_you') {
+        setVenues([]);
+        setTabEmpty(true);
+      }
     }).finally(() => {
-      setIsLoading(false);
+      if (feedTabRef.current !== 'for_you') setIsLoading(false);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.feedTab, state.filters]);
+  }, [state.feedTab, state.filters, forYouResolved, forYouEligible]);
 
   const fetchFeed = useCallback(async ({ query = '', radius, mode, forYou = false } = {}) => {
     if (import.meta.env.VITE_TESTING_MODE === 'true') {
@@ -500,6 +526,7 @@ export function useDiscoveryFeed() {
     setOverflowVenues([]);
 
     const excludeIds = Array.from(new Set([...allServedIdsRef.current, ..._clientSkippedIds]));
+    let skippedApply = false;
 
     try {
       const recommendParams = {
@@ -574,6 +601,13 @@ export function useDiscoveryFeed() {
         console.log('[Feed] Staged pool now has', fullScoredPoolRef.current.length, 'venues');
       }
 
+      // The user left For You while this was in flight — hand the result back for caching
+      // but don't overwrite the tab they're now on (or its loader).
+      if (forYou && feedTabRef.current !== 'for_you') {
+        skippedApply = true;
+        return { wasGoogleFallback, venues: filtered, overflowVenues: overflow };
+      }
+
       setVenues(filtered);
       setOverflowVenues(overflow);
       radiusRef.current = effectiveRadius;
@@ -610,10 +644,12 @@ export function useDiscoveryFeed() {
         try { const body = await err.context.json(); errDetail = JSON.stringify(body); } catch {}
       }
       console.error('Discovery feed fetch failed:', err?.status || 'no status', errDetail);
-      setError(err?.message || 'Failed to load venues');
-      setVenues([]);
+      if (!(forYou && feedTabRef.current !== 'for_you')) {
+        setError(err?.message || 'Failed to load venues');
+        setVenues([]);
+      }
     } finally {
-      setIsLoading(false);
+      if (!skippedApply && !(forYou && feedTabRef.current !== 'for_you')) setIsLoading(false);
     }
   }, [state.userLocation, state.locationName, state.filters]);
 
@@ -647,6 +683,8 @@ export function useDiscoveryFeed() {
       try { sessionStorage.setItem('whatspot_deck_venue_ids', venueIdStr); } catch {}
       return;
     }
+    // Hold the first fetch until eligibility is known so guests never trigger a For You fetch.
+    if (!forYouResolved) return;
     hasFetchedRef.current = true;
     // Clear skipped venues from previous sessions so the feed starts fresh
     try { sessionStorage.removeItem('whatspot_skipped_venues'); } catch {}
@@ -654,16 +692,29 @@ export function useDiscoveryFeed() {
     initAnchorPoint()
       .catch(err => console.error('[Discovery] initAnchorPoint failed:', err))
       .then(() => {
-        // For You is the default landing tab, so this first fetch is the For You feed
-        // unless something already changed state.feedTab before the anchor resolved.
-        fetchFeed({ forYou: state.feedTab === 'for_you' }).then((result) => {
+        // The recommend pipeline only backs For You. When landing on a feed-tabs tab (always the
+        // case for ineligible users) the tab prefetch supplies the venues, and running this fetch
+        // too would race it for setVenues/isLoading and cost a needless recommend call.
+        if (feedTabRef.current !== 'for_you' || !forYouEligible) return;
+        const cacheKey = JSON.stringify({ anchor: anchorPointRef.current ?? state.userLocation, filters: state.filters });
+        fetchFeed({ forYou: true }).then((result) => {
+          // Cache so switching away from and back to For You doesn't refetch with every
+          // already-served ID excluded (which starves the second fetch).
+          if (result) {
+            forYouKeyRef.current = cacheKey;
+            forYouVenuesRef.current = {
+              venues: result.venues || [],
+              overflowVenues: result.overflowVenues || [],
+              reserveVenues: reserveVenuesRef.current,
+            };
+          }
           // Delay prefetch when Google fallback fired — gives the fire-and-forget
           // DB upsert time to complete so the prefetch hits Supabase, not Google.
           const delay = result?.wasGoogleFallback ? 3000 : 0;
           setTimeout(() => prefetchNextBatch(), delay);
         });
       });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [forYouResolved]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Search-driven refresh
   const searchFeed = useCallback((query) => {
@@ -846,6 +897,7 @@ export function useDiscoveryFeed() {
   // Switch to "For You" — reuses the last fetch if anchor/filters haven't changed since,
   // otherwise fetches fresh and caches the result for the next switch back.
   const switchToForYou = useCallback(async () => {
+    if (!forYouEligible) return;
     const anchor = anchorPointRef.current ?? state.userLocation;
     const key = JSON.stringify({ anchor, filters: state.filters });
 
@@ -866,7 +918,7 @@ export function useDiscoveryFeed() {
       overflowVenues: result?.overflowVenues || [],
       reserveVenues: reserveVenuesRef.current,
     };
-  }, [fetchFeed, state.userLocation, state.filters]);
+  }, [fetchFeed, forYouEligible, state.userLocation, state.filters]);
 
   const getReserveVenues = useCallback((activeIds) => {
     let skippedIds = [];
