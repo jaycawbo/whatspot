@@ -60,6 +60,24 @@ Deno.serve(async (req) => {
           stripe_subscription_id: null,
         })
         .eq('id', venueId);
+
+    } else if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      if (session.metadata?.type !== 'donation') return jsonResponse({ received: true });
+
+      const userId = session.metadata?.user_id || null;
+
+      await serviceClient
+        .from('donations')
+        .upsert({
+          stripe_session_id: session.id,
+          stripe_payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+          user_id: userId,
+          amount_cents: session.amount_total ?? 0,
+          currency: session.currency ?? 'usd',
+          donor_email: session.customer_details?.email ?? null,
+          status: 'paid',
+        }, { onConflict: 'stripe_session_id' });
     }
 
     return jsonResponse({ received: true });

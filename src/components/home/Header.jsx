@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MapPin, List, ChevronDown, X, LogOut, MessageCircle } from 'lucide-react';
+import { MapPin, List, ChevronDown, X, LogOut, MessageCircle, Heart } from 'lucide-react';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import WhatspotLogo from '@/components/brand/WhatspotLogo';
 import LocationPickerSheet from '@/components/location/LocationPickerSheet';
 import AuthModal from '@/components/auth/AuthModal';
 import FeedbackSheet from '@/components/feedback/FeedbackSheet';
+import DonateSheet from '@/components/donation/DonateSheet';
 
 export default function Header({ onLogoClick, onCloseSearch } = {}) {
   const { state, dispatch } = useGlobalState();
@@ -23,6 +24,7 @@ export default function Header({ onLogoClick, onCloseSearch } = {}) {
   const [editingLocation, setEditingLocation] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [donateOpen, setDonateOpen] = useState(false);
   const navigate = useNavigate();
 
   const handleLogoClick = (e) => {
@@ -103,6 +105,10 @@ export default function Header({ onLogoClick, onCloseSearch } = {}) {
                 <MessageCircle className="h-4 w-4 mr-2" />
                 Give feedback
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setDonateOpen(true)}>
+                <Heart className="h-4 w-4 mr-2" />
+                Support WhatSpot
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleSignOut}>
                 <LogOut className="h-4 w-4 mr-2" />
@@ -111,15 +117,21 @@ export default function Header({ onLogoClick, onCloseSearch } = {}) {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <Button variant="ghost" size="sm" onClick={() => { onCloseSearch?.(); setAuthModalOpen(true); }}>
-            Sign in
-          </Button>
+          <>
+            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Support WhatSpot" onClick={() => setDonateOpen(true)}>
+              <Heart className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => { onCloseSearch?.(); setAuthModalOpen(true); }}>
+              Sign in
+            </Button>
+          </>
         )}
       </div>
 
       <LocationPickerSheet open={editingLocation} onClose={() => setEditingLocation(false)} />
       <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
       <FeedbackSheet open={feedbackOpen} onOpenChange={setFeedbackOpen} venueId={null} />
+      <DonateSheet open={donateOpen} onOpenChange={setDonateOpen} />
     </header>
   );
 }

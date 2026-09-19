@@ -1,4 +1,7 @@
+import { useEffect } from 'react';
+import { toast } from 'sonner';
 import { Toaster } from "@/components/ui/toaster"
+import { Toaster as SonnerToaster } from "@/components/ui/sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { pagesConfig } from './pages.config'
@@ -33,6 +36,16 @@ const AuthenticatedApp = () => {
   const location = useLocation();
   // Keep Home mounted on both "/" and "/venue/:placeId" so it never unmounts during venue nav.
   const isOnHomePath = location.pathname === '/' || !!venueMatch;
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('donated') === '1') {
+      toast('Thanks for supporting WhatSpot!');
+      params.delete('donated');
+      const newSearch = params.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${newSearch ? `?${newSearch}` : ''}`);
+    }
+  }, []);
 
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
@@ -104,6 +117,7 @@ function App() {
             <RequestsOverlay />
             <OnboardingInterstitial />
             <Toaster />
+            <SonnerToaster />
           </QueryClientProvider>
         </BroncoProvider>
       </GlobalStateProvider>
