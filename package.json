@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "census": "node --env-file=.env scripts/toronto-census.js"
+    "invite-codes": "node scripts/generate-invite-codes.js",
+    "census":"node --env-file=.env scripts/toronto-census.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

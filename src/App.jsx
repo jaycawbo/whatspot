@@ -17,6 +17,7 @@ import EnrichmentDashboard from '@/pages/EnrichmentDashboard';
 import Credits from '@/pages/Credits';
 import SpotsList from '@/pages/SpotsList';
 import SharedSpotList from '@/pages/SharedSpotList';
+import AccessGate from '@/components/access/AccessGate';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -90,6 +91,7 @@ const AuthenticatedApp = () => {
 
 function App() {
   return (
+    <AccessGate>
     <AuthProvider>
       <GlobalStateProvider>
         <BroncoProvider>
@@ -106,6 +108,7 @@ function App() {
         </BroncoProvider>
       </GlobalStateProvider>
     </AuthProvider>
+    </AccessGate>
   )
 }
 
