@@ -1,31 +1,40 @@
 import React from 'react';
 import WhatspotLogo from '@/components/brand/WhatspotLogo';
 
-const CONTACT_EMAIL = 'TODO-contact@whatspot.co';
+const CONTACT_EMAIL = 'hello@whatspot.co';
 const UPDATED = 'September 20, 2026';
 
 const PRIVACY = [
   ['What we collect', [
     'Account info from Google sign-in: your email address, name and profile photo.',
-    'Your activity in the app: venues you swipe on, save, mark as visited or loved, search queries, and lists you create or share.',
-    'Approximate or precise location, only if you allow it in your browser, used to show places near you.',
-    'Basic technical data such as device type and error logs.',
+    'Waitlist and invite info: the email you submit to join the waitlist, how you heard about us, and the invite code you use.',
+    'Your activity in the app: venues you swipe on, save, mark as visited or loved, search queries, and lists you create or share. If you are not signed in, this is tied to a random anonymous ID stored on your device.',
+    'Your location, only if you allow it in your browser, or a place you type in. It is used to show spots near you and is also remembered on your device.',
+    'Basic technical data such as your IP address and error logs, which our hosting and database providers receive when you use the app.',
   ]],
   ['How we use it', [
     'To sign you in and keep your Spots and lists.',
-    'To personalize your Feed and Search results.',
+    'To personalize your Feed and Search results based on your activity.',
+    'To manage the closed test, including invite codes and the waitlist.',
     'To keep the app working and fix problems.',
-    'We do not sell your personal information.',
+    'We do not sell your personal information and we do not run third-party advertising or analytics.',
   ]],
   ['Who processes it', [
-    'Supabase (database and sign-in), Google (sign-in and Places data), Vercel (hosting) and Google Gemini (search understanding). They process data only to provide their services to us.',
+    'Supabase (database and sign-in), Google (sign-in and Places data), Vercel (hosting), Google Gemini (understanding search queries) and CARTO (map tiles). They receive only what they need to provide their service to us.',
+  ]],
+  ['Storage on your device', [
+    'We use your browser storage, not advertising cookies, to remember your session, anonymous ID, recent searches, location and filters.',
   ]],
   ['Sharing', [
-    'Lists you choose to share are visible to people with the link. Nothing else is shared with other users unless you share it.',
+    'Lists you choose to share are visible to anyone with the link. Nothing else is shared with other users unless you share it.',
   ]],
   ['Your choices', [
     `You can ask us to delete your account and data at any time by emailing ${CONTACT_EMAIL}.`,
-    'You can turn off location access in your browser settings.',
+    'You can turn off location access in your browser settings and clear site data to remove what is stored on your device.',
+    'Children: WhatSpot is not for anyone under 13.',
+  ]],
+  ['Changes', [
+    'If we change this policy we will update the date above.',
   ]],
 ];
 
