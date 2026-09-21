@@ -18,6 +18,7 @@ import Credits from '@/pages/Credits';
 import SpotsList from '@/pages/SpotsList';
 import SharedSpotList from '@/pages/SharedSpotList';
 import AccessGate from '@/components/access/AccessGate';
+import Legal from '@/pages/Legal';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -89,7 +90,13 @@ const AuthenticatedApp = () => {
 };
 
 
+// Public legal pages (required for Google OAuth branding verification) render outside the
+// access gate and every provider, so logged-out visitors and reviewers can read them.
+const LEGAL_PATHS = { '/privacy': 'privacy', '/terms': 'terms' };
+
 function App() {
+  const legalKind = LEGAL_PATHS[window.location.pathname.replace(/\/+$/, '')];
+  if (legalKind) return <Legal kind={legalKind} />;
   return (
     <AccessGate>
     <AuthProvider>
