@@ -7,6 +7,7 @@ import SearchRow from '@/components/home/SearchRow';
 import SearchDialog from '@/components/home/SearchDialog';
 import ResultsBottomSheet from '@/components/home/ResultsBottomSheet';
 import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
+import SwipeEducationBanner from '@/components/discovery/SwipeEducationBanner';
 import ResultsList from '@/components/home/ResultsList';
 import MapView from '@/components/home/MapView';
 import AuthModal from '@/components/auth/AuthModal';
@@ -17,6 +18,7 @@ import FeedModeTabs from '@/components/home/FeedModeTabs';
 import FilterDialog from '@/components/home/FilterDialog';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
+import { useSwipeEducation } from '@/hooks/useSwipeEducation';
 import { useGuestLimits } from '@/hooks/useGuestLimits';
 import { useAuth } from '@/lib/AuthContext';
 import { useVenueListMembership } from '@/hooks/useVenueListMembership';
@@ -24,6 +26,12 @@ import { useSearchConversation } from '@/hooks/useSearchConversation';
 import { reverseGeocode } from '@/lib/reverseGeocode';
 
 const normalizeId = (v) => (v.place_id || v.google_place_id || '').replace(/^places\//, '');
+
+// Space the swipe-education banner (issue #369) reserves from the deck's own
+// height budget when shown, so it never clips the deck. Kept slightly above
+// the banner's real rendered height (~76px) as a safety margin — see
+// SwipeEducationBanner.jsx.
+const BANNER_RESERVED_PX = 88;
 
 function deduplicateVenues(venues) {
   const seen = new Set();
@@ -59,6 +67,8 @@ export default function Home() {
   } = useDiscoveryFeed();
 
   const { showGate, closeGate } = useGuestLimits();
+  const { show: showSwipeHint, dismiss: dismissSwipeHint } = useSwipeEducation();
+  const showSwipeBanner = showSwipeHint && !feedLoading && !tabEmpty;
   const listMembershipMap = useVenueListMembership();
   const conversation = useSearchConversation();
 
@@ -537,9 +547,20 @@ export default function Home() {
             <FeedModeTabs onTabChange={handleTabChange} tabDataMap={tabDataMap} />
           </div>
 
+          {/* Secondary swipe-education prompt (issue #369) — fallback for the onboarding
+              interstitial, which is one-time and easy to skip. Only for users who've never
+              swiped or haven't in 90+ days. Rendered in-flow (not fixed) so it can't overlap
+              the deck's info panel or buttons; BANNER_RESERVED_PX below compensates the
+              deck's own height budget so nothing gets clipped. */}
+          {showSwipeBanner && <SwipeEducationBanner onDismiss={dismissSwipeHint} />}
+
           <div
             className={`flex-1 flex items-center justify-center px-4 overflow-hidden ${isMobile ? 'pb-20' : ''}`}
-            style={{ '--deck-height': isMobile ? 'calc(100dvh - 280px)' : 'clamp(500px, calc(100dvh - 175px), 800px)' }}
+            style={{
+              '--deck-height': isMobile
+                ? `calc(100dvh - ${280 + (showSwipeBanner ? BANNER_RESERVED_PX : 0)}px)`
+                : `clamp(500px, calc(100dvh - ${175 + (showSwipeBanner ? BANNER_RESERVED_PX : 0)}px), 800px)`,
+            }}
           >
             <div className="w-full mx-auto">
               {feedLoading ? (
