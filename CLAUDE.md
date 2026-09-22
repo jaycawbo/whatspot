@@ -1,4 +1,4 @@
-WhatSpot — Shared Project Knowledge | Last updated: September 18, 2026
+WhatSpot — Shared Project Knowledge | Last updated: September 22, 2026
 Intended to be durable. Update only when foundational decisions change.
 
 Who We Are
@@ -99,6 +99,14 @@ Tables: invite_codes (no anon access), waitlist (email, referral_source, created
 Generating codes: npm run invite-codes -- <count> [label-prefix] [base-url] prints INSERT SQL and invite links. Paste the SQL into the Supabase SQL editor. Codes are never committed to git.
 The whatspot_access flag is an access marker, not user data, so it is an allowed exception to the localStorage rule below.
 
+For You Tab Gating (issue #360)
+The personalized "For You" feed tab only exists for a user once they've shown enough breadth of activity, not just volume — a single sitting can't say what someone generally likes. Guests are never eligible.
+Threshold: 10+ rows in user_venue_interactions AND activity across 2+ distinct session_id values in user_events, both for that user. Logic lives in src/hooks/useForYouEligibility.js (FOR_YOU_MIN_INTERACTIONS, FOR_YOU_MIN_SESSIONS).
+This is deliberately stricter than the server's MIN_INTERACTIONS_FOR_PERSONALIZATION (5, in recommend), which only decides when ranking starts to nudge results — not when the tab itself is worth showing.
+Session counting excludes passive event types (card_shown, view, photo_advanced) — ambient exposure doesn't make a session count toward eligibility.
+Once eligible, a user stays eligible for the session (cached in memory, keyed by user id) so later mounts don't requery; a failed eligibility check resolves as "not eligible" (hide the tab, not a cold-start one).
+Depends on user_events being populated correctly for session_id and event_type — an events-logging gap silently blocks tab eligibility rather than erroring visibly.
+
 Pending Verification
 Correction (Sept 13, 2026): Search was never actually disabled — it's live in the user-facing UI behind a "BETA" flag. The note below previously assumed it was disabled; that premise was wrong.
 PR #298 (issue #288, dedup redundant Gemini search-refinement calls): not yet confirmed via recommend edge function logs that STEP 1 keyword refinement and STEP 1b location detection are both skipped on Places-fallback searches (only 1 Gemini call — refine-query itself — should fire per search) and that search results are still correct. Since Search is live, this can be verified directly now.
@@ -131,7 +139,7 @@ End of every session
 Produce two documents:
 Full session log — every change made, confirmed working or not, any regressions
 Jake's summary(if Jamie was working) or Jamie’s Summary (if Jake was working) — plain English, non-technical, what was built and why, what's next
-After every major feature or schema change, flag that both CLAUDE.md and WHATSPOT_SNAPSHOT.md need updating.
+After every major feature or schema change, flag that CLAUDE.md needs updating.
 
 Claude Behavioral Rules
 Always lead with the bottom line (i.e. “so what”) first 
