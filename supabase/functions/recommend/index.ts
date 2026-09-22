@@ -2186,10 +2186,23 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ─── Skip-history suppression — computed before the 200-cap inside
+    // getSupabaseVenues so already-skipped venues never occupy a capped
+    // slot and crowd out venues the user hasn't seen yet. Same single
+    // Supabase read as before (issue #367), just moved earlier and reused
+    // below instead of queried a second time.
+    let suppressedIds: Set<string> = new Set();
+    if (authUserId) {
+      suppressedIds = await getSuppressedVenueIds(authUserId);
+    }
+    const discoveryExcludeIds = suppressedIds.size > 0
+      ? [...exclude_ids, ...suppressedIds]
+      : exclude_ids;
+
     // ─── Discovery: Supabase-first ───
     let filteredVenues: any[] = [];
     let servedFromSupabase = false;
-    const discResult = await getSupabaseVenues({ lat, lon, admission, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY, isDiscoveryMode: true });
+    const discResult = await getSupabaseVenues({ lat, lon, admission, exclude_ids: discoveryExcludeIds, price_levels, cuisine_types, open_now, GOOGLE_KEY, isDiscoveryMode: true });
     filteredVenues = discResult.filteredVenues;
     servedFromSupabase = discResult.servedFromSupabase;
 
@@ -2223,7 +2236,7 @@ Deno.serve(async (req) => {
         try {
           groundedVenues = await getGroundedVenuesForTab({
             tab, lat, lon, location_name, GOOGLE_KEY,
-            sb: sbGuard, exclude_ids, maxRadius: admission.maxRadius,
+            sb: sbGuard, exclude_ids: discoveryExcludeIds, maxRadius: admission.maxRadius,
           });
         } catch (e: any) {
           console.warn('[getGroundedVenuesForTab] failed silently:', e.message);
@@ -2236,7 +2249,7 @@ Deno.serve(async (req) => {
           GOOGLE_KEY, refinedSearchTerm, location_name, lat, lon, admission,
           open_now, price_levels, cuisine_types, isDiscoveryMode: true,
           isOnStreetSearch: false, detectedStreetName: '', detectedStreetBase: '',
-          exclude_ids, relaxation_level,
+          exclude_ids: discoveryExcludeIds, relaxation_level,
         });
         if (googleVenues === null) {
           return new Response(
@@ -2259,16 +2272,19 @@ Deno.serve(async (req) => {
     }
     console.log(`✅ ${filteredVenues.length} passed filters`);
 
-    // ─── STEP 3a: Skip history suppression (authenticated users only) ───
-    if (authUserId) {
-      const suppressedIds = await getSuppressedVenueIds(authUserId);
-      if (suppressedIds.size > 0) {
-        const beforeSuppression = filteredVenues.length;
-        filteredVenues = filteredVenues.filter((v: any) => {
-          const placeId = (v.place_id || '').replace(/^places\//, '');
-          return !suppressedIds.has(placeId);
-        });
-        console.log(`🚫 Skip history suppressed ${beforeSuppression - filteredVenues.length} venues (${suppressedIds.size} in history)`);
+    // ─── STEP 3a: Skip history suppression safety net ───
+    // Defense-in-depth only: getSupabaseVenues and the fallback paths above
+    // already excluded suppressedIds before any cap or LLM grounding, so
+    // this should be a no-op in the common case. Reuses the set computed
+    // above — no second Supabase read.
+    if (suppressedIds.size > 0) {
+      const beforeSuppression = filteredVenues.length;
+      filteredVenues = filteredVenues.filter((v: any) => {
+        const placeId = (v.place_id || '').replace(/^places\//, '');
+        return !suppressedIds.has(placeId);
+      });
+      if (beforeSuppression !== filteredVenues.length) {
+        console.log(`🚫 Skip history suppressed ${beforeSuppression - filteredVenues.length} venues that slipped past upstream exclusion (${suppressedIds.size} in history)`);
       }
     }
 
