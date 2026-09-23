@@ -3,7 +3,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/AuthContext';
 import { getAnonId } from '@/lib/identity';
 
-const DISMISS_KEY = 'whatspot_swipe_hint_dismissed';
 const LAPSED_DAYS = 90;
 const SWIPE_TYPES = ['interested', 'not_interested', 'skipped'];
 
@@ -12,12 +11,14 @@ const SWIPE_TYPES = ['interested', 'not_interested', 'skipped'];
 // straight from swipe history (never swiped, or last swipe >90 days ago) rather
 // than a separate "have they seen this" flag, so it correctly re-triggers for
 // lapsed users without any new schema. Fetched once per mount; not polled.
+// Dismissing is intentionally not persisted anywhere — a refresh or a new
+// session re-checks swipe history and shows it again as long as the user
+// still hasn't cleared the threshold. It only stays hidden for the rest of
+// the current page load.
 export function useSwipeEducation() {
   const { user, isAuthenticated } = useAuth();
   const [eligible, setEligible] = useState(false);
-  const [dismissed, setDismissed] = useState(() => {
-    try { return sessionStorage.getItem(DISMISS_KEY) === 'true'; } catch { return false; }
-  });
+  const [dismissed, setDismissed] = useState(false);
   const fetchedRef = useRef(false);
 
   useEffect(() => {
@@ -47,13 +48,8 @@ export function useSwipeEducation() {
       });
   }, [isAuthenticated, user?.id]);
 
-  const dismiss = () => {
-    setDismissed(true);
-    try { sessionStorage.setItem(DISMISS_KEY, 'true'); } catch {}
-  };
-
   return {
     show: eligible && !dismissed,
-    dismiss,
+    dismiss: () => setDismissed(true),
   };
 }
