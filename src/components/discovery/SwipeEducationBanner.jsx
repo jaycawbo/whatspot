@@ -28,13 +28,13 @@ export default function SwipeEducationBanner({ onDismiss }) {
       initial={{ opacity: 0, scale: 0.9, y: 8 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.9, y: 8 }}
-      className="fixed bottom-24 md:bottom-8 right-4 md:right-6 z-40 max-w-[220px] rounded-xl border border-border bg-card shadow-lg px-3.5 py-3"
+      className="fixed bottom-24 md:bottom-8 right-4 md:right-6 z-40 max-w-[260px] rounded-xl border border-border bg-card shadow-lg px-3.5 py-3"
       role="note"
       aria-label="How swiping works"
     >
       <div className="flex items-start gap-2">
         <p className="flex-1 text-sm leading-snug">
-          Swipe right to save, left to pass, or down to skip.
+          Swipe right on interested spots or left if uninterested. Skip by swiping down. Swipe up to rate places you've been.
         </p>
         <button
           onClick={onDismiss}
