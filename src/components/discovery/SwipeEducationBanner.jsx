@@ -34,7 +34,7 @@ export default function SwipeEducationBanner({ onDismiss }) {
     >
       <div className="flex items-start gap-2">
         <p className="flex-1 text-sm leading-snug">
-          Swipe right on interested spots or left if uninterested. Skip by swiping down. Swipe up to rate places you've been.
+          <strong>Swipe right</strong> on interested spots or <strong>left</strong> if uninterested. Skip by <strong>swiping down</strong>. <strong>Swipe up</strong> to rate places you've been to.
         </p>
         <button
           onClick={onDismiss}
