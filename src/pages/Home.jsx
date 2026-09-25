@@ -7,6 +7,7 @@ import SearchRow from '@/components/home/SearchRow';
 import SearchDialog from '@/components/home/SearchDialog';
 import ResultsBottomSheet from '@/components/home/ResultsBottomSheet';
 import DiscoveryDeck from '@/components/discovery/DiscoveryDeck';
+import SwipeEducationBanner from '@/components/discovery/SwipeEducationBanner';
 import ResultsList from '@/components/home/ResultsList';
 import MapView from '@/components/home/MapView';
 import AuthModal from '@/components/auth/AuthModal';
@@ -17,6 +18,7 @@ import FeedModeTabs from '@/components/home/FeedModeTabs';
 import FilterDialog from '@/components/home/FilterDialog';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useDiscoveryFeed } from '@/hooks/useDiscoveryFeed';
+import { useSwipeEducation } from '@/hooks/useSwipeEducation';
 import { useGuestLimits } from '@/hooks/useGuestLimits';
 import { useAuth } from '@/lib/AuthContext';
 import { useVenueListMembership } from '@/hooks/useVenueListMembership';
@@ -59,6 +61,8 @@ export default function Home() {
   } = useDiscoveryFeed();
 
   const { showGate, closeGate } = useGuestLimits();
+  const { show: showSwipeHint, dismiss: dismissSwipeHint } = useSwipeEducation();
+  const showSwipeBanner = showSwipeHint && !feedLoading && !tabEmpty;
   const listMembershipMap = useVenueListMembership();
   const conversation = useSearchConversation();
 
@@ -571,6 +575,12 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Secondary swipe-education prompt (issue #369) — fallback for the onboarding
+          interstitial, which is one-time and easy to skip. Only for users who've never
+          swiped or haven't in 90+ days. Small floating callout, fixed-positioned so it
+          never touches deck layout or gesture handling. */}
+      {showSwipeBanner && <SwipeEducationBanner onDismiss={dismissSwipeHint} />}
     </div>
   );
 }
