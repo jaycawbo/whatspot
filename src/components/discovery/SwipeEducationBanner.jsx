@@ -24,11 +24,14 @@ export default function SwipeEducationBanner({ onDismiss }) {
   if (!visible) return null;
 
   return (
+    // Anchored to the viewport's own bottom-right corner (with a safe-area-aware
+    // floor for notch/home-indicator devices), not to the deck below it — so it
+    // reads as floating in the screen's corner rather than stuck to the card.
     <motion.div
       initial={{ opacity: 0, scale: 0.9, y: 8 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.9, y: 8 }}
-      className="fixed bottom-24 right-3 md:bottom-8 md:right-6 z-40 max-w-[150px] md:max-w-[260px] rounded-xl border border-green-200 bg-green-50/90 shadow-lg px-2.5 py-2 md:px-3.5 md:py-3 dark:border-green-800 dark:bg-green-950/40"
+      className="fixed bottom-[max(1.5rem,calc(env(safe-area-inset-bottom)+0.75rem))] right-3 md:bottom-8 md:right-6 z-40 max-w-[150px] md:max-w-[260px] rounded-xl border border-green-200 bg-green-50/90 shadow-lg px-2.5 py-2 md:px-3.5 md:py-3 dark:border-green-800 dark:bg-green-950/40"
       role="note"
       aria-label="How swiping works"
     >
