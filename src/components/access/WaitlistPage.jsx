@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import WhatspotLogo from '@/components/brand/WhatspotLogo';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import samplePhoto from '@/assets/sample_venue_photo.jpg';
 import {
   consumeOAuthPendingFlag,
   enterWithCode,
@@ -9,14 +10,16 @@ import {
   signInWithGoogle,
 } from '@/lib/accessGate';
 
-// Purely decorative stand-in for the real Feed. Fixed, made-up venues and no hooks or
-// network calls of any kind — the real DiscoveryDeck/useDiscoveryFeed fetch live data
-// through paid APIs and must never mount for a visitor who has not passed the gate.
-const SAMPLE_CARDS = [
-  { name: 'Corner Coffee Roasters', tag: 'Coffee · Independent', blurb: 'Neighborhood espresso bar, always busy on weekends.' },
-  { name: 'The Local Taproom', tag: 'Bar · Independent', blurb: 'Twelve rotating taps, patio open through fall.' },
-  { name: 'Descendant Pizza Co.', tag: 'Pizza · Casual', blurb: 'Thick-crust squares, cash only, worth the wait.' },
-];
+// Purely decorative stand-in for the real Feed: one made-up venue over a static local
+// image, no hooks or network calls of any kind. The real DiscoveryDeck/useDiscoveryFeed
+// fetch live data through paid APIs and must never mount for a visitor who hasn't passed
+// the gate. Photo: "The Courtyard Coffee Shop interior, Ballycastle" via Wikimedia
+// Commons / geograph.org.uk, CC BY-SA 2.0 (https://geograph.org.uk/photo/8123928).
+const SAMPLE_CARD = {
+  name: 'Corner Coffee Roasters',
+  tag: 'Coffee · Independent',
+  blurb: 'Neighborhood espresso bar, always busy on weekends.',
+};
 
 const NAV_ITEMS = ['Feed', 'Search', 'Spots'];
 
@@ -24,25 +27,24 @@ function FeedPreview() {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden bg-muted/30 px-6">
       <WhatspotLogo size="nav" />
-      <div className="relative h-[400px] w-[260px] sm:h-[460px] sm:w-[300px]">
-        {SAMPLE_CARDS.map((card, i) => (
-          <div
-            key={card.name}
-            className="absolute inset-0 rounded-2xl border border-border bg-background text-left shadow-lg"
-            style={{ transform: `rotate(${(i - 1) * 3}deg) translateY(${i * 6}px)`, zIndex: SAMPLE_CARDS.length - i }}
-          >
-            <div className="h-2/3 w-full rounded-t-2xl bg-gradient-to-br from-emerald-400/70 to-emerald-600/70" />
-            <div className="p-4">
-              <p className="font-semibold">{card.name}</p>
-              <p className="text-xs text-muted-foreground">{card.tag}</p>
-              <p className="mt-1 text-sm text-muted-foreground">{card.blurb}</p>
-            </div>
-          </div>
-        ))}
+      <div className="w-[260px] overflow-hidden rounded-2xl border border-border bg-background text-left shadow-lg sm:w-[300px]">
+        <img
+          src={samplePhoto}
+          alt=""
+          className="h-64 w-full object-cover sm:h-72"
+        />
+        <div className="p-4">
+          <p className="font-semibold">{SAMPLE_CARD.name}</p>
+          <p className="text-xs text-muted-foreground">{SAMPLE_CARD.tag}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{SAMPLE_CARD.blurb}</p>
+        </div>
       </div>
       <div className="flex gap-8 text-sm text-muted-foreground">
         {NAV_ITEMS.map((item) => <span key={item}>{item}</span>)}
       </div>
+      <p className="absolute bottom-2 text-[10px] text-muted-foreground/60">
+        Photo: geograph.org.uk, CC BY-SA 2.0
+      </p>
     </div>
   );
 }
