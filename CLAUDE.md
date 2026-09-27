@@ -1,4 +1,4 @@
-WhatSpot — Shared Project Knowledge | Last updated: September 22, 2026
+WhatSpot — Shared Project Knowledge | Last updated: September 27, 2026
 Intended to be durable. Update only when foundational decisions change.
 
 Who We Are
@@ -87,17 +87,19 @@ Issues are assigned to whoever owns the task
 Branch names always include the Issue number
 Issues close automatically when the linked PR merges — no manual cleanup needed
 
-Access Gate and Waitlist (soft launch, issue #358)
-The app is gated for a closed group of testers. Everyone else sees a static waitlist page with email capture.
+Access Gate and Waitlist (soft launch, issue #358; homescreen-style preview, issue #366)
+The app is gated for a closed group of testers. Everyone else sees WaitlistPage (src/components/access/WaitlistPage.jsx): a static, non-live preview styled to match the real homescreen (header, search row, feed tabs, one venue card with a made-up name and a locally committed sample photo — no hooks, no live data, no paid API calls). The actual access UI (waitlist email capture, Google sign-in, invite code entry) lives in a dialog on top of it, revealed after a ~3s delay or on first tap/click, whichever comes first.
+This redesign (issue #366) exists because Google's OAuth branding verification rejects a home page that is only a sign-in wall ("Your home page is behind a login page"); the preview gives reviewers and crawlers something to see without ever mounting the real app or its APIs.
 Gate is client-side only: localStorage flag whatspot_access (value is the invite code, or "admin"). Clear site data or use incognito to see the visitor view, in dev and prod. No IP, device, or hosting-layer checks. It is a UX gate, not security: the Supabase anon key and edge functions stay reachable directly.
 AccessGate (src/components/access/AccessGate.jsx) wraps everything in App.jsx above all providers, so visitors never mount the app or trigger paid API calls. Logic lives in src/lib/accessGate.js.
-Ways in: ?invite=CODE URL param, typing a code on the waitlist page, or signing in (Google) with an account that is linked to a code or is an admin.
-Flow: visitor enters valid code > signs in > claim_invite_code() links the account to the code (invite_codes.claimed_by). One account per code and one code per account. Later sessions on any device: sign in on the waitlist page and get_my_access() restores access. A code claimed by a different account is refused.
-Signing out clears the access flag and returns the visitor to the waitlist page (they sign in again, or re-enter a code, to get back in).
+Ways in: ?invite=CODE URL param, typing a code in the dialog, or signing in (Google) with an account that is linked to a code or is an admin.
+Flow: visitor enters valid code > signs in > claim_invite_code() links the account to the code (invite_codes.claimed_by). One account per code and one code per account. Later sessions on any device: sign in and get_my_access() restores access. A code claimed by a different account is refused.
+Signing out clears the access flag and returns the visitor to the preview (they sign in again, or re-enter a code, to get back in).
 Revocation: set invite_codes.active = false. The stored flag is re-checked once per browser session; network errors fail open.
 Tables: invite_codes (no anon access), waitlist (email, referral_source, created_at; unique on lower(email)). Anon reaches them only through RPCs: redeem_invite_code, join_waitlist. Signed-in users: claim_invite_code, get_my_access.
 Generating codes: npm run invite-codes -- <count> [label-prefix] [base-url] prints INSERT SQL and invite links. Paste the SQL into the Supabase SQL editor. Codes are never committed to git.
 The whatspot_access flag is an access marker, not user data, so it is an allowed exception to the localStorage rule below.
+Google OAuth branding (issue #366): verified and live in production. whatspot.co is a verified Domain property in Search Console; Branding homepage/privacy/terms URLs point at whatspot.co; consent screen is in production (not Testing). /privacy and /terms (src/pages/Legal.jsx) render outside the gate for this and are linked from the waitlist dialog.
 
 For You Tab Gating (issue #360)
 The personalized "For You" feed tab only exists for a user once they've shown enough breadth of activity, not just volume — a single sitting can't say what someone generally likes. Guests are never eligible.
@@ -110,7 +112,7 @@ Depends on user_events being populated correctly for session_id and event_type �
 Pending Verification
 Correction (Sept 13, 2026): Search was never actually disabled — it's live in the user-facing UI behind a "BETA" flag. The note below previously assumed it was disabled; that premise was wrong.
 PR #298 (issue #288, dedup redundant Gemini search-refinement calls): not yet confirmed via recommend edge function logs that STEP 1 keyword refinement and STEP 1b location detection are both skipped on Places-fallback searches (only 1 Gemini call — refine-query itself — should fire per search) and that search results are still correct. Since Search is live, this can be verified directly now.
-PR #359 (issue #358, access gate): Google sign-in round trip with the gate (code > sign in > claim, and returning sign-in without a code) not yet verified on the Vercel preview or prod. Stop-gap invite code 357246 (label jake-stopgap) is in invite_codes and should be deleted once real codes are issued.
+PR #359 (issue #358, access gate): Google sign-in round trip with the gate (code > sign in > claim, and returning sign-in without a code) — verified working in production as of Sept 27, 2026. Stop-gap invite code 357246 (label jake-stopgap) is still in invite_codes and should be deleted once real codes are issued.
 
 Protected Files — Never touch without explicit instruction
 src/components/discovery/DiscoveryDeck.jsx
