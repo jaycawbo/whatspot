@@ -56,7 +56,10 @@ function FeedPreview() {
       <div className="fixed top-14 left-0 right-0 z-40 bg-background">
         <div className="flex items-center gap-2 px-3 pt-5 pb-2 max-w-5xl mx-auto">
           <div className="flex-1 rounded-xl min-w-0">
-            <div className="relative w-full flex items-center h-9 pl-10 pr-4 rounded-xl bg-card text-left text-base text-muted-foreground min-w-0">
+            {/* Real SearchRow uses an animated multi-colour "ai-search-ring" gradient border
+                here; deliberately not replicated for this static preview, so a plain grey
+                border stands in for it. */}
+            <div className="relative w-full flex items-center h-9 pl-10 pr-4 rounded-xl border border-border bg-card text-left text-base text-muted-foreground min-w-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 shrink-0" />
               <span className="flex-1 truncate">Ask and you shall receive...</span>
               <span className="ml-2 shrink-0 rounded-full bg-green-100 px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide text-green-700 dark:bg-green-500/15 dark:text-green-400">
@@ -196,7 +199,10 @@ export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, on
 
       <Dialog open={accessOpen} onOpenChange={setAccessOpen}>
         <DialogContent className="max-h-[90vh] max-w-sm overflow-y-auto">
-          <DialogHeader className="items-center text-center">
+          {/* DialogHeader's own default classes include "sm:text-left" (for dialogs with
+              body copy alongside), which otherwise overrides text-center at sm+ widths —
+              sm:text-center here is needed to actually win at those breakpoints. */}
+          <DialogHeader className="items-center text-center sm:text-center">
             <WhatspotLogo size="hero" />
             <DialogTitle className="mt-2">Discover, organize and share the spots you love.</DialogTitle>
           </DialogHeader>
