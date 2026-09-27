@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import WhatspotLogo from '@/components/brand/WhatspotLogo';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -9,6 +9,44 @@ import {
   signInWithGoogle,
 } from '@/lib/accessGate';
 
+// Purely decorative stand-in for the real Feed. Fixed, made-up venues and no hooks or
+// network calls of any kind — the real DiscoveryDeck/useDiscoveryFeed fetch live data
+// through paid APIs and must never mount for a visitor who has not passed the gate.
+const SAMPLE_CARDS = [
+  { name: 'Corner Coffee Roasters', tag: 'Coffee · Independent', blurb: 'Neighborhood espresso bar, always busy on weekends.' },
+  { name: 'The Local Taproom', tag: 'Bar · Independent', blurb: 'Twelve rotating taps, patio open through fall.' },
+  { name: 'Descendant Pizza Co.', tag: 'Pizza · Casual', blurb: 'Thick-crust squares, cash only, worth the wait.' },
+];
+
+const NAV_ITEMS = ['Feed', 'Search', 'Spots'];
+
+function FeedPreview() {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden bg-muted/30 px-6">
+      <WhatspotLogo size="nav" />
+      <div className="relative h-[400px] w-[260px] sm:h-[460px] sm:w-[300px]">
+        {SAMPLE_CARDS.map((card, i) => (
+          <div
+            key={card.name}
+            className="absolute inset-0 rounded-2xl border border-border bg-background text-left shadow-lg"
+            style={{ transform: `rotate(${(i - 1) * 3}deg) translateY(${i * 6}px)`, zIndex: SAMPLE_CARDS.length - i }}
+          >
+            <div className="h-2/3 w-full rounded-t-2xl bg-gradient-to-br from-emerald-400/70 to-emerald-600/70" />
+            <div className="p-4">
+              <p className="font-semibold">{card.name}</p>
+              <p className="text-xs text-muted-foreground">{card.tag}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{card.blurb}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-8 text-sm text-muted-foreground">
+        {NAV_ITEMS.map((item) => <span key={item}>{item}</span>)}
+      </div>
+    </div>
+  );
+}
+
 export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, onSignOut }) {
   const [email, setEmail] = useState('');
   const [honeypot, setHoneypot] = useState('');
@@ -18,14 +56,27 @@ export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, on
   const [codeError, setCodeError] = useState(null);
   const [codeBusy, setCodeBusy] = useState(false);
   const [signInError, setSignInError] = useState(null);
+  const hasOpenedRef = useRef(false);
 
-  // Reopen the dialog only for a genuine "you still need to finish something" moment:
-  // right after a Google OAuth redirect back to this tab, or when a stored code turned
-  // out to be claimed by someone else. A visitor who merely has a lingering sign-in
-  // session from an earlier visit should still land on the plain marketing page.
+  const openAccess = () => {
+    hasOpenedRef.current = true;
+    setAccessOpen(true);
+  };
+
+  // Reveal the access dialog on whichever comes first: the visitor interacting with the
+  // preview, or a short delay. Either way it is not shown on first paint, so a crawl that
+  // reads the initial render (Google's OAuth branding check included) sees the preview,
+  // not a sign-in wall.
   useEffect(() => {
-    if (notice === 'taken') { setAccessOpen(true); return; }
-    if (userEmail && consumeOAuthPendingFlag()) setAccessOpen(true);
+    const timer = setTimeout(() => { if (!hasOpenedRef.current) openAccess(); }, 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Genuine "you still need to finish something" moments still open it immediately:
+  // right after a Google OAuth redirect back to this tab, or a code claimed elsewhere.
+  useEffect(() => {
+    if (notice === 'taken') { openAccess(); return; }
+    if (userEmail && consumeOAuthPendingFlag()) openAccess();
   }, [userEmail, notice]);
 
   const submitEmail = async (e) => {
@@ -54,20 +105,33 @@ export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, on
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col items-center px-6 py-12">
-      <div className="w-full max-w-2xl flex flex-col items-center text-center">
-        <WhatspotLogo size="hero" />
-        <h1 className="mt-8 text-2xl font-semibold">Discover, organize and share the spots you love.</h1>
+    <div className="relative min-h-screen bg-background text-foreground">
+      <FeedPreview />
 
-        <div className="mt-12 w-full max-w-md">
-          <p className="text-muted-foreground">
+      {!accessOpen && (
+        <button
+          type="button"
+          onClick={openAccess}
+          aria-label="Continue to whatspot"
+          className="absolute inset-0 h-full w-full cursor-pointer bg-transparent"
+        />
+      )}
+
+      <Dialog open={accessOpen} onOpenChange={setAccessOpen}>
+        <DialogContent className="max-h-[90vh] max-w-sm overflow-y-auto">
+          <DialogHeader className="items-center text-center">
+            <WhatspotLogo size="hero" />
+            <DialogTitle className="mt-2">Discover, organize and share the spots you love.</DialogTitle>
+          </DialogHeader>
+
+          <p className="text-center text-sm text-muted-foreground">
             whatspot is in a closed test. Join the waitlist and we will let you know when it opens up.
           </p>
 
           {state === 'done' ? (
-            <p className="mt-6 rounded-lg border border-border px-4 py-3">You are on the list. Thank you!</p>
+            <p className="rounded-lg border border-border px-4 py-3 text-center text-sm">You are on the list. Thank you!</p>
           ) : (
-            <form onSubmit={submitEmail} className="mt-6 w-full flex flex-col gap-3">
+            <form onSubmit={submitEmail} className="flex flex-col gap-3">
               <input
                 type="email"
                 required
@@ -100,27 +164,11 @@ export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, on
             </form>
           )}
 
-          <button
-            type="button"
-            onClick={() => setAccessOpen(true)}
-            className="mt-8 text-base text-muted-foreground underline"
-          >
-            Already have an invite code or an account?
-          </button>
-        </div>
-
-        <p className="mt-16 text-sm text-muted-foreground">
-          <a className="underline" href="/privacy">Privacy Policy</a>
-          <span className="px-2">·</span>
-          <a className="underline" href="/terms">Terms of Service</a>
-        </p>
-      </div>
-
-      <Dialog open={accessOpen} onOpenChange={setAccessOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Enter whatspot</DialogTitle>
-          </DialogHeader>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <div className="h-px flex-1 bg-border" />
+            already have access
+            <div className="h-px flex-1 bg-border" />
+          </div>
 
           {notice === 'taken' && (
             <p className="rounded-lg border border-border px-4 py-3 text-sm text-destructive">
@@ -170,6 +218,12 @@ export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, on
             </button>
             {codeError && <p className="text-sm text-destructive">{codeError}</p>}
           </form>
+
+          <p className="text-center text-xs text-muted-foreground">
+            <a className="underline" href="/privacy">Privacy Policy</a>
+            <span className="px-2">·</span>
+            <a className="underline" href="/terms">Terms of Service</a>
+          </p>
         </DialogContent>
       </Dialog>
     </div>
