@@ -1,16 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import WhatspotLogo from '@/components/brand/WhatspotLogo';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { enterWithCode, getReferralSource, joinWaitlist, signInWithGoogle } from '@/lib/accessGate';
-
-// What the app does, shown to everyone without signing in. Google's OAuth brand
-// verification rejects a home page that is only a sign-in wall, so the default view
-// describes the product and the gate lives behind the "Enter whatspot" dialog.
-const PILLARS = [
-  ['Feed', 'Swipe through venues near you. No search box, no prompt: just places worth knowing about, one card at a time.'],
-  ['Search', 'Ask for something specific, like Italian restaurants that fit a large group, and get a short list instead of a map full of pins.'],
-  ['Spots', 'Keep everywhere you have been and want to go in one place, then share your lists with friends.'],
-];
+import {
+  consumeOAuthPendingFlag,
+  enterWithCode,
+  getReferralSource,
+  joinWaitlist,
+  signInWithGoogle,
+} from '@/lib/accessGate';
 
 export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, onSignOut }) {
   const [email, setEmail] = useState('');
@@ -22,10 +19,13 @@ export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, on
   const [codeBusy, setCodeBusy] = useState(false);
   const [signInError, setSignInError] = useState(null);
 
-  // Returning from the Google round trip lands here signed in but without access,
-  // so reopen the dialog rather than dropping the visitor on the marketing page.
+  // Reopen the dialog only for a genuine "you still need to finish something" moment:
+  // right after a Google OAuth redirect back to this tab, or when a stored code turned
+  // out to be claimed by someone else. A visitor who merely has a lingering sign-in
+  // session from an earlier visit should still land on the plain marketing page.
   useEffect(() => {
-    if (userEmail || notice === 'taken') setAccessOpen(true);
+    if (notice === 'taken') { setAccessOpen(true); return; }
+    if (userEmail && consumeOAuthPendingFlag()) setAccessOpen(true);
   }, [userEmail, notice]);
 
   const submitEmail = async (e) => {
@@ -58,21 +58,8 @@ export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, on
       <div className="w-full max-w-2xl flex flex-col items-center text-center">
         <WhatspotLogo size="hero" />
         <h1 className="mt-8 text-2xl font-semibold">Discover, organize and share the spots you love.</h1>
-        <p className="mt-3 max-w-xl text-muted-foreground">
-          whatspot helps you find places you did not know about, keep track of everywhere you have
-          been and want to go, and see where your friends have been.
-        </p>
 
-        <div className="mt-12 w-full grid gap-6 sm:grid-cols-3 text-left">
-          {PILLARS.map(([title, body]) => (
-            <section key={title}>
-              <h2 className="text-lg font-semibold">{title}</h2>
-              <p className="mt-2 text-sm text-muted-foreground">{body}</p>
-            </section>
-          ))}
-        </div>
-
-        <div className="mt-14 w-full max-w-md">
+        <div className="mt-12 w-full max-w-md">
           <p className="text-muted-foreground">
             whatspot is in a closed test. Join the waitlist and we will let you know when it opens up.
           </p>

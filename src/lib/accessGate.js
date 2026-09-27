@@ -171,11 +171,26 @@ export async function joinWaitlist(email, source) {
 
 // Same call the in-app AuthModal makes; the gate sits above AuthProvider so it cannot reuse the modal.
 export async function signInWithGoogle() {
+  // Marks that a redirect to Google was just initiated from this tab, so the waitlist
+  // page can tell "just came back from OAuth" apart from "already had a session lying
+  // around" and only auto-reopen its dialog for the former.
+  try { sessionStorage.setItem('ws_oauth_pending', '1'); } catch {}
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: window.location.href },
   });
   return error ? error.message || 'Failed to sign in' : null;
+}
+
+// True once, right after a Google OAuth redirect back to this tab; false on any other load.
+export function consumeOAuthPendingFlag() {
+  try {
+    if (sessionStorage.getItem('ws_oauth_pending') !== '1') return false;
+    sessionStorage.removeItem('ws_oauth_pending');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function signOutUser() {
