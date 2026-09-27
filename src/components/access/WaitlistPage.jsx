@@ -192,7 +192,7 @@ export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, on
         <button
           type="button"
           onClick={openAccess}
-          aria-label="Continue to whatspot"
+          aria-label="Continue to Whatspot"
           className="absolute inset-0 h-full w-full cursor-pointer bg-transparent"
         />
       )}
@@ -208,7 +208,7 @@ export default function WaitlistPage({ userEmail, notice, onGranted, onTaken, on
           </DialogHeader>
 
           <p className="text-center text-sm text-muted-foreground">
-            whatspot is in a closed test. Join the waitlist and we will let you know when it opens up.
+            Whatspot is in a closed test. Join the waitlist and we will let you know when it opens up.
           </p>
 
           {state === 'done' ? (
