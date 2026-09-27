@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { ChevronDown, List, MapPin, Search, SlidersHorizontal, Star } from 'lucide-react';
 import WhatspotLogo from '@/components/brand/WhatspotLogo';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import samplePhoto from '@/assets/sample_venue_photo.jpg';
@@ -10,39 +11,113 @@ import {
   signInWithGoogle,
 } from '@/lib/accessGate';
 
-// Purely decorative stand-in for the real Feed: one made-up venue over a static local
-// image, no hooks or network calls of any kind. The real DiscoveryDeck/useDiscoveryFeed
-// fetch live data through paid APIs and must never mount for a visitor who hasn't passed
-// the gate. Photo: "The Courtyard Coffee Shop interior, Ballycastle" via Wikimedia
-// Commons / geograph.org.uk, CC BY-SA 2.0 (https://geograph.org.uk/photo/8123928).
-const SAMPLE_CARD = {
+// Purely decorative stand-in for the real homescreen: same header / search-row / feed-tabs
+// / card layout and class names as Header.jsx, SearchRow.jsx, FeedModeTabs.jsx and
+// DiscoveryCard.jsx, copied by hand rather than imported, with one made-up venue and no
+// hooks, providers or network calls of any kind. The real components depend on
+// GlobalStateContext/AuthContext/QueryClient (mounted below AccessGate) and
+// DiscoveryDeck/useDiscoveryFeed fetch live data through paid APIs — none of that may
+// mount for a visitor who hasn't passed the gate, so this reimplements the look only.
+// Photo: "The Courtyard Coffee Shop interior, Ballycastle" via Wikimedia Commons /
+// geograph.org.uk, CC BY-SA 2.0 (https://geograph.org.uk/photo/8123928).
+const SAMPLE_VENUE = {
   name: 'Corner Coffee Roasters',
-  tag: 'Coffee · Independent',
-  blurb: 'Neighborhood espresso bar, always busy on weekends.',
+  rating: 4.6,
+  price: '$$',
+  distanceKm: 0.4,
+  descriptors: ['cozy neighbourhood gem', 'specialty coffee', 'perfect pastries'],
 };
 
-const NAV_ITEMS = ['Feed', 'Search', 'Spots'];
+const FEED_TABS = ['Walk-In Friendly', 'New', 'Trending', 'Popular', 'For You'];
+const ACTIVE_TAB = 'Trending';
 
 function FeedPreview() {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-10 overflow-hidden bg-muted/30 px-6">
-      <WhatspotLogo size="nav" />
-      <div className="w-[260px] overflow-hidden rounded-2xl border border-border bg-background text-left shadow-lg sm:w-[300px]">
-        <img
-          src={samplePhoto}
-          alt=""
-          className="h-64 w-full object-cover sm:h-72"
-        />
-        <div className="p-4">
-          <p className="font-semibold">{SAMPLE_CARD.name}</p>
-          <p className="text-xs text-muted-foreground">{SAMPLE_CARD.tag}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{SAMPLE_CARD.blurb}</p>
+    <div className="absolute inset-0 overflow-hidden bg-background" style={{ height: '100dvh' }}>
+      {/* Header — mirrors Header.jsx */}
+      <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-background border-b border-border flex items-center px-4 md:px-8">
+        <div className="flex items-center min-w-0 flex-1 overflow-hidden">
+          <span className="flex items-center gap-1 text-xs text-muted-foreground max-w-[160px] truncate">
+            <MapPin className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">Toronto, ON</span>
+            <ChevronDown className="h-3 w-3 shrink-0" />
+          </span>
+        </div>
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <WhatspotLogo size="nav" />
+        </div>
+        <div className="flex items-center justify-end flex-1 gap-3 text-muted-foreground">
+          <List className="h-5 w-5" />
+          <span className="text-sm font-medium">Sign in</span>
+        </div>
+      </header>
+
+      {/* Search row — mirrors SearchRow.jsx */}
+      <div className="fixed top-14 left-0 right-0 z-40 bg-background">
+        <div className="flex items-center gap-2 px-3 pt-5 pb-2 max-w-5xl mx-auto">
+          <div className="flex-1 rounded-xl min-w-0">
+            <div className="relative w-full flex items-center h-9 pl-10 pr-4 rounded-xl bg-card text-left text-base text-muted-foreground min-w-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 shrink-0" />
+              <span className="flex-1 truncate">Ask and you shall receive...</span>
+              <span className="ml-2 shrink-0 rounded-full bg-green-100 px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide text-green-700 dark:bg-green-500/15 dark:text-green-400">
+                Beta
+              </span>
+            </div>
+          </div>
+          <div className="h-9 w-9 shrink-0 flex items-center justify-center rounded-full border border-border bg-card">
+            <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+          </div>
         </div>
       </div>
-      <div className="flex gap-8 text-sm text-muted-foreground">
-        {NAV_ITEMS.map((item) => <span key={item}>{item}</span>)}
+
+      {/* Feed tabs + deck — mirrors the feed-mode block in Home.jsx */}
+      <div className="flex flex-col h-full overflow-hidden" style={{ paddingTop: '132px' }}>
+        <div className="flex items-center justify-center gap-6 px-4 py-2">
+          {FEED_TABS.map((label) => (
+            <span
+              key={label}
+              className={
+                label === ACTIVE_TAB
+                  ? 'relative pb-1.5 text-sm font-medium text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:rounded-full after:bg-[#22c55e]'
+                  : 'relative pb-1.5 text-sm font-medium text-muted-foreground'
+              }
+            >
+              {label}
+            </span>
+          ))}
+        </div>
+
+        <div className="flex-1 flex items-center justify-center px-4 overflow-hidden">
+          <div className="relative w-full max-w-sm mx-auto rounded-2xl overflow-hidden bg-card border border-border shadow-xl flex flex-col" style={{ height: 'clamp(420px, 65dvh, 620px)' }}>
+            <div className="relative bg-muted overflow-hidden" style={{ height: '65%' }}>
+              <img src={samplePhoto} alt="" className="absolute inset-0 h-full w-full object-cover" />
+            </div>
+            <div className="px-4 py-3 flex-1">
+              <h2 className="text-lg font-bold text-foreground truncate">{SAMPLE_VENUE.name}</h2>
+              <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
+                <span className="flex items-center gap-0.5 font-medium text-foreground">
+                  <Star className="h-3.5 w-3.5 text-gray-500" />
+                  {SAMPLE_VENUE.rating}
+                </span>
+                <span>{SAMPLE_VENUE.price}</span>
+                <span className="flex items-center gap-0.5">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  {SAMPLE_VENUE.distanceKm} km
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {SAMPLE_VENUE.descriptors.map((tag) => (
+                  <span key={tag} className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <p className="absolute bottom-2 text-[10px] text-muted-foreground/60">
+
+      <p className="absolute bottom-1 right-2 text-[9px] text-muted-foreground/60">
         Photo: geograph.org.uk, CC BY-SA 2.0
       </p>
     </div>
