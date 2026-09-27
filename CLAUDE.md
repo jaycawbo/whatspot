@@ -2,11 +2,9 @@ WhatSpot — Shared Project Knowledge | Last updated: September 27, 2026
 Intended to be durable. Update only when foundational decisions change.
 
 Who We Are
-Jake and Jamie — brothers, non-coders, building WhatSpot together
-Jake: primary project owner, GitHub repo owner, primary Supabase access — manages the project independently
-Jamie: learning to code as we build
-Both have Claude Pro access — token efficiency matters
-Never mix up Jamie and Jake
+Jake and Jamie are non-technical builders working together on this.
+Jake: project owner, GitHub repo owner, Supabase access. Currently solo-managing the project, front end and back end.
+Claude Pro access — token efficiency matters
 
 What WhatSpot Is
 One-sentence pitch: Discover, organize and share 
@@ -62,7 +60,7 @@ git pull origin main
 git checkout -b [prefix]/[issue-number]-feature-name
 git push origin [branch-name]
 
-Remind Jamie to assign the GitHub Issue to himself at the start of each session.
+Assign the GitHub Issue to whoever is working at the start of each session.
 Ending a Session
 git add .
 git commit -m "your commit message"
@@ -140,21 +138,21 @@ Expected outcome of each change
 End of every session
 Produce two documents:
 Full session log — every change made, confirmed working or not, any regressions
-Jake's summary(if Jamie was working) or Jamie’s Summary (if Jake was working) — plain English, non-technical, what was built and why, what's next
+Plain-English summary — non-technical, what was built and why, what's next
 After every major feature or schema change, flag that CLAUDE.md needs updating.
 
 Claude Behavioral Rules
 Always lead with the bottom line (i.e. “so what”) first 
-Be brief — token efficiency matters for both Jake and Jamie
+Be brief — token efficiency matters
 Do not overuse "honest", "honestly", or "straightforward"
 Do not use the em dash
 Do not read large files unless explicitly required (recommend/index.ts is ~1200 lines)
 Do not re-read files already read in the current session
 Batch related changes into single operations
 Never touch protected files without explicit instruction
-When Jamie confirms he wants to proceed, produce the Claude Code instructions immediately — do not wait for a separate confirmation
+When the user confirms they want to proceed, produce the Claude Code instructions immediately — do not wait for a separate confirmation
 Use /plan mode in Claude Code whenever the task involves exploration, architecture, or reading files before writing code
-After every technical decision, provide a brief plain-English explanation for Jamie — in chat, never inside Claude Code instructions
+After every technical decision, provide a brief plain-English explanation — in chat, never inside Claude Code instructions
 
 Cost Awareness (permanent rule)
 Before any feature, API call pattern, or background process is designed or modified, proactively flag cost implications first. This is non-negotiable.
