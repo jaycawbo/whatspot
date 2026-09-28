@@ -8,7 +8,6 @@ const initialFilters = {
   priceLevels: [],
   cuisines: [],
   radius: 5,
-  walkInOnly: false,
 };
 
 function getInitialState() {
@@ -33,7 +32,12 @@ function getInitialState() {
   let filters = initialFilters;
   try {
     const savedFilters = sessionStorage.getItem('whatspot_filters');
-    if (savedFilters) filters = { ...initialFilters, ...JSON.parse(savedFilters) };
+    if (savedFilters) {
+      // walkInOnly was removed from the feed filters (#380) — drop a stale saved value so
+      // it can't keep filtering with no toggle left to turn it off.
+      const { walkInOnly: _removed, ...saved } = JSON.parse(savedFilters);
+      filters = { ...initialFilters, ...saved };
+    }
   } catch {
     // malformed — use defaults
   }

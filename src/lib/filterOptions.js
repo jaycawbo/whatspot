@@ -18,8 +18,18 @@ export const CUISINE_TYPES = [
   { value: 'greek_restaurant',         label: 'Greek'            },
   { value: 'spanish_restaurant',       label: 'Spanish'          },
   { value: 'breakfast_restaurant',     label: 'Breakfast/Brunch' },
-  { value: 'other',                    label: 'Other'            },
 ];
+
+// Chips that should also match closely related Google types. Mirrors
+// supabase/functions/_shared/cuisineTypes.ts so Spots filters the same way the feed does.
+export const CUISINE_EXPANSIONS = {
+  breakfast_restaurant: ['brunch_restaurant'],
+  italian_restaurant: ['pizza_restaurant'],
+};
+
+export function expandCuisines(cuisines) {
+  return [...new Set(cuisines.flatMap((c) => [c, ...(CUISINE_EXPANSIONS[c] ?? [])]))];
+}
 
 export const PRICE_LEVEL_LABELS = ['$', '$$', '$$$', '$$$$'];
 

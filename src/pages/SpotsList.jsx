@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { haversineKm } from '@/lib/geo';
-import { humanizeCategory } from '@/lib/filterOptions';
+import { expandCuisines, humanizeCategory } from '@/lib/filterOptions';
 import { SLUG_TO_STATUS_LIST, LIST_MATCHER, EMPTY_STATES } from '@/lib/spotListConstants';
 
 function NoteDialog({ spot, onSave, onClose }) {
@@ -163,7 +163,8 @@ export default function SpotsList() {
     }
 
     if (filters.cuisines.length > 0) {
-      result = result.filter((s) => filters.cuisines.includes(s.category));
+      const cuisines = expandCuisines(filters.cuisines);
+      result = result.filter((s) => cuisines.includes(s.category));
     }
 
     if (filters.walkInOnly) {

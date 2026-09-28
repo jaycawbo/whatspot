@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getSuppressedVenueIds } from '../_shared/skipHistory.ts';
 import { buildUserAffinity, personalizationMultiplier, EMPTY_AFFINITY, FOR_YOU_PERSONALIZATION_WEIGHT, type UserAffinity } from '../_shared/buildUserAffinity.ts';
+import { expandCuisineTypes } from '../_shared/cuisineTypes.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -529,7 +530,8 @@ async function getSupabaseVenues(params: {
     cuisine_type: (v.venue_types ?? []).find((t: string) => t.includes('_restaurant'))?.replace('_restaurant', '') || 'Restaurant',
     neighbourhood: v.neighbourhood ?? null,
     isRelaxedAdmission: v.isRelaxedAdmission ?? false,
-    unknownPrice: false,
+    // Kept by the price filter above (pl == null passes) but ranked lower in STEP 4 (#380).
+    unknownPrice: !!price_levels?.length && v.price_level == null,
     _rawTypes: v.venue_types ?? [],
     _photoUrls: v.photo_urls ?? [],
     _regularOpeningHours: v.regular_opening_hours ?? null,
@@ -706,14 +708,6 @@ async function getGoogleVenues(params: {
   // ─── STEP 3: Filter + admission tagging ───
   console.log('🔍 STEP 3: Filtering...');
   const activeCuisineTypes: string[] = Array.isArray(cuisine_types) ? cuisine_types : [];
-  const KNOWN_CUISINE_TYPES = [
-    'italian_restaurant', 'japanese_restaurant', 'mexican_restaurant', 'chinese_restaurant',
-    'american_restaurant', 'thai_restaurant', 'indian_restaurant', 'korean_restaurant',
-    'mediterranean_restaurant', 'french_restaurant', 'vietnamese_restaurant',
-    'middle_eastern_restaurant', 'greek_restaurant', 'spanish_restaurant', 'breakfast_restaurant',
-  ];
-  const selectedCuisineKnown = activeCuisineTypes.filter(ct => ct !== 'other');
-  const cuisineIncludesOther = activeCuisineTypes.includes('other');
 
   const venueRows = googleResults
     .map((place: any) => {
@@ -730,9 +724,7 @@ async function getGoogleVenues(params: {
       }
       if (activeCuisineTypes.length > 0) {
         const rawTypes: string[] = Array.isArray(place.types) ? place.types : [];
-        const hasKnownMatch = selectedCuisineKnown.some(ct => rawTypes.includes(ct));
-        const isOtherCuisine = !KNOWN_CUISINE_TYPES.some(kt => rawTypes.includes(kt));
-        if (!hasKnownMatch && !(cuisineIncludesOther && isOtherCuisine)) return null;
+        if (!activeCuisineTypes.some(ct => rawTypes.includes(ct))) return null;
       }
       const isRelaxedAdmission = place.rating < SCORING.RATING_FLOOR || place.user_ratings_total < SCORING.REVIEW_FLOOR;
       return {
@@ -2037,7 +2029,7 @@ Deno.serve(async (req) => {
       relaxation_level = 0,
       open_now,
       price_levels,
-      cuisine_types,
+      cuisine_types: rawCuisineTypes,
       exclude_ids = [],
       criteria_pass,
       intent,
@@ -2046,6 +2038,10 @@ Deno.serve(async (req) => {
       for_you = false,
       billable_search = false,
     } = await req.json();
+
+    // Expand cuisine chips once (Breakfast also matches brunch, Italian also matches
+    // pizza) so the Supabase, Google-fallback and search paths all filter alike (#380).
+    const cuisine_types = expandCuisineTypes(rawCuisineTypes);
 
     let lat = originalLat;
     let lon = originalLon;
@@ -2314,6 +2310,7 @@ Deno.serve(async (req) => {
       .map((venue: any) => {
         let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
         score *= personalizationMultiplier(venue._rawTypes, venue.price_level, venue.neighbourhood, affinity, discoveryPersonalizationWeight);
+        if (venue.unknownPrice) score *= 0.7; // Down-rank venues with unknown price when price filter is active
         const display_weight = score + (Math.random() * 0.3);
         return { ...venue, score, display_weight };
       })
@@ -2462,6 +2459,7 @@ Deno.serve(async (req) => {
       .map((v: any) => {
         let score = calculateVenueScore(v.rating, v.review_count, v.isRelaxedAdmission);
         score *= personalizationMultiplier(v._rawTypes, v.price_level, v.neighbourhood, affinity, discoveryPersonalizationWeight);
+        if (v.unknownPrice) score *= 0.7;
         return { ...v, score, staged_for_relaxation: true };
       })
       .filter((v: any) => v.score > 0)
