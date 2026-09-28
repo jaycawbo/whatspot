@@ -411,17 +411,18 @@ export function useDiscoveryFeed() {
       });
   }, [state.userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Tab feed — fires when feedTab or filters change. Prefetches ALL DB-driven tabs
-  // (walkin/new/trending/popular) in parallel so FeedModeTabs can hide any tab with
-  // zero results from the bar before it's ever selected, then applies the active tab's
-  // data from the resulting map. Re-prefetches only when the anchor/filters actually
-  // change; switching between already-fetched tabs just reads the cached map.
+  // Tab feed — fires when feedTab or filters change. Prefetches the visible DB-driven tabs
+  // (new/popular; walkin and trending are hidden for now, see #374) in parallel so
+  // FeedModeTabs can hide any tab with zero results from the bar before it's ever
+  // selected, then applies the active tab's data from the resulting map. Re-prefetches
+  // only when the anchor/filters actually change; switching between already-fetched
+  // tabs just reads the cached map.
   // For You uses the existing recommend pipeline and is skipped here.
   // Ineligible users (guests, or below the engagement threshold) never land on For You —
-  // the default tab is for_you, so redirect to Walk-In Friendly once eligibility resolves.
+  // the default tab is for_you, so redirect to Popular once eligibility resolves.
   useEffect(() => {
     if (forYouResolved && !forYouEligible && state.feedTab === 'for_you') {
-      dispatch({ type: 'SET_FEED_TAB', payload: 'walkin' });
+      dispatch({ type: 'SET_FEED_TAB', payload: 'popular' });
     }
   }, [forYouResolved, forYouEligible, state.feedTab, dispatch]);
 
@@ -468,7 +469,7 @@ export function useDiscoveryFeed() {
       if (raw) skippedIds = JSON.parse(raw);
     } catch {}
 
-    const DB_TABS = ['walkin', 'new', 'trending', 'popular'];
+    const DB_TABS = ['new', 'popular'];
     Promise.all(
       DB_TABS.map((t) =>
         fetchTabVenues(t, { anchor, filters: state.filters, skippedIds }).then((result) => [t, result])
