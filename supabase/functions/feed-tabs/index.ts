@@ -3,6 +3,7 @@ import { corsHeaders, jsonResponse, errorResponse } from '../_shared/types.ts';
 import { haversineKm } from '../_shared/geo.ts';
 import { getSuppressedVenueIds } from '../_shared/skipHistory.ts';
 import { weightedShuffleTopK } from '../_shared/weightedShuffle.ts';
+import { expandCuisineTypes } from '../_shared/cuisineTypes.ts';
 
 const PRICE_CHIP_TO_INT: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
 
@@ -83,7 +84,12 @@ Deno.serve(async (req) => {
     const priceInts = (price_levels?.length
       ? price_levels.map((p: string) => PRICE_CHIP_TO_INT[p]).filter(Boolean)
       : null) as number[] | null;
-    const cuisineTypes = cuisines?.length ? cuisines : null;
+    const cuisineTypes = expandCuisineTypes(cuisines) ?? null;
+
+    // venues_near keeps venues with no price_level when a price filter is active (they may
+    // well match) — rank them below venues with a confirmed matching price, the same 0.7
+    // factor recommend applies to unknownPrice venues (issue #380).
+    const unknownPriceFactor = (v: any) => (priceInts && v.price_level == null ? 0.7 : 1);
 
     const toShape = (v: any) => ({
       google_place_id: v.google_place_id,
@@ -144,7 +150,7 @@ Deno.serve(async (req) => {
         return jsonResponse({ venues: [], isEmpty: true });
       }
       const shaped = (data || []).map(toShape);
-      const selected = weightedShuffleTopK(shaped, (v: any) => v.review_count ?? 0, 20);
+      const selected = weightedShuffleTopK(shaped, (v: any) => (v.review_count ?? 0) * unknownPriceFactor(v), 20);
       return jsonResponse({ venues: selected, isEmpty: false });
     }
 
@@ -173,7 +179,7 @@ Deno.serve(async (req) => {
         ...toShape(v),
         _recencyWeight: 1 / ((now - new Date(v.created_at).getTime()) / 86_400_000 + 1),
       }));
-      const selected = weightedShuffleTopK(shaped, (v: any) => v._recencyWeight, shaped.length);
+      const selected = weightedShuffleTopK(shaped, (v: any) => v._recencyWeight * unknownPriceFactor(v), shaped.length);
       return jsonResponse({ venues: selected, isEmpty: selected.length === 0 });
     }
 
