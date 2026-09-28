@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getSuppressedVenueIds } from '../_shared/skipHistory.ts';
 import { buildUserAffinity, personalizationMultiplier, EMPTY_AFFINITY, FOR_YOU_PERSONALIZATION_WEIGHT, type UserAffinity } from '../_shared/buildUserAffinity.ts';
 import { expandCuisineTypes } from '../_shared/cuisineTypes.ts';
+import { openStatus, resolveLocalTime, type LocalTime } from '../_shared/openingHours.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -208,52 +209,6 @@ function parsePeriods(periods: any[]): any[] {
   }));
 }
 
-async function fetchVenueHoursFromPlaces(placeId: string, apiKey: string): Promise<any[] | null> {
-  try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const sb = createClient(supabaseUrl, supabaseKey);
-
-    const { checkAndLog } = await import('../_shared/apiCallLog.ts');
-    const allowed = await checkAndLog(sb, 'hours', placeId);
-    if (!allowed) return null;
-
-    const res = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
-      headers: {
-        'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask': 'regularOpeningHours',
-      },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const hours = parsePeriods(data.regularOpeningHours?.periods ?? []);
-    if (hours.length > 0) {
-      try {
-        await sb.from('venues').update({
-          regular_opening_hours: hours,
-          hours_last_updated: new Date().toISOString(),
-        }).eq('google_place_id', placeId);
-      } catch { /* non-critical */ }
-    }
-    return hours.length > 0 ? hours : null;
-  } catch {
-    return null;
-  }
-}
-
-function isOpenNow(regularOpeningHours: any): boolean {
-  if (!regularOpeningHours || !Array.isArray(regularOpeningHours) || regularOpeningHours.length === 0) return false;
-  const now = new Date();
-  const day = now.getDay();
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  const todayPeriods = regularOpeningHours.filter((p: any) => p.day === day);
-  if (todayPeriods.length === 0) return false;
-  return todayPeriods.some((p: any) => {
-    const close = p.close === '23:59' ? '24:00' : p.close;
-    return currentTime >= p.open && currentTime <= close;
-  });
-}
-
 function calculateVenueScore(rating: number, reviewCount: number, isRelaxedAdmission = false): number {
   if (!rating || !reviewCount) return 0;
   // Bayesian shrinkage: blend the raw rating toward RATING_FLOOR, weighted by review
@@ -420,10 +375,11 @@ async function getSupabaseVenues(params: {
   price_levels?: string[];
   cuisine_types?: string[];
   open_now?: boolean;
+  local_time: LocalTime;
   GOOGLE_KEY?: string;
   isDiscoveryMode?: boolean;
 }): Promise<{ filteredVenues: any[]; reserve_venues: any[]; staged_venues: any[]; servedFromSupabase: boolean; relaxation_applied: boolean; relaxation_level: number }> {
-  const { lat, lon, admission, exclude_ids, price_levels, cuisine_types, open_now, GOOGLE_KEY } = params;
+  const { lat, lon, admission, exclude_ids, price_levels, cuisine_types, open_now, local_time } = params;
 
   // Never ripple past the caller's selected radius — a user-set distance filter takes
   // priority over progressive widening. If maxRadius falls between/below the standard
@@ -472,8 +428,10 @@ async function getSupabaseVenues(params: {
     );
   }
 
+  // Venues with no stored hours stay in, ranked lower (unknownHours in STEP 4) — ~70% of
+  // venues have no hours yet and the weekly refresh is filling them in (#385).
   if (open_now) {
-    filtered = filtered.filter((v: any) => isOpenNow(v.regular_opening_hours));
+    filtered = filtered.filter((v: any) => openStatus(v.regular_opening_hours, local_time) !== 'closed');
   }
 
   // ─── Criteria pass ladder ───
@@ -532,6 +490,7 @@ async function getSupabaseVenues(params: {
     isRelaxedAdmission: v.isRelaxedAdmission ?? false,
     // Kept by the price filter above (pl == null passes) but ranked lower in STEP 4 (#380).
     unknownPrice: !!price_levels?.length && v.price_level == null,
+    unknownHours: !!open_now && openStatus(v.regular_opening_hours, local_time) === 'unknown',
     _rawTypes: v.venue_types ?? [],
     _photoUrls: v.photo_urls ?? [],
     _regularOpeningHours: v.regular_opening_hours ?? null,
@@ -560,30 +519,6 @@ async function getSupabaseVenues(params: {
     .filter((v: any) => v.score > 0)
     .sort((a: any, b: any) => b.score - a.score)
     .slice(0, 30);
-
-  // ─── Places API missing-hours recovery (open_now only) ───
-  // Inert while Places API is disabled — fetchVenueHoursFromPlaces returns null on failure.
-  if (open_now && GOOGLE_KEY) {
-    const includedIds = new Set(filteredVenues.map((v: any) => v.place_id));
-    const missingHours = rawPool
-      .filter((v: any) => hasFoodDrinkType(v.venue_types))
-      .filter((v: any) => !v.regular_opening_hours || (v.regular_opening_hours as any[]).length === 0)
-      .filter((v: any) => !v.current_hours_cached_at || (Date.now() - new Date(v.current_hours_cached_at).getTime()) >= 12 * 60 * 60 * 1000)
-      .filter((v: any) => !includedIds.has(`places/${v.google_place_id}`))
-      .filter((v: any) => (v.rating ?? 0) >= DISCOVERY_CRITERIA[passIndex].minRating && (v.review_count ?? 0) >= DISCOVERY_CRITERIA[passIndex].minReviewCount)
-      .slice(0, 3);
-    if (missingHours.length > 0) {
-      const recovered = await Promise.all(missingHours.map(async (v: any) => {
-        const hours = await fetchVenueHoursFromPlaces(v.google_place_id, GOOGLE_KEY);
-        if (!hours || !isOpenNow(hours)) return null;
-        const distance_km = calculateDistance(lat, lon, v.lat, v.lng);
-        const isRelaxedAdmission = passIndex > 0;
-        const score = calculateVenueScore(v.rating, v.review_count, isRelaxedAdmission);
-        return toShape({ ...v, distance_km, score, isRelaxedAdmission, display_weight: score + Math.random() * 0.3, regular_opening_hours: hours });
-      }));
-      filteredVenues = [...filteredVenues, ...recovered.filter(Boolean)];
-    }
-  }
 
   console.log(`✅ getSupabaseVenues: pass ${passIndex + 1}/${DISCOVERY_CRITERIA.length}, radius ${activeRadius}km → ${filteredVenues.length} pool, ${reserve_venues.length} reserve, ${staged_venues.length} staged`);
 
@@ -833,6 +768,7 @@ async function handleSearch(params: {
   price_levels:     string[];
   cuisine_types:    string[];
   open_now:         boolean;
+  local_time:       LocalTime;
   relaxation_level: number;
   intent:           any;
   authUserId:       string | null;
@@ -851,7 +787,7 @@ async function handleSearch(params: {
 }> {
   const {
     search_term, exclude_ids, price_levels, cuisine_types,
-    open_now, relaxation_level, intent, authUserId, affinity, GOOGLE_KEY,
+    open_now, local_time, relaxation_level, intent, authUserId, affinity, GOOGLE_KEY,
     refined_search_term, location_override,
   } = params;
 
@@ -993,7 +929,7 @@ async function handleSearch(params: {
     }
 
     if (open_now) {
-      sbSearchVenues = sbSearchVenues.filter((v: any) => isOpenNow(v.regular_opening_hours));
+      sbSearchVenues = sbSearchVenues.filter((v: any) => openStatus(v.regular_opening_hours, local_time) === 'open');
     }
 
     const sbAdmitted = sbSearchVenues.filter((v: any) =>
@@ -1057,7 +993,7 @@ async function handleSearch(params: {
             (v.rating ?? 0) >= admission.minRating && (v.review_count ?? 0) >= admission.minReviewCount
           );
         if (open_now) {
-          nameMatchVenues = nameMatchVenues.filter((v: any) => isOpenNow(v.regular_opening_hours));
+          nameMatchVenues = nameMatchVenues.filter((v: any) => openStatus(v.regular_opening_hours, local_time) === 'open');
         }
         console.log(`🔤 Name search fallback: ${nameMatchVenues.length} additional venues matched`);
       }
@@ -2037,7 +1973,12 @@ Deno.serve(async (req) => {
       location_override,
       for_you = false,
       billable_search = false,
+      local_day,
+      local_minutes,
     } = await req.json();
+
+    // Open-now is evaluated in the user's local time, not the edge function's UTC clock (#385).
+    const localTime = resolveLocalTime(local_day, local_minutes);
 
     // Expand cuisine chips once (Breakfast also matches brunch, Italian also matches
     // pizza) so the Supabase, Google-fallback and search paths all filter alike (#380).
@@ -2137,6 +2078,7 @@ Deno.serve(async (req) => {
         price_levels: price_levels || [],
         cuisine_types: cuisine_types || [],
         open_now: open_now || false,
+        local_time: localTime,
         relaxation_level,
         intent: intent || null,
         authUserId,
@@ -2198,7 +2140,7 @@ Deno.serve(async (req) => {
     // ─── Discovery: Supabase-first ───
     let filteredVenues: any[] = [];
     let servedFromSupabase = false;
-    const discResult = await getSupabaseVenues({ lat, lon, admission, exclude_ids: discoveryExcludeIds, price_levels, cuisine_types, open_now, GOOGLE_KEY, isDiscoveryMode: true });
+    const discResult = await getSupabaseVenues({ lat, lon, admission, exclude_ids: discoveryExcludeIds, price_levels, cuisine_types, open_now, local_time: localTime, GOOGLE_KEY, isDiscoveryMode: true });
     filteredVenues = discResult.filteredVenues;
     servedFromSupabase = discResult.servedFromSupabase;
 
@@ -2311,6 +2253,7 @@ Deno.serve(async (req) => {
         let score = calculateVenueScore(venue.rating, venue.review_count, venue.isRelaxedAdmission);
         score *= personalizationMultiplier(venue._rawTypes, venue.price_level, venue.neighbourhood, affinity, discoveryPersonalizationWeight);
         if (venue.unknownPrice) score *= 0.7; // Down-rank venues with unknown price when price filter is active
+        if (venue.unknownHours) score *= 0.7; // Down-rank venues with no stored hours when open-now is on
         const display_weight = score + (Math.random() * 0.3);
         return { ...venue, score, display_weight };
       })
@@ -2460,6 +2403,7 @@ Deno.serve(async (req) => {
         let score = calculateVenueScore(v.rating, v.review_count, v.isRelaxedAdmission);
         score *= personalizationMultiplier(v._rawTypes, v.price_level, v.neighbourhood, affinity, discoveryPersonalizationWeight);
         if (v.unknownPrice) score *= 0.7;
+        if (v.unknownHours) score *= 0.7;
         return { ...v, score, staged_for_relaxation: true };
       })
       .filter((v: any) => v.score > 0)

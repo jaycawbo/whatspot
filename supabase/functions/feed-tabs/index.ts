@@ -4,6 +4,7 @@ import { haversineKm } from '../_shared/geo.ts';
 import { getSuppressedVenueIds } from '../_shared/skipHistory.ts';
 import { weightedShuffleTopK } from '../_shared/weightedShuffle.ts';
 import { expandCuisineTypes } from '../_shared/cuisineTypes.ts';
+import { openStatus, resolveLocalTime } from '../_shared/openingHours.ts';
 
 const PRICE_CHIP_TO_INT: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
 
@@ -53,7 +54,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { tab, lat, lon, radius_km, price_levels, cuisines, skipped_ids, exclude_ids, local_hour, local_day } = await req.json();
+    const { tab, lat, lon, radius_km, price_levels, cuisines, skipped_ids, exclude_ids, local_hour, local_day, local_minutes, open_now } = await req.json();
     if (!tab || lat == null || lon == null) {
       return errorResponse('tab, lat, and lon are required', 400);
     }
@@ -91,6 +92,14 @@ Deno.serve(async (req) => {
     // factor recommend applies to unknownPrice venues (issue #380).
     const unknownPriceFactor = (v: any) => (priceInts && v.price_level == null ? 0.7 : 1);
 
+    // Open-now (#385): drop venues confirmed closed at the user's local time. Venues with no
+    // stored hours (~70% today, being filled in by the weekly refresh) stay in at 0.7 weight,
+    // the same treatment recommend gives them on For You.
+    const localTime = resolveLocalTime(local_day, local_minutes);
+    const openFilter = (rows: any[]) =>
+      (open_now ? rows.filter((v: any) => openStatus(v.regular_opening_hours, localTime) !== 'closed') : rows);
+    const rankFactor = (v: any) => unknownPriceFactor(v) * (v._unknownHours ? 0.7 : 1);
+
     const toShape = (v: any) => ({
       google_place_id: v.google_place_id,
       place_id: v.google_place_id,
@@ -106,6 +115,7 @@ Deno.serve(async (req) => {
       image_urls: v.photo_urls || [],
       descriptors: v.descriptors || [],
       photos_complete: v.photos_complete ?? false,
+      _unknownHours: !!open_now && openStatus(v.regular_opening_hours, localTime) === 'unknown',
     });
 
     // Shared RPC (see supabase/migrations/20260918000001_venues_geo_postgis.sql) — does
@@ -150,9 +160,9 @@ Deno.serve(async (req) => {
         console.error('[feed-tabs] Popular query error:', error);
         return jsonResponse({ venues: [], isEmpty: true });
       }
-      const shaped = (data || []).map(toShape);
-      const selected = weightedShuffleTopK(shaped, (v: any) => (v.review_count ?? 0) * unknownPriceFactor(v), 20);
-      return jsonResponse({ venues: selected, isEmpty: false });
+      const shaped = openFilter(data || []).map(toShape);
+      const selected = weightedShuffleTopK(shaped, (v: any) => (v.review_count ?? 0) * rankFactor(v), 20);
+      return jsonResponse({ venues: selected, isEmpty: selected.length === 0 });
     }
 
     if (tab === 'new') {
@@ -176,11 +186,11 @@ Deno.serve(async (req) => {
       }
       console.log('[feed-tabs] New: found', results.length, 'venues within', yearWindow, 'year(s)');
       const now = Date.now();
-      const shaped = results.map((v: any) => ({
+      const shaped = openFilter(results).map((v: any) => ({
         ...toShape(v),
         _recencyWeight: 1 / ((now - new Date(v.created_at).getTime()) / 86_400_000 + 1),
       }));
-      const selected = weightedShuffleTopK(shaped, (v: any) => v._recencyWeight * unknownPriceFactor(v), shaped.length);
+      const selected = weightedShuffleTopK(shaped, (v: any) => v._recencyWeight * rankFactor(v), shaped.length);
       return jsonResponse({ venues: selected, isEmpty: selected.length === 0 });
     }
 
@@ -246,9 +256,9 @@ Deno.serve(async (req) => {
       // Shuffle the whole pool, not weightedShuffleTopK — that only reorders the first
       // 2×limit rows, which here would always be the 4.9s/5.0s. Same Efraimidis-Spirakis
       // key, so an unknown-price venue under a price filter still ranks lower.
-      const selected = (data || [])
+      const selected = openFilter(data || [])
         .map(toShape)
-        .map((v: any) => ({ v, key: Math.random() ** (1 / Math.max((v.rating ?? 0) * unknownPriceFactor(v), 0.01)) }))
+        .map((v: any) => ({ v, key: Math.random() ** (1 / Math.max((v.rating ?? 0) * rankFactor(v), 0.01)) }))
         .sort((a: any, b: any) => b.key - a.key)
         .slice(0, 20)
         .map(({ v }: any) => v);

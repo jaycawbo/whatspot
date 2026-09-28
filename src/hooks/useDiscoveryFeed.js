@@ -3,6 +3,7 @@ import { recommend } from '@/services/api';
 import { useGlobalState } from '@/context/GlobalStateContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useForYouEligibility } from '@/hooks/useForYouEligibility';
+import { getLocalDayAndMinutes } from '@/lib/localTime';
 
 // Used only when the browser's geolocation hasn't resolved (or was denied) — a real
 // fallback location is required to fetch any feed at all. Toronto is the current home
@@ -161,10 +162,12 @@ async function fetchTabVenues(tab, { anchor, filters, skippedIds, excludeIds }) 
       radius_km: filters?.radius || 5,
       price_levels: filters?.priceLevels,
       cuisines: filters?.cuisines,
+      open_now: filters?.openNow || undefined,
       skipped_ids: skippedIds,
       exclude_ids: excludeIds,
       local_hour: hour,
       local_day: day,
+      local_minutes: getLocalDayAndMinutes().minutes,
     },
   });
   if (error) {
