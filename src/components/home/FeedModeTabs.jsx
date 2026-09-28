@@ -4,9 +4,10 @@ import { cn } from '@/lib/utils';
 import { useForYouEligibility } from '@/hooks/useForYouEligibility';
 
 const TABS = [
-  { key: 'walkin',  label: 'Walk-In Friendly' },
+  // walkin and trending are hidden until their logic is maintained again (see #374).
+  { key: 'walkin',  label: 'Walk-In Friendly', hidden: true },
   { key: 'new',     label: 'New'     },
-  { key: 'trending', label: 'Trending' },
+  { key: 'trending', label: 'Trending', hidden: true },
   { key: 'popular', label: 'Popular'  },
   { key: 'for_you', label: 'For You' },
 ];
