@@ -28,8 +28,8 @@ const SAMPLE_VENUE = {
   descriptors: ['cozy neighbourhood gem', 'specialty coffee', 'perfect pastries'],
 };
 
-const FEED_TABS = ['Walk-In Friendly', 'New', 'Trending', 'Popular', 'For You'];
-const ACTIVE_TAB = 'Trending';
+const FEED_TABS = ['Popular', 'New', 'Most Liked', 'For You'];
+const ACTIVE_TAB = 'Popular';
 
 function FeedPreview() {
   return (

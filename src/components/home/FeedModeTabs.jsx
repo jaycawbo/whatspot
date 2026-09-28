@@ -4,12 +4,13 @@ import { cn } from '@/lib/utils';
 import { useForYouEligibility } from '@/hooks/useForYouEligibility';
 
 const TABS = [
+  { key: 'popular',    label: 'Popular'    },
+  { key: 'new',        label: 'New'        },
+  { key: 'most_liked', label: 'Most Liked' },
+  { key: 'for_you',    label: 'For You'    },
   // walkin and trending are hidden until their logic is maintained again (see #374).
-  { key: 'walkin',  label: 'Walk-In Friendly', hidden: true },
-  { key: 'new',     label: 'New'     },
-  { key: 'trending', label: 'Trending', hidden: true },
-  { key: 'popular', label: 'Popular'  },
-  { key: 'for_you', label: 'For You' },
+  { key: 'walkin',   label: 'Walk-In Friendly', hidden: true },
+  { key: 'trending', label: 'Trending',         hidden: true },
 ];
 
 export default function FeedModeTabs({ onTabChange, tabDataMap = {} }) {
