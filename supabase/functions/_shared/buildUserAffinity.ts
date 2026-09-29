@@ -30,6 +30,18 @@ const PERSONALIZATION_WEIGHT = 0.18;
 // matters when hasAnySignal is true), so this never changes the cold-start experience.
 export const FOR_YOU_PERSONALIZATION_WEIGHT = 0.35;
 
+// Explicit preferences are scored relative to the user's own baseline like-rate (#384), so a
+// type only moves ranking when the user likes it more (or less) than venues in general. Without
+// this, generic types every venue carries (food, establishment, restaurant) topped both the like
+// and avoid maps at 1.0 and cancelled out, leaving price as the only signal.
+// PRIOR_STRENGTH pulls thin evidence toward neutral: one like of a type the user otherwise never
+// touched shouldn't swing it to the maximum.
+const PRIOR_STRENGTH = 3;
+
+// "Skip for now" is a pass, not a dislike — it counts as half a non-like when measuring what the
+// user chooses, so someone who mostly swipes right still has something to compare against.
+const SKIP_WEIGHT = 0.5;
+
 // Same $ / $$ / $$$ / $$$$ buckets calculateVenueScore's callers already use, so affinity keys
 // match venue.price_level as already threaded through the response shape (no raw-int plumbing needed).
 const PRICE_BUCKETS: Record<number, string> = { 0: '$', 1: '$', 2: '$$', 3: '$$$', 4: '$$$$' };
@@ -79,6 +91,34 @@ function normalise(map: Record<string, number>): Record<string, number> {
   const max = Math.max(...values);
   if (!max) return map;
   return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, v / max]));
+}
+
+// How much more (preferred) or less (avoided) the user likes each key than their own baseline,
+// each in 0 to 1. Baseline b = share of the user's weighted interactions that were likes. Per key,
+// the like share is smoothed toward b by PRIOR_STRENGTH, then expressed as distance from b scaled
+// to the room available, so a key the user likes/avoids at their usual rate lands at ~0.
+export function relativePreferences(
+  likes: Record<string, number>,
+  nonLikes: Record<string, number>,
+  totalLike: number,
+  totalNonLike: number,
+): { preferred: Record<string, number>; avoided: Record<string, number> } {
+  const preferred: Record<string, number> = {};
+  const avoided: Record<string, number> = {};
+  const total = totalLike + totalNonLike;
+  if (total <= 0) return { preferred, avoided };
+
+  const baseline = totalLike / total;
+  const room = Math.max(baseline, 1 - baseline);
+  for (const key of new Set([...Object.keys(likes), ...Object.keys(nonLikes)])) {
+    const l = likes[key] ?? 0;
+    const n = nonLikes[key] ?? 0;
+    const share = (l + PRIOR_STRENGTH * baseline) / (l + n + PRIOR_STRENGTH);
+    const p = (share - baseline) / room;
+    if (p > 0) preferred[key] = p;
+    else if (p < 0) avoided[key] = -p;
+  }
+  return { preferred, avoided };
 }
 
 // user_events.venue_cuisine_type is the single derived string recommend/index.ts stamps on venues
@@ -159,10 +199,12 @@ export async function buildUserAffinity(sb: any, userId: string | null): Promise
   const explicitRows = (!error && data) ? (data as any[]) : [];
   const explicitCount = explicitRows.length;
 
-  const priceAffinities: Record<string, number> = {};
-  const categoryAffinities: Record<string, number> = {};
-  const avoidCategories: Record<string, number> = {};
-  const areaAffinity: Record<string, number> = {};
+  // Recency-weighted like / non-like sums per key. Likes: interested, been here, liked, loved
+  // (loved x1.5). Non-likes: not interested and disliked at full weight, skips at SKIP_WEIGHT.
+  const likes = { category: {} as Record<string, number>, price: {} as Record<string, number>, area: {} as Record<string, number> };
+  const nonLikes = { category: {} as Record<string, number>, price: {} as Record<string, number>, area: {} as Record<string, number> };
+  let totalLike = 0;
+  let totalNonLike = 0;
 
   for (const row of explicitRows) {
     const { interaction_type, rating, created_at, venues } = row;
@@ -172,36 +214,40 @@ export async function buildUserAffinity(sb: any, userId: string | null): Promise
     const types: string[] = Array.isArray(venue_types) ? venue_types : [];
     const priceBucket = price_level != null ? PRICE_BUCKETS[price_level] : null;
 
+    let target: typeof likes;
+    let weight = recencyWeight(created_at);
     if (isPositive(interaction_type, rating)) {
-      let weight = recencyWeight(created_at);
       if (isFavourite(interaction_type, rating)) weight *= 1.5;
-
-      if (priceBucket) {
-        priceAffinities[priceBucket] = (priceAffinities[priceBucket] ?? 0) + weight;
-      }
-      for (const type of types) {
-        categoryAffinities[type] = (categoryAffinities[type] ?? 0) + weight;
-      }
-      if (neighbourhood) {
-        areaAffinity[neighbourhood] = (areaAffinity[neighbourhood] ?? 0) + weight;
-      }
-    } else if (isNegative(interaction_type, rating)) {
-      for (const type of types) {
-        avoidCategories[type] = (avoidCategories[type] ?? 0) + 1.0;
-      }
+      target = likes;
+      totalLike += weight;
+    } else if (isNegative(interaction_type, rating) || interaction_type === 'skipped') {
+      if (interaction_type === 'skipped') weight *= SKIP_WEIGHT;
+      target = nonLikes;
+      totalNonLike += weight;
+    } else {
+      continue;
     }
+
+    for (const type of types) target.category[type] = (target.category[type] ?? 0) + weight;
+    if (priceBucket) target.price[priceBucket] = (target.price[priceBucket] ?? 0) + weight;
+    if (neighbourhood) target.area[neighbourhood] = (target.area[neighbourhood] ?? 0) + weight;
   }
 
-  // Enough explicit history on its own — implicit browsing data would only add noise. Unchanged
-  // from pre-#310 behavior.
+  // Enough explicit history on its own — implicit browsing data would only add noise.
   if (explicitCount >= MIN_INTERACTIONS_FOR_PERSONALIZATION) {
+    const category = relativePreferences(likes.category, nonLikes.category, totalLike, totalNonLike);
     return {
-      priceAffinities: normalise(priceAffinities),
-      categoryAffinities: normalise(categoryAffinities),
-      avoidCategories: normalise(avoidCategories),
-      areaAffinity: normalise(areaAffinity),
+      categoryAffinities: category.preferred,
+      avoidCategories: category.avoided,
+      priceAffinities: relativePreferences(likes.price, nonLikes.price, totalLike, totalNonLike).preferred,
+      areaAffinity: relativePreferences(likes.area, nonLikes.area, totalLike, totalNonLike).preferred,
     };
   }
+
+  const categoryAffinities = likes.category;
+  const priceAffinities = likes.price;
+  const areaAffinity = likes.area;
+  const avoidCategories = nonLikes.category;
 
   // Sparse (including zero) explicit history — see if view/card_shown volume is enough to fill the
   // gap. If not, fall back exactly to pre-#310 behavior: too little of either signal → cold-start no-op.
@@ -243,18 +289,19 @@ export function personalizationMultiplier(
 
   const list = Array.isArray(types) ? types : [];
 
-  let categoryScore = 0;
-  let avoidScore = 0;
+  // Net preference per type; the venue takes its strongest one (positive or negative). Taking
+  // max-like and max-avoid separately let a venue's generic types cancel its specific ones (#384).
+  let typeScore = 0;
   for (const t of list) {
-    if (affinity.categoryAffinities[t]) categoryScore = Math.max(categoryScore, affinity.categoryAffinities[t]);
-    if (affinity.avoidCategories[t]) avoidScore = Math.max(avoidScore, affinity.avoidCategories[t]);
+    const net = (affinity.categoryAffinities[t] ?? 0) - (affinity.avoidCategories[t] ?? 0);
+    if (Math.abs(net) > Math.abs(typeScore)) typeScore = net;
   }
 
   const priceBucket = typeof priceLevel === 'number' ? PRICE_BUCKETS[priceLevel] : priceLevel;
   const priceScore = priceBucket ? (affinity.priceAffinities[priceBucket] ?? 0) : 0;
   const areaScore = neighbourhood ? (affinity.areaAffinity[neighbourhood] ?? 0) : 0;
 
-  const raw = categoryScore * 0.5 + priceScore * 0.25 + areaScore * 0.25 - avoidScore * 0.5;
+  const raw = typeScore * 0.5 + priceScore * 0.25 + areaScore * 0.25;
   const personalizationScore = Math.max(-1, Math.min(1, raw));
 
   return 1 + weight * personalizationScore;
