@@ -1,4 +1,4 @@
-WhatSpot — Shared Project Knowledge | Last updated: September 27, 2026
+WhatSpot — Shared Project Knowledge | Last updated: September 30, 2026
 Intended to be durable. Update only when foundational decisions change.
 
 Who We Are
@@ -106,6 +106,15 @@ This is deliberately stricter than the server's MIN_INTERACTIONS_FOR_PERSONALIZA
 Session counting excludes passive event types (card_shown, view, photo_advanced) — ambient exposure doesn't make a session count toward eligibility.
 Once eligible, a user stays eligible for the session (cached in memory, keyed by user id) so later mounts don't requery; a failed eligibility check resolves as "not eligible" (hide the tab, not a cold-start one).
 Depends on user_events being populated correctly for session_id and event_type — an events-logging gap silently blocks tab eligibility rather than erroring visibly.
+
+Instagram on Venue Detail (issue #397)
+Venue detail pages show an Instagram profile button and up to 3 embedded posts, using Instagram's official blockquote + embed.js pattern. Display-only: we store a handle and post permalinks, nothing else from Instagram (no captions, images, counts). No scraping, no Graph API, and Instagram content never goes to Gemini.
+Schema: venues.instagram_handle (no @, format CHECK) and venue_instagram_posts (venue_id uuid FK, permalink, shortcode, sort_order, is_active). Public read of active posts only; writes are service role (the SQL editor). Migration 20260928000000_venue_instagram.sql, applied to production Sept 29, 2026.
+On/off switch: INSTAGRAM_EMBEDS_ENABLED in src/lib/featureFlags.js (a plain constant; only the Supabase URL and key use VITE_ env vars).
+Validation lives in src/lib/social/instagram.js (normalizeHandle, parsePermalink); the frontend re-validates every DB value before rendering. embed.js loads once per session, only when the section nears the viewport; if it's blocked, plain "View on Instagram" links show instead.
+Adding data: fill in instagram-seed.csv (gitignored; template at scripts/instagram-seed-template.csv), run npm run instagram-seed -- instagram-seed.csv --out seed.sql, and paste seed.sql into the Supabase SQL editor. One row per venue, up to 3 posts across the row. Dry run by default; the script never touches the database.
+Cost: no external API cost at runtime; one small Supabase read per venue-detail open. The plan for populating existing and future venues, with cost notes, is in issue #397.
+To-do: the privacy policy (src/pages/Legal.jsx) needs a line about Meta embeds.
 
 Pending Verification
 Correction (Sept 13, 2026): Search was never actually disabled — it's live in the user-facing UI behind a "BETA" flag. The note below previously assumed it was disabled; that premise was wrong.
