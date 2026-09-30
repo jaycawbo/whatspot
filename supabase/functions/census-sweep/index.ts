@@ -1,123 +1,48 @@
 /**
- * census-sweep
+ * census-sweep — quarterly new-venue sweep (issue #382)
  *
- * Supplemental Toronto venue sweep for types the original census missed.
- * Uses the same grid and Nearby Search pattern as toronto-census.js but:
- *   - Tighter grid (0.005° vs 0.008°) to reduce corner blind spots
- *   - Targets cafe, bakery, night_club and other non-restaurant/bar types
- *   - Skips venues already in DB (ignoreDuplicates: true) — safe to re-run
- *   - Resumable via start_cell offset
+ * Finds Toronto venues WhatSpot doesn't have yet, so the "New" tab (<= 100 reviews at first
+ * sighting, first seen in the last 6 months) has something to show. Two phases per quarter:
  *
- * Usage:
- *   POST { dry_run?: boolean, target_types?: string[], batch_cells?: number, start_cell?: number }
+ *   discover (free):  Google Text Search with an IDs-only field mask ($0, unlimited) over each
+ *                     square in venue_sweep_grid, for restaurant / bar / cafe. IDs not already in
+ *                     venues are queued in venue_sweep_candidates.
+ *   fetch (paid):     Place Details (~$0.02, Enterprise fields) for queued IDs only, upserted into
+ *                     venues. Triggers flag chains (#386) and record review_count_at_ingestion.
  *
- * Hard cap: never processes more than 200 cells per call.
- * Cost: $0.032/call × batch_cells × target_types.length
- *   Default (10 cells × 10 types): 100 calls = $3.20 per run
+ * Runs in batches from pg_cron (see 20260929000000_new_venue_sweep.sql); progress lives in
+ * venue_sweep_state, so each call picks up where the last stopped and finished quarters no-op.
+ *
+ * POST { dry_run?, quarter_key?, max_cells?, max_fetch? }
+ *   dry_run:     no Google calls, no secret needed — returns grid size and the quarter's state.
+ *   quarter_key: e.g. "2026-Q4"; defaults to the current quarter.
+ * Live runs require the x-sweep-secret header to match the SWEEP_SECRET edge secret.
+ *
+ * Spend caps (api_call_log): new_venue_details 3,000/month; new_venue_ids 60,000/month (free
+ * calls, capped only to stop a runaway loop).
  */
-
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { checkAndLog } from '../_shared/apiCallLog.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-sweep-secret',
 };
 
-// ── Grid constants (tighter than original census to reduce blind spots) ────────
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-const LAT_MIN = 43.580;
-const LAT_MAX = 43.773;
-const LNG_MIN = -79.640;
-const LNG_MAX = -79.270;
-const STEP    = 0.005;
-const LAT_CAP = 43.7730; // Steeles Ave northern boundary
-const RADIUS  = 600;     // metres per cell search radius
-const MAX_RESULTS = 20;
-const MAX_CELLS = 200;
-const DEFAULT_BATCH = 10;
-const FREE_TIER_MONTHLY = 5000;
+const HALF_STEP = 0.0025;           // grid squares are 0.005° on a side, centred on each grid point
+const SWEEP_TYPES = ['restaurant', 'bar', 'cafe'];
+const MAX_PAGES = 3;                // Text Search returns up to 60 results (3 pages of 20)
+const DEFAULT_MAX_CELLS = 30;       // ~4 ID calls + cap checks per square; keeps a batch inside the edge timeout
+const DEFAULT_MAX_FETCH = 100;
+const LOCK_MINUTES = 10;
 
-// ── Default target types — everything the original restaurant/bar census missed ─
-
-const DEFAULT_TARGET_TYPES = [
-  'cafe',
-  'bakery',
-  'night_club',
-  'comedy_club',
-  'sandwich_shop',
-  'food_court',
-  'fast_food_restaurant',
-  'wine_bar',
-  'cocktail_bar',
-  'coffee_shop',
-];
-
-// ── Chain blocklist (kept in sync with recommend/index.ts) ─────────────────────
-
-const CHAIN_BLOCKLIST = [
-  "mcdonald's", "mcdonalds", "subway", "starbucks", "tim hortons", "burger king",
-  "wendy's", "wendys", "kfc", "pizza hut", "domino's", "dominoes", "taco bell",
-  "popeyes", "dairy queen", "harvey's", "harveys", "a&w", "second cup",
-  "country style", "boston pizza", "swiss chalet", "st. louis", "milestones",
-  "earls", "cactus club", "joeys", "montanas", "kelseys", "jack astors",
-  "the keg", "hero certified burgers", "mucho burrito", "chipotle", "panera",
-  "five guys", "shake shack", "nandos", "pita pit", "quiznos", "mr. sub",
-  "extreme pita", "thai express", "manchu wok", "new york fries", "orange julius",
-  "baskin robbins", "gregory's", "gregorys", "pizza pizza", "little caesars",
-  "papa johns", "mary browns", "church's chicken", "cultures",
-  "jugo juice", "booster juice", "kernels", "great canadian bagel",
-  "robin's donuts", "robins donuts", "baton rouge", "red lobster", "olive garden",
-];
-
-const FOOD_DRINK_TYPES = new Set([
-  'restaurant', 'bar', 'cafe', 'pub', 'night_club', 'brewery', 'bakery',
-  'food_court', 'coffee_shop', 'sandwich_shop', 'fast_food_restaurant',
-  'meal_takeaway', 'meal_delivery', 'wine_bar', 'cocktail_bar', 'diner', 'bistro',
-]);
-
-function isChain(name: string): boolean {
-  const lower = name.toLowerCase();
-  return CHAIN_BLOCKLIST.some((c) => lower.includes(c));
-}
-
-function isFoodDrink(types: string[] = []): boolean {
-  return types.some((t) => FOOD_DRINK_TYPES.has(t));
-}
-
-// ── Grid generation ────────────────────────────────────────────────────────────
-
-function generateGrid(): { lat: number; lng: number }[] {
-  const points: { lat: number; lng: number }[] = [];
-  for (
-    let lat = LAT_MIN;
-    lat <= LAT_MAX + 0.0001;
-    lat = Math.round((lat + STEP) * 1e6) / 1e6
-  ) {
-    for (
-      let lng = LNG_MIN;
-      lng <= LNG_MAX + 0.0001;
-      lng = Math.round((lng + STEP) * 1e6) / 1e6
-    ) {
-      points.push({ lat, lng });
-    }
-  }
-  return points;
-}
-
-// ── Nearby Search ──────────────────────────────────────────────────────────────
-
-const NEARBY_URL = 'https://places.googleapis.com/v1/places:searchNearby';
-const FIELD_MASK = [
-  'places.id',
-  'places.displayName',
-  'places.location',
-  'places.rating',
-  'places.userRatingCount',
-  'places.priceLevel',
-  'places.types',
-  'places.businessStatus',
-  'places.formattedAddress',
-].join(',');
+const TEXT_SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
+// IDs only (+ the page token) keeps discovery on the free "Text Search Essentials (IDs Only)" SKU.
+const IDS_ONLY_FIELD_MASK = 'places.id,nextPageToken';
+const DETAILS_FIELD_MASK = 'id,displayName,formattedAddress,location,rating,userRatingCount,priceLevel,types,businessStatus';
 
 const PRICE_LEVEL_MAP: Record<string, number> = {
   PRICE_LEVEL_FREE: 0,
@@ -127,194 +52,204 @@ const PRICE_LEVEL_MAP: Record<string, number> = {
   PRICE_LEVEL_VERY_EXPENSIVE: 4,
 };
 
-async function nearbySearch(
-  apiKey: string,
-  lat: number,
-  lng: number,
-  type: string,
-): Promise<any[]> {
-  const res = await fetch(NEARBY_URL, {
+function currentQuarterKey(now = new Date()): string {
+  return `${now.getUTCFullYear()}-Q${Math.floor(now.getUTCMonth() / 3) + 1}`;
+}
+
+async function searchIds(apiKey: string, lat: number, lng: number, type: string, pageToken?: string) {
+  const res = await fetch(TEXT_SEARCH_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': apiKey,
-      'X-Goog-FieldMask': FIELD_MASK,
-    },
+    headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': IDS_ONLY_FIELD_MASK },
     body: JSON.stringify({
-      includedTypes: [type],
-      maxResultCount: MAX_RESULTS,
+      textQuery: type,
+      includedType: type,
+      strictTypeFiltering: true,
+      pageSize: 20,
       locationRestriction: {
-        circle: { center: { latitude: lat, longitude: lng }, radius: RADIUS },
+        rectangle: {
+          low: { latitude: lat - HALF_STEP, longitude: lng - HALF_STEP },
+          high: { latitude: lat + HALF_STEP, longitude: lng + HALF_STEP },
+        },
       },
+      ...(pageToken ? { pageToken } : {}),
     }),
   });
-  if (!res.ok) return [];
+  if (!res.ok) {
+    console.warn(`[census-sweep] Text Search ${res.status} for ${type} at ${lat},${lng}:`, (await res.text()).slice(0, 200));
+    return { ids: [] as string[], next: undefined };
+  }
   const data = await res.json();
-  return data.places || [];
+  return {
+    ids: (data.places ?? []).map((p: any) => p.id).filter(Boolean) as string[],
+    next: data.nextPageToken as string | undefined,
+  };
+}
+
+async function fetchDetails(apiKey: string, placeId: string) {
+  const res = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
+    headers: { 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': DETAILS_FIELD_MASK },
+  });
+  if (!res.ok) return null;
+  return await res.json();
 }
 
 function toRow(place: any): Record<string, any> {
   const priceRaw = place.priceLevel;
-  const priceInt = priceRaw == null
-    ? null
-    : typeof priceRaw === 'number'
-      ? priceRaw
-      : (PRICE_LEVEL_MAP[priceRaw] ?? null);
+  const priceInt = priceRaw == null ? null : typeof priceRaw === 'number' ? priceRaw : (PRICE_LEVEL_MAP[priceRaw] ?? null);
   return {
     google_place_id: place.id,
     name:            place.displayName?.text ?? 'Unknown',
     address:         place.formattedAddress ?? '',
-    lat:             place.location?.latitude  ?? null,
+    lat:             place.location?.latitude ?? null,
     lng:             place.location?.longitude ?? null,
-    rating:          place.rating          ?? null,
-    review_count:    place.userRatingCount  ?? null,
+    rating:          place.rating ?? null,
+    review_count:    place.userRatingCount ?? null,
     price_level:     priceInt,
-    venue_types:     place.types            ?? [],
-    business_status: place.businessStatus   ?? null,
+    venue_types:     place.types ?? [],
+    business_status: place.businessStatus ?? null,
     enriched:        false,
     photos_complete: false,
     photo_urls:      [],
   };
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// ── Handler ────────────────────────────────────────────────────────────────────
-
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  let body: { dry_run?: boolean; quarter_key?: string; max_cells?: number; max_fetch?: number } = {};
+  try { body = await req.json(); } catch { /* cron sends {} */ }
+
+  const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const quarterKey = body.quarter_key ?? currentQuarterKey();
+
+  if (body.dry_run) {
+    const { count: cells } = await sb.from('venue_sweep_grid').select('*', { count: 'exact', head: true });
+    const { data: state } = await sb.from('venue_sweep_state').select('*').eq('quarter_key', quarterKey).maybeSingle();
+    return json({ dry_run: true, quarter_key: quarterKey, grid_cells: cells, state, google_calls: 0 });
   }
 
-  const apiKey     = Deno.env.get('GOOGLE_PLACES_API_KEY');
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const secret = Deno.env.get('SWEEP_SECRET');
+  if (!secret || req.headers.get('x-sweep-secret') !== secret) return json({ error: 'unauthorized' }, 401);
 
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'GOOGLE_PLACES_API_KEY not configured' }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
+  const apiKey = Deno.env.get('GOOGLE_PLACES_API_KEY');
+  if (!apiKey) return json({ error: 'GOOGLE_PLACES_API_KEY not configured' }, 500);
 
-  let body: {
-    dry_run?: boolean;
-    target_types?: string[];
-    batch_cells?: number;
-    start_cell?: number;
-  } = {};
-  try { body = await req.json(); } catch { /* no body */ }
+  // State row for this quarter, then a short lock so overlapping cron calls can't double-process.
+  await sb.from('venue_sweep_state').upsert({ quarter_key: quarterKey }, { onConflict: 'quarter_key', ignoreDuplicates: true });
+  const now = new Date();
+  const { data: claimed } = await sb.from('venue_sweep_state')
+    .update({ locked_until: new Date(now.getTime() + LOCK_MINUTES * 60_000).toISOString() })
+    .eq('quarter_key', quarterKey)
+    .or(`locked_until.is.null,locked_until.lt.${now.toISOString()}`)
+    .select()
+    .maybeSingle();
+  if (!claimed) return json({ quarter_key: quarterKey, message: 'another batch is running' });
 
-  const dryRun      = body.dry_run ?? false;
-  const targetTypes = (body.target_types && body.target_types.length > 0)
-    ? body.target_types
-    : DEFAULT_TARGET_TYPES;
-  const batchCells  = Math.min(body.batch_cells ?? DEFAULT_BATCH, MAX_CELLS);
-  const startCell   = body.start_cell ?? 0;
+  const release = (patch: Record<string, any> = {}) =>
+    sb.from('venue_sweep_state').update({ ...patch, locked_until: null }).eq('quarter_key', quarterKey);
 
-  const grid       = generateGrid();
-  const totalCells = grid.length;
-
-  // ── Dry run ──────────────────────────────────────────────────────────────
-  if (dryRun) {
-    const estimatedCalls  = batchCells * targetTypes.length;
-    const costPerRun      = (estimatedCalls * 0.032).toFixed(2);
-    const runsRemainingFree = Math.floor(FREE_TIER_MONTHLY / estimatedCalls);
-    return new Response(JSON.stringify({
-      dry_run: true,
-      total_cells: totalCells,
-      batch_cells: batchCells,
-      start_cell: startCell,
-      types_count: targetTypes.length,
-      target_types: targetTypes,
-      estimated_calls: estimatedCalls,
-      estimated_cost_usd: `$${costPerRun}`,
-      cost_per_run: `$${costPerRun}`,
-      runs_remaining_free_this_month: runsRemainingFree,
-    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  }
-
-  // ── Live run ─────────────────────────────────────────────────────────────
-  const cells = grid.slice(startCell, startCell + batchCells);
-
-  if (cells.length === 0) {
-    return new Response(JSON.stringify({
-      cells_processed: 0, venues_added: 0, api_calls_used: 0,
-      next_cell_offset: startCell, total_cells: totalCells,
-      message: 'start_cell is beyond grid end — sweep complete',
-    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  }
-
-  const sb      = createClient(supabaseUrl, supabaseKey);
-  const seen    = new Set<string>();
-  let apiCalls  = 0;
-  let venuesAdded = 0;
-
-  console.log(`[census-sweep] ${cells.length} cells × ${targetTypes.length} types, start_cell=${startCell}`);
-
-  for (let i = 0; i < cells.length; i++) {
-    const { lat, lng } = cells[i];
-    const cellRows: Record<string, any>[] = [];
-
-    for (const type of targetTypes) {
-      await sleep(200);
-      apiCalls++;
-
-      try {
-        const places = await nearbySearch(apiKey, lat, lng, type);
-
-        for (const place of places) {
-          if (!place.id)                                continue;
-          if (seen.has(place.id))                       continue;
-          if ((place.location?.latitude ?? 0) > LAT_CAP) continue;
-          if (!isFoodDrink(place.types))                continue;
-          const name = place.displayName?.text ?? '';
-          if (isChain(name))                            continue;
-
-          seen.add(place.id);
-          cellRows.push(toRow(place));
-        }
-      } catch (err: any) {
-        console.warn(`[census-sweep] API error cell ${startCell + i} [${type}]:`, err?.message);
-      }
+  try {
+    if (claimed.phase === 'done') {
+      await release();
+      return json({ quarter_key: quarterKey, message: 'sweep already complete for this quarter' });
     }
 
-    // Upsert in batches of 50 — ignoreDuplicates so existing venues are never overwritten
-    for (let b = 0; b < cellRows.length; b += 50) {
-      const batch = cellRows.slice(b, b + 50);
-      try {
-        const { error } = await sb
-          .from('venues')
-          .upsert(batch, { onConflict: 'google_place_id', ignoreDuplicates: true });
-        if (error) {
-          console.warn(`[census-sweep] Upsert error cell ${startCell + i}:`, error.message);
+    // ── Discover (free) ──────────────────────────────────────────────────────
+    if (claimed.phase === 'discover') {
+      const maxCells = Math.min(body.max_cells ?? DEFAULT_MAX_CELLS, 200);
+      const { data: cells } = await sb.from('venue_sweep_grid')
+        .select('idx, lat, lng').gte('idx', claimed.next_cell).order('idx').limit(maxCells);
+
+      if (!cells?.length) {
+        await release({ phase: 'fetch' });
+        return json({ quarter_key: quarterKey, message: 'discovery complete', candidates: claimed.candidates });
+      }
+
+      const found = new Set<string>();
+      let idCalls = 0;
+      let blocked = false;
+      for (const { lat, lng } of cells) {
+        for (const type of SWEEP_TYPES) {
+          let pageToken: string | undefined;
+          for (let page = 0; page < MAX_PAGES; page++) {
+            if (!(await checkAndLog(sb, 'new_venue_ids', `${lat},${lng}`))) { blocked = true; break; }
+            idCalls++;
+            const { ids, next } = await searchIds(apiKey, lat, lng, type, pageToken);
+            ids.forEach((id) => found.add(id));
+            if (!next) break;
+            pageToken = next;
+          }
+          if (blocked) break;
+        }
+        if (blocked) break;
+      }
+
+      // Keep only IDs we don't already have (in venues, removed or not, or already queued).
+      const ids = [...found];
+      const known = new Set<string>();
+      for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200);
+        const [{ data: v }, { data: c }] = await Promise.all([
+          sb.from('venues').select('google_place_id').in('google_place_id', chunk),
+          sb.from('venue_sweep_candidates').select('google_place_id').in('google_place_id', chunk),
+        ]);
+        (v ?? []).forEach((r: any) => known.add(r.google_place_id));
+        (c ?? []).forEach((r: any) => known.add(r.google_place_id));
+      }
+      const fresh = ids.filter((id) => !known.has(id));
+      if (fresh.length) {
+        await sb.from('venue_sweep_candidates')
+          .upsert(fresh.map((id) => ({ google_place_id: id, quarter_key: quarterKey })), { onConflict: 'google_place_id', ignoreDuplicates: true });
+      }
+
+      const lastIdx = cells[cells.length - 1].idx;
+      await release({
+        next_cell: blocked ? claimed.next_cell : lastIdx + 1,
+        ids_seen: claimed.ids_seen + ids.length,
+        candidates: claimed.candidates + fresh.length,
+      });
+      return json({ quarter_key: quarterKey, phase: 'discover', cells: cells.length, id_calls: idCalls, ids_seen: ids.length, new_candidates: fresh.length, next_cell: blocked ? claimed.next_cell : lastIdx + 1, blocked });
+    }
+
+    // ── Fetch (paid) ─────────────────────────────────────────────────────────
+    if (!claimed.fetch_approved) {
+      await release();
+      return json({ quarter_key: quarterKey, message: 'awaiting approval to fetch', candidates: claimed.candidates });
+    }
+
+    const maxFetch = Math.min(body.max_fetch ?? DEFAULT_MAX_FETCH, 300);
+    const { data: pending } = await sb.from('venue_sweep_candidates')
+      .select('google_place_id').eq('quarter_key', quarterKey).is('fetched_at', null).limit(maxFetch);
+
+    if (!pending?.length) {
+      await release({ phase: 'done', completed_at: new Date().toISOString() });
+      return json({ quarter_key: quarterKey, message: 'sweep complete', fetched: claimed.fetched });
+    }
+
+    let fetched = 0;
+    let added = 0;
+    for (const { google_place_id: id } of pending) {
+      if (!(await checkAndLog(sb, 'new_venue_details', id))) break;
+      fetched++;
+      const place = await fetchDetails(apiKey, id);
+      let outcome = 'error';
+      if (place?.id) {
+        if (place.businessStatus === 'CLOSED_PERMANENTLY') {
+          outcome = 'closed';
         } else {
-          venuesAdded += batch.length;
+          const { error } = await sb.from('venues').upsert([toRow(place)], { onConflict: 'google_place_id', ignoreDuplicates: true });
+          outcome = error ? 'insert_error' : 'added';
+          if (!error) added++;
         }
-      } catch (err: any) {
-        console.warn(`[census-sweep] Upsert exception:`, err?.message);
       }
+      await sb.from('venue_sweep_candidates').update({ fetched_at: new Date().toISOString(), outcome }).eq('google_place_id', id);
     }
 
-    console.log(
-      `[census-sweep] Cell ${startCell + i + 1}/${totalCells} ` +
-      `(${i + 1}/${cells.length} this batch) | +${cellRows.length} venues | ` +
-      `total_added: ${venuesAdded} | calls: ${apiCalls}`,
-    );
-
-    await sleep(500);
+    await release({ fetched: claimed.fetched + fetched });
+    return json({ quarter_key: quarterKey, phase: 'fetch', details_calls: fetched, venues_added: added, capped: fetched < pending.length });
+  } catch (err: any) {
+    await release();
+    console.error('[census-sweep] error:', err?.message);
+    return json({ error: err?.message ?? 'unknown error' }, 500);
   }
-
-  const nextCellOffset = startCell + cells.length;
-  const summary = {
-    cells_processed: cells.length,
-    venues_added: venuesAdded,
-    api_calls_used: apiCalls,
-    next_cell_offset: nextCellOffset,
-    total_cells: totalCells,
-  };
-  console.log('[census-sweep] Done —', summary);
-
-  return new Response(JSON.stringify(summary), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
 });

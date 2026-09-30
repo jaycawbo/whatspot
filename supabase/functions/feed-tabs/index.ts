@@ -12,6 +12,10 @@ const PRICE_CHIP_TO_INT: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '
 const FEED_FOOD_DRINK_TYPES = [...FOOD_DRINK_TYPES];
 const FEED_EXCLUDED_PRIMARY_TYPES = [...EXCLUDED_PRIMARY_TYPES];
 
+// New tab eligibility (#382): <= 100 reviews at first sighting, for 6 months.
+const NEW_MAX_REVIEWS = 100;
+const NEW_WINDOW_DAYS = 182;
+
 const WALKIN_BAR_TYPES = new Set(['bar', 'pub', 'cocktail_bar', 'wine_bar', 'brewery', 'tavern']);
 
 // hour/day are the viewing user's own local time, supplied by the client — a Deno
@@ -174,25 +178,23 @@ Deno.serve(async (req) => {
     }
 
     if (tab === 'new') {
-      let results: any[] = [];
-      let yearWindow = 0;
-      for (let years = 1; years <= 10; years++) {
-        yearWindow = years;
-        const cutoff = new Date(Date.now() - years * 365.25 * 24 * 60 * 60 * 1000).toISOString();
-        const { data: newData, error: newError } = await venuesNear({
-          maxReviewCountAtIngestion: 75,
-          createdAfter: cutoff,
-          orderByColumn: 'created_at',
-          resultLimit: 30,
-        });
-        if (newError) {
-          console.error('[feed-tabs] New query error:', newError);
-          break;
-        }
-        results = newData || [];
-        if (results.length >= 30) break;
+      // New (#382): a venue is "new" if it had <= 100 reviews when WhatSpot first saw it, for
+      // 6 months after that. review_count_at_ingestion is set on insert by a DB trigger, and the
+      // quarterly census-sweep brings in venues nobody searched for. No widening fallback: when
+      // nothing qualifies the tab hides rather than showing old venues as new.
+      const cutoff = new Date(Date.now() - NEW_WINDOW_DAYS * 86_400_000).toISOString();
+      const { data: newData, error: newError } = await venuesNear({
+        maxReviewCountAtIngestion: NEW_MAX_REVIEWS + 1, // venues_near uses "<"
+        createdAfter: cutoff,
+        orderByColumn: 'created_at',
+        resultLimit: 60,
+      });
+      if (newError) {
+        console.error('[feed-tabs] New query error:', newError);
+        return jsonResponse({ venues: [], isEmpty: true });
       }
-      console.log('[feed-tabs] New: found', results.length, 'venues within', yearWindow, 'year(s)');
+      const results = newData || [];
+      console.log('[feed-tabs] New: found', results.length, 'venues first seen in the last', NEW_WINDOW_DAYS, 'days');
       const now = Date.now();
       const shaped = openFilter(results).map((v: any) => ({
         ...toShape(v),

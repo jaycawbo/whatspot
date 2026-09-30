@@ -17,6 +17,10 @@ const DISCOVERY_FALLBACK_MONTHLY_CAP = 1500;
 // Search Google fallback, split out of discovery_fallback so feed traffic can't starve search
 // (and vice versa). Also bounded per user by the daily search quota (#319). ~$175/month worst case.
 const SEARCH_FALLBACK_MONTHLY_CAP = 5000;
+// New-venue sweep (census-sweep, #382). Details lookups are the only paid part (~$0.02 each, ~$60/month
+// max); IDs-only Text Search is free, capped only to stop a runaway loop.
+const NEW_VENUE_DETAILS_MONTHLY_CAP = 3000;
+const NEW_VENUE_IDS_MONTHLY_CAP = 60000;
 const HOURS_MONTHLY_CAP = 250000; // open_now-triggered Place Details refresh
 const LIVE_GROUNDING_MONTHLY_CAP = 200000; // Gemini grounding + place resolution
 const LLM_MONTHLY_CAP = 500000; // completeness_llm gap-fill pass
@@ -42,6 +46,8 @@ function monthlyCapFor(callType: string): number {
   if (callType === 'completeness_llm') return LLM_MONTHLY_CAP;
   if (callType === 'discovery_fallback') return DISCOVERY_FALLBACK_MONTHLY_CAP;
   if (callType === 'search_fallback') return SEARCH_FALLBACK_MONTHLY_CAP;
+  if (callType === 'new_venue_details') return NEW_VENUE_DETAILS_MONTHLY_CAP;
+  if (callType === 'new_venue_ids') return NEW_VENUE_IDS_MONTHLY_CAP;
   if (callType === 'hours') return HOURS_MONTHLY_CAP;
   if (callType === 'live_grounding') return LIVE_GROUNDING_MONTHLY_CAP;
   if (callType === 'weekly') return WEEKLY_REFRESH_MONTHLY_CAP;
