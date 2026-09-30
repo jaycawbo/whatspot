@@ -52,9 +52,38 @@ Deno.test('cold start and guests are unaffected', async () => {
 
 Deno.test('a mostly-right-swiper still gets contrast from skips', async () => {
   const rows = [
-    ...Array.from({ length: 8 }, () => row('interested', 'cafe')),
+    ...Array.from({ length: 10 }, () => row('interested', 'cafe')),
     ...Array.from({ length: 6 }, () => row('skipped', 'bar')),
   ];
   const aff = await buildUserAffinity(fakeSb(rows), 'u');
   assert(personalizationMultiplier(['cafe', ...GENERIC], 2, null, aff) > personalizationMultiplier(['bar', ...GENERIC], 2, null, aff));
+});
+
+Deno.test('under 10 deliberate interactions is cold start; skips do not count', async () => {
+  const rows = [
+    ...Array.from({ length: 9 }, () => row('interested', 'cafe')),
+    ...Array.from({ length: 20 }, () => row('skipped', 'bar')),
+  ];
+  // Sparse explicit history falls through to the implicit path; the fake client has no events.
+  const aff = await buildUserAffinity({
+    from: (table: string) => table === 'user_events'
+      ? { select: () => ({ eq: () => ({ in: () => ({ order: () => ({ limit: async () => ({ data: [], error: null }) }) }) }) }) }
+      : { select: () => ({ eq: () => ({ order: () => ({ limit: async () => ({ data: rows, error: null }) }) }) }) },
+  }, 'u');
+  assertEquals(aff, EMPTY_AFFINITY);
+});
+
+Deno.test('a specific cuisine the user loves outweighs its parent', async () => {
+  // Loves ramen, passes on sushi: "japanese" ends up negative, but a ramen shop should still rank up.
+  const typed = (interaction_type: string, types: string[], rating: string | null = null) =>
+    ({ interaction_type, rating, created_at: now, venues: { venue_types: types, price_level: 2, neighbourhood: null } });
+  const rows = [
+    ...Array.from({ length: 4 }, () => typed('rated', ['ramen_restaurant', 'japanese_restaurant', 'restaurant'], 'loved')),
+    ...Array.from({ length: 8 }, () => typed('not_interested', ['sushi_restaurant', 'japanese_restaurant', 'restaurant'])),
+    ...Array.from({ length: 6 }, () => typed('interested', ['italian_restaurant', 'restaurant', 'food'])),
+  ];
+  const aff = await buildUserAffinity(fakeSb(rows), 'u');
+  const m = (types: string[]) => personalizationMultiplier(types, 2, null, aff, FOR_YOU_PERSONALIZATION_WEIGHT);
+  assert(m(['ramen_restaurant', 'japanese_restaurant', 'restaurant']) > 1, 'ramen shop should be boosted');
+  assert(m(['sushi_restaurant', 'japanese_restaurant', 'restaurant']) < 1, 'sushi shop should be penalised');
 });
