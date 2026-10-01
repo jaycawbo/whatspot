@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/AuthContext';
 
-// Personalization needs breadth, not just volume: 10+ interactions AND activity across 2+ sessions,
-// since a single sitting can't say what someone is generally interested in. Deliberately stricter
-// than the server's MIN_INTERACTIONS_FOR_PERSONALIZATION (5), which only decides when ranking
-// starts to nudge results, not when the tab is worth showing.
+// Personalization needs breadth, not just volume: 10+ deliberate interactions AND activity across
+// 2+ sessions, since a single sitting can't say what someone is generally interested in. "Skip for
+// now" doesn't count — it's a pass, not a preference. Matches the server's
+// MIN_INTERACTIONS_FOR_PERSONALIZATION (10, also excluding skips), so the tab appears exactly when
+// ranking starts to personalize.
 export const FOR_YOU_MIN_INTERACTIONS = 10;
 export const FOR_YOU_MIN_SESSIONS = 2;
 
@@ -33,7 +34,8 @@ export function useForYouEligibility() {
     const countInteractions = supabase
       .from('user_venue_interactions')
       .select('venue_id', { count: 'exact', head: true })
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .neq('interaction_type', 'skipped');
     // A "session" is a distinct session_id (one per browser tab/visit, see lib/identity.js).
     const listSessions = supabase
       .from('user_events')
