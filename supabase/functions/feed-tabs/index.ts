@@ -115,6 +115,7 @@ Deno.serve(async (req) => {
     // box's corners (outside the true radius) eat LIMIT slots before the JS correction
     // ever ran. See issue #356.
     const venuesNear = (params: {
+      minRating?: number;
       minReviewCount?: number | null;
       requireReviewCount?: boolean;
       maxReviewCountAtIngestion?: number | null;
@@ -126,7 +127,7 @@ Deno.serve(async (req) => {
       center_lat: lat,
       center_lng: lon,
       radius_km: radiusKm,
-      min_rating: 4.0,
+      min_rating: params.minRating ?? 4.0,
       min_review_count: params.minReviewCount ?? null,
       require_review_count: params.requireReviewCount ?? false,
       max_review_count_at_ingestion: params.maxReviewCountAtIngestion ?? null,
@@ -225,6 +226,33 @@ Deno.serve(async (req) => {
       }));
       const selected = weightedShuffleTopK(shaped, (v: any) => v._trendWeight, shaped.length);
       return jsonResponse({ venues: selected, isEmpty: false });
+    }
+
+    // Most Liked (#381): rated 4.7+ on Google with 100+ reviews. The pool is deliberately
+    // large (downtown Toronto has ~285 qualifying venues within 5 km) — a small pool sorted
+    // by rating fills up with 4.9s/5.0s and never admits a 4.7. Selection is a weighted
+    // shuffle by rating, which is near-uniform across 4.7 to 5.0.
+    if (tab === 'most_liked') {
+      const { data, error } = await venuesNear({
+        minRating: 4.7,
+        minReviewCount: 100,
+        orderByColumn: 'rating_review',
+        resultLimit: 300,
+      });
+      if (error) {
+        console.error('[feed-tabs] Most liked query error:', error);
+        return jsonResponse({ venues: [], isEmpty: true });
+      }
+      // Shuffle the whole pool, not weightedShuffleTopK — that only reorders the first
+      // 2×limit rows, which here would always be the 4.9s/5.0s. Same Efraimidis-Spirakis
+      // key, so an unknown-price venue under a price filter still ranks lower.
+      const selected = (data || [])
+        .map(toShape)
+        .map((v: any) => ({ v, key: Math.random() ** (1 / Math.max((v.rating ?? 0) * unknownPriceFactor(v), 0.01)) }))
+        .sort((a: any, b: any) => b.key - a.key)
+        .slice(0, 20)
+        .map(({ v }: any) => v);
+      return jsonResponse({ venues: selected, isEmpty: selected.length === 0 });
     }
 
     if (tab === 'walkin') {

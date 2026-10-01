@@ -412,7 +412,7 @@ export function useDiscoveryFeed() {
   }, [state.userLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tab feed — fires when feedTab or filters change. Prefetches the visible DB-driven tabs
-  // (new/popular; walkin and trending are hidden for now, see #374) in parallel so
+  // (new/popular/most_liked; walkin and trending are hidden for now, see #374) in parallel so
   // FeedModeTabs can hide any tab with zero results from the bar before it's ever
   // selected, then applies the active tab's data from the resulting map. Re-prefetches
   // only when the anchor/filters actually change; switching between already-fetched
@@ -469,7 +469,7 @@ export function useDiscoveryFeed() {
       if (raw) skippedIds = JSON.parse(raw);
     } catch {}
 
-    const DB_TABS = ['new', 'popular'];
+    const DB_TABS = ['new', 'popular', 'most_liked'];
     Promise.all(
       DB_TABS.map((t) =>
         fetchTabVenues(t, { anchor, filters: state.filters, skippedIds }).then((result) => [t, result])
