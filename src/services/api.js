@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { routeVenueRequest } from '@/services/venueDataRouter';
 import { buildSearchContext } from '@/lib/buildSearchContext';
+import { getLocalDayAndMinutes } from '@/lib/localTime';
 
 function readAndClearBypass() {
   try {
@@ -77,8 +78,10 @@ export async function recommend(params) {
     writeIntentSummary(null);
   }
 
+  // Local day/time so recommend judges open-now by the user's clock, not UTC (#385).
+  const { day: local_day, minutes: local_minutes } = getLocalDayAndMinutes();
   const { data, error } = await supabase.functions.invoke('recommend', {
-    body: { ...params, query: queryToUse, intent },
+    body: { ...params, query: queryToUse, intent, local_day, local_minutes },
   });
   if (error) throw error;
   return data;
