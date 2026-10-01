@@ -5,8 +5,12 @@ import { getSuppressedVenueIds } from '../_shared/skipHistory.ts';
 import { weightedShuffleTopK } from '../_shared/weightedShuffle.ts';
 import { expandCuisineTypes } from '../_shared/cuisineTypes.ts';
 import { openStatus, resolveLocalTime } from '../_shared/openingHours.ts';
+import { FOOD_DRINK_TYPES, EXCLUDED_PRIMARY_TYPES } from '../_shared/venueTypes.ts';
 
 const PRICE_CHIP_TO_INT: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
+
+const FEED_FOOD_DRINK_TYPES = [...FOOD_DRINK_TYPES];
+const FEED_EXCLUDED_PRIMARY_TYPES = [...EXCLUDED_PRIMARY_TYPES];
 
 const WALKIN_BAR_TYPES = new Set(['bar', 'pub', 'cocktail_bar', 'wine_bar', 'brewery', 'tavern']);
 
@@ -148,6 +152,10 @@ Deno.serve(async (req) => {
       exclude_ids: excludeIds,
       order_by_column: params.orderByColumn ?? 'review_count',
       result_limit: params.resultLimit,
+      // Same feed eligibility as For You's isFeedVenue(): a food/drink type, and not a hotel,
+      // place of worship, attraction or event venue by primary type (#386).
+      food_drink_types: FEED_FOOD_DRINK_TYPES,
+      excluded_primary_types: FEED_EXCLUDED_PRIMARY_TYPES,
     });
 
     if (tab === 'popular') {
