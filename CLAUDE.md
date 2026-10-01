@@ -1,4 +1,4 @@
-WhatSpot — Shared Project Knowledge | Last updated: September 30, 2026
+WhatSpot — Shared Project Knowledge | Last updated: October 1, 2026
 Intended to be durable. Update only when foundational decisions change.
 
 Who We Are
@@ -101,11 +101,35 @@ Google OAuth branding (issue #366): verified and live in production. whatspot.co
 
 For You Tab Gating (issue #360)
 The personalized "For You" feed tab only exists for a user once they've shown enough breadth of activity, not just volume — a single sitting can't say what someone generally likes. Guests are never eligible.
-Threshold: 10+ rows in user_venue_interactions AND activity across 2+ distinct session_id values in user_events, both for that user. Logic lives in src/hooks/useForYouEligibility.js (FOR_YOU_MIN_INTERACTIONS, FOR_YOU_MIN_SESSIONS).
-This is deliberately stricter than the server's MIN_INTERACTIONS_FOR_PERSONALIZATION (5, in recommend), which only decides when ranking starts to nudge results — not when the tab itself is worth showing.
+Threshold: 10+ deliberate rows in user_venue_interactions (skips don't count) AND activity across 2+ distinct session_id values in user_events, both for that user. Logic lives in src/hooks/useForYouEligibility.js (FOR_YOU_MIN_INTERACTIONS, FOR_YOU_MIN_SESSIONS).
+The server's MIN_INTERACTIONS_FOR_PERSONALIZATION (supabase/functions/_shared/buildUserAffinity.ts) is also 10 deliberate interactions, so ranking starts personalizing exactly when the tab unlocks (issue #384).
 Session counting excludes passive event types (card_shown, view, photo_advanced) — ambient exposure doesn't make a session count toward eligibility.
 Once eligible, a user stays eligible for the session (cached in memory, keyed by user id) so later mounts don't requery; a failed eligibility check resolves as "not eligible" (hide the tab, not a cold-start one).
 Depends on user_events being populated correctly for session_id and event_type — an events-logging gap silently blocks tab eligibility rather than erroring visibly.
+
+Discovery Feed Tabs (issues #374, #380, #381, #385, #386)
+Tab bar, left to right: Popular, New, Most Liked, For You. Walk-In Friendly and Trending are hidden (hidden: true in src/components/home/FeedModeTabs.jsx) until their logic is maintained again; Walk-In never checked opening hours. Users who can't see For You land on Popular.
+Popular, New and Most Liked come from the feed-tabs edge function (venues_near RPC, database only, no Google or Gemini calls). For You comes from recommend in discovery mode.
+Popular: top 40 by review count, weighted shuffle to 20. Most Liked: rating 4.7+ and 100+ reviews, the whole qualifying pool shuffled (weightedShuffleTopK only reorders its first 2x limit rows, so it isn't used there). New: see New-Venue Sweep below.
+Every feed tab requires a food/drink type and excludes venues whose primary (first) Google type is a hotel, place of worship, museum, gym, grocery/market, university, attraction, theatre or event/wedding venue. Nightlife activities (karaoke, bowling, arcades, comedy) stay in. Rules live in supabase/functions/_shared/venueTypes.ts (isFeedVenue, FOOD_DRINK_TYPES, EXCLUDED_PRIMARY_TYPES); feed-tabs passes the same lists to venues_near.
+Filters: open now, price, cuisine, radius. The Other cuisine chip and the feed's walk-in toggle were removed. Breakfast also matches brunch_restaurant and Italian also matches pizza_restaurant (_shared/cuisineTypes.ts, mirrored in src/lib/filterOptions.js for Spots). A price filter keeps venues with no price listed, ranked at 0.7 weight, on every tab.
+Open now uses the user's local day and time sent by the client (src/lib/localTime.js), not the server's UTC clock, and handles venues that close at or after midnight and 24/7 venues (_shared/openingHours.ts, with tests). Feed tabs keep venues with no stored hours, ranked at 0.7 weight (about 70% of venues have none yet; the weekly refresh fills them in); search keeps open now strict. There is no paid hours lookup during open-now requests.
+
+Chain Flagging (issue #386)
+venues.is_chain is set by the is_chain_name() SQL function through a trigger on every insert or rename, plus a one-time backfill (3,447 venues). Chains = national/international brands plus regional franchises with 10+ locations (e.g. JOEY, Osmow's, Pizza Nova, Pizzaiolo). Local multi-location independents (e.g. Sam James, Piano Piano) are not chains. To add a brand, update the pattern in is_chain_name() with a new migration and re-run the backfill UPDATE.
+
+For You Personalization (issue #384)
+Scorer: supabase/functions/_shared/buildUserAffinity.ts (tests alongside). Preferences are scored relative to the user's own like rate, so generic types every venue carries (food, restaurant, establishment) carry no signal. Loved counts 3x, skips count 0.25 as a non-like, and only each venue's top 3 Google types are used. A specific cuisine with signal (ramen) outweighs its parent (japanese). Looks back over the last 200 interactions with recency weighting. For You applies it at weight 0.35, other discovery ranking at 0.18.
+
+New-Venue Sweep (issue #382)
+New tab rule: a venue is New if it had 100 or fewer reviews when WhatSpot first saw it, for 6 months after that. A trigger sets venues.review_count_at_ingestion on every insert; created_at is the first-seen date.
+Supply: the census-sweep edge function finds venues we don't have yet, designed to cost $0 using only Google free allowances. Discover: Text Search with an IDs-only field mask (free) over venue_sweep_grid (2,378 Toronto squares that have venues). Locate: Place Details Essentials (location, types) for each new ID, dropping non-feed venues. Fill: Text Search Enterprise over the squares with the most pending candidates, capped at 800 calls a month (the free allowance is about 1,000; the rest stays for the feed and search fallbacks).
+Schedule (pg_cron): new-venue-sweep-quarterly runs every 15 minutes on the 1st to 3rd of Jan/Apr/Jul/Oct; new-venue-fill-daily runs at 07:00 UTC. Progress lives in venue_sweep_state and venue_sweep_candidates, so runs resume and finished quarters no-op.
+Live runs require the x-sweep-secret header (edge secret SWEEP_SECRET, Vault secret sweep_secret, never in git). dry_run needs no secret and makes no Google calls.
+The first run (2026-Q4) found 4,186 missing venues; fill is expected to finish around Dec 2026 to Jan 2027.
+
+Google Places Spend Caps
+Every paid Google call goes through checkAndLog() in supabase/functions/_shared/apiCallLog.ts, which blocks a call type once it hits its monthly cap. Notable caps: discovery_fallback (For You backup search) 1,500; search_fallback 5,000; weekly 10,000; photos 3,000; new_venue_text 800; new_venue_locate 9,000. Google's free allowances are per SKU per billing account; check Google Cloud Billing > Reports grouped by SKU before adding a new paid call pattern.
 
 Instagram on Venue Detail (issue #397)
 Venue detail pages show an Instagram profile button and up to 3 embedded posts, using Instagram's official blockquote + embed.js pattern. Display-only: we store a handle and post permalinks, nothing else from Instagram (no captions, images, counts). No scraping, no Graph API, and Instagram content never goes to Gemini.
@@ -117,6 +141,8 @@ Cost: no external API cost at runtime; one small Supabase read per venue-detail 
 To-do: the privacy policy (src/pages/Legal.jsx) needs a line about Meta embeds.
 
 Pending Verification
+Feed changes from the #374 follow-ups (Sept 27 to Oct 1, 2026) were verified against live edge functions, but not yet clicked through in the running app: the tab order (Popular, New, Most Liked, For You), the filter sheet (no Other chip, no walk-in toggle), and toggling Open now.
+Data cleanup: 33,213 venues from a May 6, 2026 import have no Google ID, rating or reviews. They never show in the feed, but the sweep may add Google-backed duplicates of some.
 Correction (Sept 13, 2026): Search was never actually disabled — it's live in the user-facing UI behind a "BETA" flag. The note below previously assumed it was disabled; that premise was wrong.
 PR #298 (issue #288, dedup redundant Gemini search-refinement calls): not yet confirmed via recommend edge function logs that STEP 1 keyword refinement and STEP 1b location detection are both skipped on Places-fallback searches (only 1 Gemini call — refine-query itself — should fire per search) and that search results are still correct. Since Search is live, this can be verified directly now.
 PR #359 (issue #358, access gate): Google sign-in round trip with the gate (code > sign in > claim, and returning sign-in without a code) — verified working in production as of Sept 27, 2026. Stop-gap invite code 357246 (label jake-stopgap) is still in invite_codes and should be deleted once real codes are issued.
@@ -196,7 +222,7 @@ Discovery Mode Rules
 Discovery and search mode are strictly separated
 Discovery filters (chain blocklist, FOOD_DRINK_TYPES allowlist, geographic caps) never apply to search
 Users can always search for chains, gyms, etc. directly
-Chains = national/international only. Local multi-location independents (e.g. Sam James, Balzac's) are NOT chains
+Chains = national/international brands plus regional franchises with 10+ locations. Local multi-location independents (e.g. Sam James, Balzac's) are NOT chains. See Chain Flagging above
 Feed should never run out — ripple expansion + criteria relaxation handles exhaustion
 No loading spinners in discovery mode
 
