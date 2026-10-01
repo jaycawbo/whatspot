@@ -9,7 +9,14 @@ import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // testing-era volume.
 const PHOTOS_MONTHLY_CAP = 3000; // unrelated to search volume — quarterly cron only, see venueDataRouter.js
 const DEFAULT_MONTHLY_CAP = 500;
-const DISCOVERY_FALLBACK_MONTHLY_CAP = 500000; // broad Places Text Search, up to 60% of searches
+// Discovery feed (For You) Google fallback: one Places Text Search (Enterprise fields, ~$0.035)
+// per request, only when an area has too few venues in the DB. Was 500,000 (effectively
+// uncapped); 1,500 is ~$50/month worst case. Fallback results are saved to venues, so repeat
+// visits to the same area are served free (#394).
+const DISCOVERY_FALLBACK_MONTHLY_CAP = 1500;
+// Search Google fallback, split out of discovery_fallback so feed traffic can't starve search
+// (and vice versa). Also bounded per user by the daily search quota (#319). ~$175/month worst case.
+const SEARCH_FALLBACK_MONTHLY_CAP = 5000;
 const HOURS_MONTHLY_CAP = 250000; // open_now-triggered Place Details refresh
 const LIVE_GROUNDING_MONTHLY_CAP = 200000; // Gemini grounding + place resolution
 const LLM_MONTHLY_CAP = 500000; // completeness_llm gap-fill pass
@@ -34,6 +41,7 @@ function monthlyCapFor(callType: string): number {
   if (callType === 'photos') return PHOTOS_MONTHLY_CAP;
   if (callType === 'completeness_llm') return LLM_MONTHLY_CAP;
   if (callType === 'discovery_fallback') return DISCOVERY_FALLBACK_MONTHLY_CAP;
+  if (callType === 'search_fallback') return SEARCH_FALLBACK_MONTHLY_CAP;
   if (callType === 'hours') return HOURS_MONTHLY_CAP;
   if (callType === 'live_grounding') return LIVE_GROUNDING_MONTHLY_CAP;
   if (callType === 'weekly') return WEEKLY_REFRESH_MONTHLY_CAP;

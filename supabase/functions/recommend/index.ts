@@ -1178,11 +1178,11 @@ async function handleSearch(params: {
     }
     if (!isDiscoveryMode && !GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
 
-    // Spend guard — tracks all Google fallback calls against monthly cap
+    // Spend guard — search's Google fallback has its own monthly cap, separate from the feed's (#394)
     const { checkAndLog } = await import('../_shared/apiCallLog.ts');
     const sbGuard = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     const locationKey = `disc_${Math.round(lat * 10) / 10}_${Math.round(lon * 10) / 10}`;
-    const allowed = await checkAndLog(sbGuard, 'discovery_fallback', locationKey);
+    const allowed = await checkAndLog(sbGuard, 'search_fallback', locationKey);
     if (!allowed) {
       return { gated: true, finalVenues: [], reserveVenues: [], servedFromSupabase: false, wasGoogleFallback: false, search_summary: null, suggested_chips: [] };
     }
