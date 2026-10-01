@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "invite-codes": "node scripts/generate-invite-codes.js",
+    "instagram-seed": "node scripts/generate-instagram-seed.js",
     "census":"node --env-file=.env scripts/toronto-census.js"
   },
   "dependencies": {
