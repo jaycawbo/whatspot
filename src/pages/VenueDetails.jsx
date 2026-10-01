@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/use-toast';
 import HeartButton from '@/components/spots/HeartButton';
 import { getAnonId } from '@/lib/identity';
 import VenueImageCarousel from '@/components/venue/VenueImageCarousel';
+import InstagramSection from '@/components/venue/InstagramSection';
 import { supabase } from '@/integrations/supabase/client';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import { createPillMarker } from '@/components/map/createPillMarker';
@@ -470,6 +471,9 @@ export default function VenueDetails() {
             </div>
           )}
         </div>
+
+        {/* Instagram profile + post embeds (renders nothing if the venue has none) */}
+        <InstagramSection placeId={placeId} />
       </div>
     </div>
   );

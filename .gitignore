@@ -28,3 +28,7 @@ dist-ssr
 supabase/.temp/
 .vercel
 claude_prompt.txt
+
+# Instagram seed data (real venue data, generated SQL)
+instagram-seed.csv
+seed.sql
