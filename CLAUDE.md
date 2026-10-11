@@ -107,6 +107,15 @@ Session counting excludes passive event types (card_shown, view, photo_advanced)
 Once eligible, a user stays eligible for the session (cached in memory, keyed by user id) so later mounts don't requery; a failed eligibility check resolves as "not eligible" (hide the tab, not a cold-start one).
 Depends on user_events being populated correctly for session_id and event_type — an events-logging gap silently blocks tab eligibility rather than erroring visibly.
 
+Minimum Rating (issue #403)
+Feed and Search start at 4.5+ average Google rating (was 4.0).
+Feed tabs: feed-tabs venuesNear() defaults min_rating to 4.5 (Popular, New, Trending, Walk-In). Most Liked stays 4.7+.
+Discovery ladder (recommend DISCOVERY_CRITERIA, also used by For You): 4.5, 4.3, 4.0, 3.8, 3.5, 3.3, 3.0, 2.5, then any rating. MAX_CRITERIA_PASS in useDiscoveryFeed.js must equal DISCOVERY_CRITERIA.length (currently 8), or the final any-rating step is never reached.
+Search: Min Rating filter in the filter sheet (Any, 4.0+, 4.3+, 4.5+, 4.7+), default 4.5 (DEFAULT_MIN_RATING in src/lib/filterOptions.js). Search only; the feed ignores it and uses the ladder. searchOrchestrator applies it to DB and Places results and sends it to recommend as min_rating, which replaces admission.minRating at every relaxation level.
+Places Text Search (New) minRating: Google accepts 0.5 steps and rounds UP, so recommend rounds DOWN before sending (4.3 sends 4.0) and applies the exact value itself.
+Weekly refresh, venue-refresh-health and AdminHealthBanner are scoped to rating 4.5+. Venues at 4.0 to 4.49 are not refreshed by the cron, so one that improves to 4.5 on Google is not picked up.
+scoreVenue / recommend RATING_FLOOR (4.0) is a scoring constant, not a filter. Leave it.
+
 Instagram on Venue Detail (issue #397)
 Venue detail pages show an Instagram profile button and up to 3 embedded posts, using Instagram's official blockquote + embed.js pattern. Display-only: we store a handle and post permalinks, nothing else from Instagram (no captions, images, counts). No scraping, no Graph API, and Instagram content never goes to Gemini.
 Schema: venues.instagram_handle (no @, format CHECK) and venue_instagram_posts (venue_id uuid FK, permalink, shortcode, sort_order, is_active). Public read of active posts only; writes are service role (the SQL editor). Migration 20260928000000_venue_instagram.sql, applied to production Sept 29, 2026.

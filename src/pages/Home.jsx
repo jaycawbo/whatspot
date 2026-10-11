@@ -24,6 +24,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useVenueListMembership } from '@/hooks/useVenueListMembership';
 import { useSearchConversation } from '@/hooks/useSearchConversation';
 import { reverseGeocode } from '@/lib/reverseGeocode';
+import { DEFAULT_MIN_RATING } from '@/lib/filterOptions';
 
 const normalizeId = (v) => (v.place_id || v.google_place_id || '').replace(/^places\//, '');
 
@@ -379,6 +380,7 @@ export default function Home() {
     if (f.priceLevels?.length) count += f.priceLevels.length;
     if (f.cuisines?.length) count += f.cuisines.length;
     if (f.radius && f.radius !== 5) count++;
+    if (typeof f.minRating === 'number' && f.minRating !== DEFAULT_MIN_RATING) count++;
     return count;
   }, [state.filters]);
 
