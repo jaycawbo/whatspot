@@ -27,6 +27,8 @@ export default function FilterSheet({
   showOpenNow = false,
   showWalkInOnly = false,
   priceOptions = [],
+  ratingOptions = [],
+  defaultMinRating = 0,
   cuisineOptions = [],
   radius, // { min, max, step, label, unit, nullable }
 }) {
@@ -111,6 +113,29 @@ export default function FilterSheet({
                     className={cn(
                       'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
                       local.priceLevels.includes(value)
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'border-border text-muted-foreground hover:bg-accent'
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {ratingOptions.length > 0 && (
+            <div>
+              <span className="text-sm font-medium text-foreground">Min Rating</span>
+              <p className="text-xs text-muted-foreground">Applies to search results</p>
+              <div className="flex gap-2 mt-2">
+                {ratingOptions.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => setLocal((p) => ({ ...p, minRating: value }))}
+                    className={cn(
+                      'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+                      (local.minRating ?? defaultMinRating) === value
                         ? 'bg-primary text-primary-foreground border-primary'
                         : 'border-border text-muted-foreground hover:bg-accent'
                     )}

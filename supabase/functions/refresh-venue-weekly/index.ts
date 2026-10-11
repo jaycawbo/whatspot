@@ -19,9 +19,9 @@
  * Candidate scope (issue #341): only venues eligible to appear in the live
  * Feed tabs — New, Popular, Walk-In Friendly (feed-tabs) and For You's
  * primary admission pass (recommend's DISCOVERY_CRITERIA[0], same bar) —
- * i.e. is_chain = false AND rating >= 4.0 AND is_removed = false. Trending is
+ * i.e. is_chain = false AND rating >= 4.5 AND is_removed = false. Trending is
  * disabled, so its old requirement for broad, unscoped review_count sampling
- * no longer applies. Chains and sub-4.0-rated venues never surface in any
+ * no longer applies. Chains and sub-4.5-rated venues never surface in any
  * live tab and are refreshed lazily on-demand only if actually served via
  * Search (search-venues-db), never by this cron. This keeps the cron's
  * candidate pool at roughly ~5k venues instead of the full venues table
@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
         .select('google_place_id')
         .eq('is_removed', false)
         .eq('is_chain', false)
-        .gte('rating', 4.0)
+        .gte('rating', 4.5)
         .or(`rating_last_updated.is.null,rating_last_updated.lt.${staleThreshold}`)
         .order('rating_last_updated', { ascending: true, nullsFirst: true })
         .limit(batchSize);

@@ -8,9 +8,9 @@
  * project and logs don't get checked regularly (issue #326).
  *
  * Scope (issue #341): both counts are restricted to venues eligible for the
- * live Feed tabs (is_chain = false AND rating >= 4.0, same bar refresh-venue-
+ * live Feed tabs (is_chain = false AND rating >= 4.5, same bar refresh-venue-
  * weekly's candidate query uses), not the full venues table. The full table
- * includes tens of thousands of chains and sub-4.0-rated venues that can
+ * includes tens of thousands of chains and sub-4.5-rated venues that can
  * never appear in New, Popular, Walk-In Friendly, or For You's primary pass
  * — including them made this metric permanently near-100% stale regardless
  * of any real backlog progress.
@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
       .select('*', { count: 'exact', head: true })
       .eq('is_removed', false)
       .eq('is_chain', false)
-      .gte('rating', 4.0);
+      .gte('rating', 4.5);
     if (totalError) throw totalError;
 
     const { count: staleCount, error: staleError } = await supabase
@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
       .select('*', { count: 'exact', head: true })
       .eq('is_removed', false)
       .eq('is_chain', false)
-      .gte('rating', 4.0)
+      .gte('rating', 4.5)
       .or(`rating_last_updated.is.null,rating_last_updated.lt.${staleThreshold}`);
     if (staleError) throw staleError;
 
