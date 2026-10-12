@@ -6,7 +6,7 @@ import { buildResponsePrompt } from '@/lib/buildResponsePrompt';
 import { matchObscureAttributes } from '@/lib/obscureAttributes';
 import { DEFAULT_MIN_RATING } from '@/lib/filterOptions';
 
-const DB_THRESHOLD = 12;
+const DB_THRESHOLD = 10; // matches the feed's Google-fallback threshold (recommend getSupabaseVenues)
 
 function toPriceLevelString(level) {
   return (

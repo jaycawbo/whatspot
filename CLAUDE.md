@@ -111,6 +111,7 @@ Minimum Rating (issue #403)
 Feed and Search start at 4.5+ average Google rating (was 4.0).
 Feed tabs: feed-tabs venuesNear() defaults min_rating to 4.5 (Popular, New, Trending, Walk-In). Most Liked stays 4.7+.
 Discovery ladder (recommend DISCOVERY_CRITERIA, also used by For You): 4.5, 4.3, 4.0, 3.8, 3.5, 3.3, 3.0, 2.5, then any rating. MAX_CRITERIA_PASS in useDiscoveryFeed.js must equal DISCOVERY_CRITERIA.length (currently 8), or the final any-rating step is never reached.
+Search falls back to Places when fewer than 10 DB venues pass (DB_THRESHOLD, same as the feed).
 Search: Min Rating filter in the filter sheet (Any, 4.0+, 4.3+, 4.5+, 4.7+), default 4.5 (DEFAULT_MIN_RATING in src/lib/filterOptions.js). Search only; the feed ignores it and uses the ladder. searchOrchestrator applies it to DB and Places results and sends it to recommend as min_rating, which replaces admission.minRating at every relaxation level.
 Places Text Search (New) minRating: Google accepts 0.5 steps and rounds UP, so recommend rounds DOWN before sending (4.3 sends 4.0) and applies the exact value itself.
 Weekly refresh, venue-refresh-health and AdminHealthBanner are scoped to rating 4.5+. Venues at 4.0 to 4.49 are not refreshed by the cron, so one that improves to 4.5 on Google is not picked up.
