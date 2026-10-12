@@ -121,7 +121,7 @@ Feed Top-Up (issue #409)
 getSupabaseVenues (recommend) picks the smallest ring with 10+ venues that pass the user's price/cuisine/open-now filters AND the top ladder step (4.5+, 25+ reviews). DB only, free.
 If no ring gets there, maybeTopUpFromGoogle runs one targeted Places Text Search (cuisine in the query, priceLevels, minRating 4.5), saves new top-tier venues to venues, and the ladder runs as before. Areas with fewer than 10 feed venues of any rating still use the old Google fallback.
 Cooldown table feed_topup_areas, keyed by ~2 km cell (0.02 deg) + price/cuisine filters: no repeat within 24 h; exhausted for 90 days when Google has fewer than 10 top-tier venues or fewer than 3 new ones. shortfall_count logs every shortfall (skips included): watch it to judge whether 10 is too strict.
-Cost: ~$0.035/call, spend cap 'feed_topup' 500/month (~$18). TOPUP_INSIDE_SWEEP_GRID: set to false once the Toronto sweep reaches 80% coverage.
+Cost: ~$0.035/call, spend cap 'feed_topup' 500/month (~$18). TOPUP_INSIDE_SWEEP_GRID is false: Toronto sweep coverage measured ~95% (Oct 12, 2026), so no top-ups inside the sweep grid (43.580-43.770 N, -79.640 to -79.270); shortfalls there are still counted.
 
 Instagram on Venue Detail (issue #397)
 Venue detail pages show an Instagram profile button and up to 3 embedded posts, using Instagram's official blockquote + embed.js pattern. Display-only: we store a handle and post permalinks, nothing else from Instagram (no captions, images, counts). No scraping, no Graph API, and Instagram content never goes to Gemini.
