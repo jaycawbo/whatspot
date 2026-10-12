@@ -321,9 +321,10 @@ function mapIntPriceLevel(level: number | null | undefined): string | null {
 // already have, marks the area exhausted for 90 days, and no area repeats within 24 h. Every shortfall is counted there to monitor the threshold.
 // Cost: ~$0.035/call (Enterprise fields), capped by 'feed_topup' in apiCallLog.
 
-// Flip to false once the Toronto sweep (census-sweep, #407) reaches 80% coverage; inside its
-// grid the sweep then supplies new venues and the feed stops calling Google for top-ups.
-const TOPUP_INSIDE_SWEEP_GRID = true;
+// Off: the Toronto sweep (census-sweep, #407) measured ~95% coverage on Oct 12, 2026, so inside
+// its grid the sweep supplies new venues and the feed never calls Google for top-ups. Shortfalls
+// there are still counted in feed_topup_areas (skip reason "inside sweep grid").
+const TOPUP_INSIDE_SWEEP_GRID = false;
 const SWEEP_GRID = { latMin: 43.580, latMax: 43.770, lngMin: -79.640, lngMax: -79.270 };
 const TOPUP_AREA_DEG = 0.02;               // ~2 km cells
 const TOPUP_EXHAUSTED_DAYS = 90;
