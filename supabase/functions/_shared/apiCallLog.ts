@@ -17,6 +17,9 @@ const DISCOVERY_FALLBACK_MONTHLY_CAP = 1500;
 // Search Google fallback, split out of discovery_fallback so feed traffic can't starve search
 // (and vice versa). Also bounded per user by the daily search quota (#319). ~$175/month worst case.
 const SEARCH_FALLBACK_MONTHLY_CAP = 5000;
+// Feed top-up (#409): targeted 4.5+ Text Search when fewer than 10 top-tier venues match the
+// user's filters. ~$0.035/call, so 500 is ~$18/month worst case. Separate from discovery_fallback.
+const FEED_TOPUP_MONTHLY_CAP = 500;
 // New-venue sweep (census-sweep, #382), sized to stay inside Google's free monthly allowances:
 // IDs-only Text Search is free (capped only to stop a runaway loop); Place Details Essentials
 // ~10,000 free; Text Search Enterprise ~1,000 free, of which 800 go to the sweep and the rest
@@ -49,6 +52,7 @@ function monthlyCapFor(callType: string): number {
   if (callType === 'completeness_llm') return LLM_MONTHLY_CAP;
   if (callType === 'discovery_fallback') return DISCOVERY_FALLBACK_MONTHLY_CAP;
   if (callType === 'search_fallback') return SEARCH_FALLBACK_MONTHLY_CAP;
+  if (callType === 'feed_topup') return FEED_TOPUP_MONTHLY_CAP;
   if (callType === 'new_venue_locate') return NEW_VENUE_LOCATE_MONTHLY_CAP;
   if (callType === 'new_venue_text') return NEW_VENUE_TEXT_MONTHLY_CAP;
   if (callType === 'new_venue_ids') return NEW_VENUE_IDS_MONTHLY_CAP;
