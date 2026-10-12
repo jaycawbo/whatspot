@@ -145,7 +145,7 @@ Deno.serve(async (req) => {
       center_lat: lat,
       center_lng: lon,
       radius_km: radiusKm,
-      min_rating: params.minRating ?? 4.0,
+      min_rating: params.minRating ?? 4.5,
       min_review_count: params.minReviewCount ?? null,
       require_review_count: params.requireReviewCount ?? false,
       max_review_count_at_ingestion: params.maxReviewCountAtIngestion ?? null,

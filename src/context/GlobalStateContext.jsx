@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { DEFAULT_MIN_RATING } from '@/lib/filterOptions';
 
 const GlobalStateContext = createContext();
 
@@ -8,6 +9,7 @@ const initialFilters = {
   priceLevels: [],
   cuisines: [],
   radius: 5,
+  minRating: DEFAULT_MIN_RATING,
 };
 
 function getInitialState() {
