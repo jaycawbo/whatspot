@@ -1,0 +1,74 @@
+# Deploys Supabase edge functions (issue #405).
+# - Push to main: deploys only the functions that changed. A change under _shared/ deploys all.
+# - Manual run (Actions tab > Deploy edge functions > Run workflow): a comma-separated list, or "all".
+# Functions not declared in supabase/config.toml are skipped: the CLI would deploy them with
+# verify_jwt = true by default, which could break ones that are live with it off (e.g. webhooks).
+# Needs repo secrets SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_ID.
+name: Deploy edge functions
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/functions/**', 'supabase/config.toml']
+  workflow_dispatch:
+    inputs:
+      functions:
+        description: 'Comma-separated function names, or "all"'
+        required: true
+        default: 'all'
+
+concurrency:
+  group: deploy-edge-functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Pick functions
+        id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          INPUT: ${{ github.event.inputs.functions }}
+        run: |
+          all=$(ls supabase/functions | grep -v '^_' )
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$INPUT" = "all" ]; then wanted="$all"; else wanted=$(echo "$INPUT" | tr ',' '\n' | xargs -n1); fi
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            wanted="$all"
+          else
+            changed=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- supabase/functions | cut -d/ -f3 | sort -u)
+            if echo "$changed" | grep -qx '_shared'; then wanted="$all"; else wanted="$changed"; fi
+          fi
+          deploy=""
+          for f in $wanted; do
+            [ -d "supabase/functions/$f" ] || { echo "::warning::$f does not exist, skipped"; continue; }
+            if grep -q "^\[functions\.$f\]" supabase/config.toml; then
+              deploy="$deploy $f"
+            else
+              echo "::warning::$f is not declared in supabase/config.toml (verify_jwt unknown), skipped"
+            fi
+          done
+          echo "Deploying:${deploy:- nothing}"
+          echo "list=$deploy" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy
+        if: steps.pick.outputs.list != ''
+        run: |
+          for f in ${{ steps.pick.outputs.list }}; do
+            echo "::group::$f"
+            supabase functions deploy "$f" --project-ref "$PROJECT_ID"
+            echo "::endgroup::"
+          done
