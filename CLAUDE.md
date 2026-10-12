@@ -109,7 +109,7 @@ Depends on user_events being populated correctly for session_id and event_type â
 
 Discovery Feed Tabs (issues #374, #380, #381, #385, #386)
 Tab bar, left to right: Popular, New, Most Liked, For You. Walk-In Friendly and Trending are hidden (hidden: true in src/components/home/FeedModeTabs.jsx) until their logic is maintained again; Walk-In never checked opening hours. Users who can't see For You land on Popular.
-Popular, New and Most Liked come from the feed-tabs edge function (venues_near RPC, database only, no Google or Gemini calls). For You comes from recommend in discovery mode.
+Popular, New and Most Liked come from the feed-tabs edge function (venues_near RPC, database only, no Google or Gemini calls), all 4.5+ rated (see Minimum Rating). For You comes from recommend in discovery mode.
 Popular: top 40 by review count, weighted shuffle to 20. Most Liked: rating 4.7+ and 100+ reviews, the whole qualifying pool shuffled (weightedShuffleTopK only reorders its first 2x limit rows, so it isn't used there). New: see New-Venue Sweep below.
 Every feed tab requires a food/drink type and excludes venues whose primary (first) Google type is a hotel, place of worship, museum, gym, grocery/market, university, attraction, theatre or event/wedding venue. Nightlife activities (karaoke, bowling, arcades, comedy) stay in. Rules live in supabase/functions/_shared/venueTypes.ts (isFeedVenue, FOOD_DRINK_TYPES, EXCLUDED_PRIMARY_TYPES); feed-tabs passes the same lists to venues_near.
 Filters: open now, price, cuisine, radius. The Other cuisine chip and the feed's walk-in toggle were removed. Breakfast also matches brunch_restaurant and Italian also matches pizza_restaurant (_shared/cuisineTypes.ts, mirrored in src/lib/filterOptions.js for Spots). A price filter keeps venues with no price listed, ranked at 0.7 weight, on every tab.
@@ -124,12 +124,23 @@ Scorer: supabase/functions/_shared/buildUserAffinity.ts (tests alongside). Prefe
 New-Venue Sweep (issue #382)
 New tab rule: a venue is New if it had 100 or fewer reviews when WhatSpot first saw it, for 6 months after that. A trigger sets venues.review_count_at_ingestion on every insert; created_at is the first-seen date.
 Supply: the census-sweep edge function finds venues we don't have yet, designed to cost $0 using only Google free allowances. Discover: Text Search with an IDs-only field mask (free) over venue_sweep_grid (2,378 Toronto squares that have venues). Locate: Place Details Essentials (location, types) for each new ID, dropping non-feed venues. Fill: Text Search Enterprise over the squares with the most pending candidates, capped at 800 calls a month (the free allowance is about 1,000; the rest stays for the feed and search fallbacks).
-Schedule (pg_cron): new-venue-sweep-quarterly runs every 15 minutes on the 1st to 3rd of Jan/Apr/Jul/Oct; new-venue-fill-daily runs at 07:00 UTC. Progress lives in venue_sweep_state and venue_sweep_candidates, so runs resume and finished quarters no-op.
+Schedule (pg_cron): new-venue-sweep-monthly runs every 15 minutes on the 1st to 3rd of every month (was quarterly until issue #407); new-venue-fill-daily runs at 07:00 UTC. Runs are keyed by month ("2026-11") in the quarter_key column; the first run is "2026-Q4". Progress lives in venue_sweep_state and venue_sweep_candidates, so runs resume and finished runs no-op.
+In practice the days 1-3 cron spends the whole 800-call fill cap on day 1, so the daily drip mostly finds the cap reached.
 Live runs require the x-sweep-secret header (edge secret SWEEP_SECRET, Vault secret sweep_secret, never in git). dry_run needs no secret and makes no Google calls.
-The first run (2026-Q4) found 4,186 missing venues; fill is expected to finish around Dec 2026 to Jan 2027.
+The first run (2026-Q4) located 4,186 missing venues; 2,564 were filled on Oct 1 (800 calls, about 3.2 new venues per call) and 1,601 were pending, expected to finish when the cap resets on Nov 1. Coverage of the sweep grid measured 94.9% on Oct 12, 2026.
 
 Google Places Spend Caps
 Every paid Google call goes through checkAndLog() in supabase/functions/_shared/apiCallLog.ts, which blocks a call type once it hits its monthly cap. Notable caps: discovery_fallback (For You backup search) 1,500; search_fallback 5,000; weekly 10,000; photos 3,000; new_venue_text 800; new_venue_locate 9,000. Google's free allowances are per SKU per billing account; check Google Cloud Billing > Reports grouped by SKU before adding a new paid call pattern.
+
+Minimum Rating (issue #403)
+Feed and Search start at 4.5+ average Google rating (was 4.0).
+Feed tabs: feed-tabs venuesNear() defaults min_rating to 4.5 (Popular, New, Trending, Walk-In). Most Liked stays 4.7+.
+Discovery ladder (recommend DISCOVERY_CRITERIA, also used by For You): 4.5, 4.3, 4.0, 3.8, 3.5, 3.3, 3.0, 2.5, then any rating. MAX_CRITERIA_PASS in useDiscoveryFeed.js must equal DISCOVERY_CRITERIA.length (currently 8), or the final any-rating step is never reached.
+Search falls back to Places when fewer than 10 DB venues pass (DB_THRESHOLD, same as the feed).
+Search: Min Rating filter in the filter sheet (Any, 4.0+, 4.3+, 4.5+, 4.7+), default 4.5 (DEFAULT_MIN_RATING in src/lib/filterOptions.js). Search only; the feed ignores it and uses the ladder. searchOrchestrator applies it to DB and Places results and sends it to recommend as min_rating, which replaces admission.minRating at every relaxation level.
+Places Text Search (New) minRating: Google accepts 0.5 steps and rounds UP, so recommend rounds DOWN before sending (4.3 sends 4.0) and applies the exact value itself.
+Weekly refresh, venue-refresh-health and AdminHealthBanner are scoped to rating 4.5+. Venues at 4.0 to 4.49 are not refreshed by the cron, so one that improves to 4.5 on Google is not picked up.
+scoreVenue / recommend RATING_FLOOR (4.0) is a scoring constant, not a filter. Leave it.
 
 Instagram on Venue Detail (issue #397)
 Venue detail pages show an Instagram profile button and up to 3 embedded posts, using Instagram's official blockquote + embed.js pattern. Display-only: we store a handle and post permalinks, nothing else from Instagram (no captions, images, counts). No scraping, no Graph API, and Instagram content never goes to Gemini.

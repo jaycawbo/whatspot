@@ -35,7 +35,7 @@ const ANCHOR_OFFSETS = [
 ];
 
 const RADIUS_RINGS = [2, 4, 6, 8, 10, 12];
-const MAX_CRITERIA_PASS = 7;
+const MAX_CRITERIA_PASS = 8; // must equal recommend's DISCOVERY_CRITERIA.length
 
 /**
  * Hook that manages the discovery feed state:

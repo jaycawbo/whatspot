@@ -33,6 +33,17 @@ export function expandCuisines(cuisines) {
 
 export const PRICE_LEVEL_LABELS = ['$', '$$', '$$$', '$$$$'];
 
+// Search's Min Rating filter. 0 = Any. The feed ignores it and uses recommend's
+// DISCOVERY_CRITERIA ladder (4.5 first) so it never runs out.
+export const DEFAULT_MIN_RATING = 4.5;
+export const MIN_RATING_OPTIONS = [
+  { value: 0,   label: 'Any'  },
+  { value: 4.0, label: '4.0+' },
+  { value: 4.3, label: '4.3+' },
+  { value: 4.5, label: '4.5+' },
+  { value: 4.7, label: '4.7+' },
+];
+
 export function humanizeCategory(cat) {
   return (cat || '')
     .replace(/_/g, ' ')

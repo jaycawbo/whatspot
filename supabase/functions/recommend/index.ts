@@ -59,6 +59,8 @@ const SCORING = {
 
 // ─── Discovery mode threshold ladder ───
 const DISCOVERY_CRITERIA = [
+  { minRating: 4.5, minReviewCount: 25, scoreThreshold: 1.0 },
+  { minRating: 4.3, minReviewCount: 25, scoreThreshold: 1.0 },
   { minRating: 4.0, minReviewCount: 25, scoreThreshold: 1.0 },
   { minRating: 3.8, minReviewCount: 20, scoreThreshold: 0.9 },
   { minRating: 3.5, minReviewCount: 15, scoreThreshold: 0.8 },
@@ -243,7 +245,7 @@ async function callLLM(model: string, systemPrompt: string, userPrompt: string, 
 
 // ─── Google Places helpers (inlined) ───
 
-async function googlePlacesBroadSearch(apiKey: string, query: string, lat: number, lon: number, radiusKm: number, openNow?: boolean, priceLevels?: string[], useRestriction = false) {
+async function googlePlacesBroadSearch(apiKey: string, query: string, lat: number, lon: number, radiusKm: number, openNow?: boolean, priceLevels?: string[], useRestriction = false, minRating = 0) {
   const url = 'https://places.googleapis.com/v1/places:searchText';
   const locationConfig = useRestriction
     ? { locationRestriction: { circle: { center: { latitude: lat, longitude: lon }, radius: radiusKm * 1000 } } }
@@ -255,6 +257,10 @@ async function googlePlacesBroadSearch(apiKey: string, query: string, lat: numbe
   };
   if (openNow) reqBody.openNow = true;
   if (priceLevels && priceLevels.length > 0) reqBody.priceLevels = priceLevels;
+  // Google only accepts 0.5 steps and rounds UP (4.3 would become 4.5 and drop 4.3-4.49
+  // venues), so round DOWN here and let our own admission filter apply the exact value.
+  const googleMinRating = Math.floor(minRating * 2) / 2;
+  if (googleMinRating > 0) reqBody.minRating = googleMinRating;
 
   const resp = await fetch(url, {
     method: 'POST',
@@ -553,21 +559,21 @@ async function getGoogleVenues(params: {
     googleResults = await googlePlacesBroadSearch(
       GOOGLE_KEY,
       `${googleSearchQuery} on ${detectedStreetName}, ${location_name}`,
-      lat, lon, 3, open_now, googlePriceLevels, false,
+      lat, lon, 3, open_now, googlePriceLevels, false, admission.minRating,
     );
     console.log(`📊 Google returned ${googleResults.length} venues (on-street, locationBias 3km)`);
   } else if (isDiscoveryMode) {
     googleResults = await googlePlacesBroadSearch(
       GOOGLE_KEY,
       'restaurant OR bar OR cafe',
-      lat, lon, Math.min(admission.maxRadius, 12), open_now, googlePriceLevels,
+      lat, lon, Math.min(admission.maxRadius, 12), open_now, googlePriceLevels, false, admission.minRating,
     );
     console.log(`📊 Discovery Google fallback: ${googleResults.length} venues from Places API`);
   } else {
     googleResults = await googlePlacesBroadSearch(
       GOOGLE_KEY,
       `${googleSearchQuery} in ${googleLocationContext}`,
-      lat, lon, admission.maxRadius, open_now, googlePriceLevels,
+      lat, lon, admission.maxRadius, open_now, googlePriceLevels, false, admission.minRating,
     );
     console.log(`📊 Google returned ${googleResults.length} venues`);
   }
@@ -1913,6 +1919,7 @@ Deno.serve(async (req) => {
       refined_search_term,
       location_override,
       for_you = false,
+      min_rating,
       billable_search = false,
       local_day,
       local_minutes,
@@ -1986,7 +1993,7 @@ Deno.serve(async (req) => {
     };
     if (isDiscoveryMode) {
       // Threshold ladder for discovery — relaxes over successive passes
-      const criteriaIndex = Math.min(Math.max((criteria_pass ?? 1) - 1, 0), 6);
+      const criteriaIndex = Math.min(Math.max((criteria_pass ?? 1) - 1, 0), DISCOVERY_CRITERIA.length - 1);
       const discoveryCriteria = DISCOVERY_CRITERIA[criteriaIndex];
       admission.minRating = discoveryCriteria.minRating;
       admission.minReviewCount = discoveryCriteria.minReviewCount;
@@ -2004,6 +2011,11 @@ Deno.serve(async (req) => {
       admission.minRating = 3.5;
       admission.minScore = 0.5;
       admission.minReviewCount = 10;
+    }
+    // Search: the user's Min Rating filter (default 4.5, 0 = Any) replaces the built-in
+    // floor at every relaxation level. Relaxation widens radius, never the user's choice.
+    if (!isDiscoveryMode && typeof min_rating === 'number') {
+      admission.minRating = min_rating;
     }
 
     let refinedSearchTerm = searchTerm;

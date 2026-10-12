@@ -4,8 +4,9 @@ import { queryVenuesFromDb } from '@/services/venueDataRouter';
 import { scoreVenue } from '@/lib/scoreVenue';
 import { buildResponsePrompt } from '@/lib/buildResponsePrompt';
 import { matchObscureAttributes } from '@/lib/obscureAttributes';
+import { DEFAULT_MIN_RATING } from '@/lib/filterOptions';
 
-const DB_THRESHOLD = 12;
+const DB_THRESHOLD = 10; // matches the feed's Google-fallback threshold (recommend getSupabaseVenues)
 
 function toPriceLevelString(level) {
   return (
@@ -66,6 +67,9 @@ export async function runConversationalSearch({
   const effectiveOpenNow = intent.requireOpenNow || userFilters.openNow === true;
   // Keep intent venueTypes separate from user cuisines to avoid Supabase AND-all semantics
   const dbPriceLevel = userPriceLevels.length > 0 ? null : intent.priceLevel;
+  // Min Rating filter (0 = Any). Applied to both DB and Places results, and sent to
+  // recommend so its admission and Google's own minRating use the same bar.
+  const minRating = typeof userFilters.minRating === 'number' ? userFilters.minRating : DEFAULT_MIN_RATING;
 
   // Step 2a: DB query with pre-parsed params (skips internal refine-query round-trip)
   let venues = [];
@@ -80,7 +84,7 @@ export async function runConversationalSearch({
       lon,
       radiusKm: effectiveRadius,
     });
-    venues = (dbResponse.results ?? []).filter(v => (v.rating ?? 0) >= 4.0);
+    venues = (dbResponse.results ?? []).filter(v => (v.rating ?? 0) >= minRating);
   } catch {
     // Fall through to Places API
   }
@@ -128,6 +132,7 @@ export async function runConversationalSearch({
           radius_km: effectiveRadius,
           open_now: effectiveOpenNow || undefined,
           price_levels: placesPrice,
+          min_rating: minRating,
           exclude_ids: venues.map(v => v.place_id),
           cuisine_types: intent.cuisineTypes?.length > 0 ? intent.cuisineTypes : undefined,
           location_name: locationName || undefined,
@@ -139,7 +144,7 @@ export async function runConversationalSearch({
         },
       });
       if (data?.blocked) throw new SearchGateError(data.reason, data.nextAllowedAt);
-      const fallbackVenues = (data?.results ?? []).filter(v => (v.rating ?? 0) >= 3.8);
+      const fallbackVenues = (data?.results ?? []).filter(v => (v.rating ?? 0) >= minRating);
       // Cuisine is already embedded in the placesQuery sent to recommend, so we don't
       // re-filter by type here — the edge function's venue types don't reliably include
       // the specific cuisine type string. Only apply the explicit user price filter.
