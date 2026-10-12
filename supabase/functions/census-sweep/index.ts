@@ -3,7 +3,7 @@
  *
  * Finds Toronto venues WhatSpot doesn't have yet, so the "New" tab (<= 100 reviews at first
  * sighting, first seen in the last 6 months) has something to show. Designed to cost $0 by only
- * using Google allowances nothing else of ours consumes. Phases per quarter:
+ * using Google allowances nothing else of ours consumes. Phases per monthly run (#407; was quarterly):
  *
  *   discover  Text Search, IDs-only field mask (free, unlimited) over each venue_sweep_grid square
  *             for restaurant / bar / cafe. IDs not already in venues go to venue_sweep_candidates.
@@ -16,7 +16,7 @@
  *             rectangle around them, then are marked unreachable.
  *
  * Calls:
- *   POST {}                      quarterly cron: advance the current quarter's run one batch
+ *   POST {}                      monthly cron (days 1-3): advance the current month's run one batch
  *   POST { mode: "drip" }        daily cron: one batch of locate/fill for the oldest unfinished run
  *   POST { dry_run: true }       no Google calls, no secret: grid size + run state
  *   Optional: quarter_key, max_cells, max_locate, max_calls
@@ -68,8 +68,10 @@ const rectAround = (lat: number, lng: number, half: number): Rect => ({
   high: { latitude: lat + half, longitude: lng + half },
 });
 
-function currentQuarterKey(now = new Date()): string {
-  return `${now.getUTCFullYear()}-Q${Math.floor(now.getUTCMonth() / 3) + 1}`;
+// One run per calendar month (#407), e.g. "2026-11". Stored in the quarter_key column, which
+// predates the switch; older "2026-Q4" runs still finish through the daily drip.
+function currentRunKey(now = new Date()): string {
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 const gridKey = (lat: number, lng: number) => `${lat.toFixed(3)},${lng.toFixed(3)}`;
@@ -129,7 +131,7 @@ Deno.serve(async (req) => {
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
   if (body.dry_run) {
-    const quarterKey = body.quarter_key ?? currentQuarterKey();
+    const quarterKey = body.quarter_key ?? currentRunKey();
     const { count: cells } = await sb.from('venue_sweep_grid').select('*', { count: 'exact', head: true });
     const { data: state } = await sb.from('venue_sweep_state').select('*').eq('quarter_key', quarterKey).maybeSingle();
     return json({ dry_run: true, quarter_key: quarterKey, grid_cells: cells, state, google_calls: 0 });
@@ -141,8 +143,8 @@ Deno.serve(async (req) => {
   const apiKey = Deno.env.get('GOOGLE_PLACES_API_KEY');
   if (!apiKey) return json({ error: 'GOOGLE_PLACES_API_KEY not configured' }, 500);
 
-  // Which run to work on: drip = the oldest run still locating/filling; otherwise this quarter's.
-  let quarterKey = body.quarter_key ?? currentQuarterKey();
+  // Which run to work on: drip = the oldest run still locating/filling; otherwise this month's.
+  let quarterKey = body.quarter_key ?? currentRunKey();
   if (body.mode === 'drip' && !body.quarter_key) {
     const { data: open } = await sb.from('venue_sweep_state')
       .select('quarter_key').in('phase', ['locate', 'fill']).order('started_at').limit(1).maybeSingle();
@@ -168,7 +170,7 @@ Deno.serve(async (req) => {
   try {
     if (claimed.phase === 'done') {
       await release();
-      return json({ quarter_key: quarterKey, message: 'sweep already complete for this quarter' });
+      return json({ quarter_key: quarterKey, message: 'sweep already complete for this run' });
     }
 
     // ── Discover (free: IDs-only Text Search) ────────────────────────────────
