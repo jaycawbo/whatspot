@@ -313,7 +313,125 @@ function mapIntPriceLevel(level: number | null | undefined): string | null {
   return map[level] ?? null;
 }
 
-// ─── getSupabaseVenues — discovery feed, Supabase-first, zero Google API calls ───
+// ─── Feed top-up (#409) ───
+// When fewer than 10 venues pass the user's filters at the top ladder step, one targeted Google
+// Text Search (cuisine in the query, priceLevels, minRating) saves the missing top-tier venues
+// to `venues`, so the DB serves this area from then on. Cooldown per ~2 km area + filters in
+// feed_topup_areas: a call that finds fewer than 10 top-tier venues, or fewer than 3 we didn't
+// already have, marks the area exhausted for 90 days, and no area repeats within 24 h. Every shortfall is counted there to monitor the threshold.
+// Cost: ~$0.035/call (Enterprise fields), capped by 'feed_topup' in apiCallLog.
+
+// Off: the Toronto sweep (census-sweep, #407) measured ~95% coverage on Oct 12, 2026, so inside
+// its grid the sweep supplies new venues and the feed never calls Google for top-ups. Shortfalls
+// there are still counted in feed_topup_areas (skip reason "inside sweep grid").
+const TOPUP_INSIDE_SWEEP_GRID = false;
+const SWEEP_GRID = { latMin: 43.580, latMax: 43.770, lngMin: -79.640, lngMax: -79.270 };
+const TOPUP_AREA_DEG = 0.02;               // ~2 km cells
+const TOPUP_EXHAUSTED_DAYS = 90;
+const TOPUP_REPEAT_HOURS = 24;
+const TOPUP_MIN_NEW = 3;                  // fewer new venues than this → treat area as exhausted
+const TOPUP_PRICE_TO_GOOGLE: Record<string, string[]> = {
+  '$': ['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE'],
+  '$$': ['PRICE_LEVEL_MODERATE'],
+  '$$$': ['PRICE_LEVEL_EXPENSIVE'],
+  '$$$$': ['PRICE_LEVEL_VERY_EXPENSIVE'],
+};
+const TOPUP_PRICE_TO_INT: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
+
+async function maybeTopUpFromGoogle(params: {
+  lat: number; lon: number; radiusKm: number;
+  price_levels?: string[]; cuisine_types?: string[]; GOOGLE_KEY?: string;
+}): Promise<number> {
+  const { lat, lon, radiusKm, price_levels, cuisine_types, GOOGLE_KEY } = params;
+  const TOP = DISCOVERY_CRITERIA[0];
+  const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const cell = (n: number) => (Math.round(n / TOPUP_AREA_DEG) * TOPUP_AREA_DEG).toFixed(2);
+  const area_key = `${cell(lat)},${cell(lon)}`;
+  const filter_key = `p:${[...(price_levels ?? [])].sort().join('|')};c:${[...(cuisine_types ?? [])].sort().join('|')}`;
+  const now = new Date();
+
+  try {
+    const { data: row } = await sb.from('feed_topup_areas')
+      .select('last_called_at, exhausted_until, shortfall_count')
+      .eq('area_key', area_key).eq('filter_key', filter_key).maybeSingle();
+    await sb.from('feed_topup_areas').upsert({
+      area_key, filter_key,
+      shortfall_count: (row?.shortfall_count ?? 0) + 1,
+      last_shortfall_at: now.toISOString(),
+    }, { onConflict: 'area_key,filter_key' });
+
+    const inGrid = lat >= SWEEP_GRID.latMin && lat <= SWEEP_GRID.latMax && lon >= SWEEP_GRID.lngMin && lon <= SWEEP_GRID.lngMax;
+    let skip = '';
+    if (!GOOGLE_KEY) skip = 'no key';
+    else if (inGrid && !TOPUP_INSIDE_SWEEP_GRID) skip = 'inside sweep grid';
+    else if (row?.exhausted_until && new Date(row.exhausted_until) > now) skip = 'area exhausted';
+    else if (row?.last_called_at && now.getTime() - new Date(row.last_called_at).getTime() < TOPUP_REPEAT_HOURS * 3_600_000) skip = 'called recently';
+    if (skip) {
+      console.log(`⏭️ feed top-up skipped (${skip}) for ${area_key} ${filter_key}`);
+      return 0;
+    }
+
+    const { checkAndLog } = await import('../_shared/apiCallLog.ts');
+    if (!(await checkAndLog(sb, 'feed_topup', area_key))) return 0;
+
+    const labels = [...new Set((cuisine_types ?? []).map((t) => t.replace(/_restaurant$/, '').replace(/_/g, ' ')))].slice(0, 3);
+    const query = labels.length ? labels.map((l) => `${l} restaurant`).join(' OR ') : 'restaurant OR bar OR cafe';
+    const googlePrice = (price_levels ?? []).flatMap((p) => TOPUP_PRICE_TO_GOOGLE[p] ?? []);
+    const places = await googlePlacesBroadSearch(GOOGLE_KEY!, query, lat, lon, radiusKm, undefined, googlePrice, false, TOP.minRating);
+
+    const priceInt = (raw: any) => {
+      const mapped = priceLevelMap[raw] || null;
+      return { mapped, int: mapped ? TOPUP_PRICE_TO_INT[mapped] ?? null : null };
+    };
+    const qualifying = places.filter((p: any) => {
+      if (p.business_status === 'CLOSED_PERMANENTLY' || !isFeedVenue(p.types)) return false;
+      if ((p.rating ?? 0) < TOP.minRating || (p.user_ratings_total ?? 0) < TOP.minReviewCount) return false;
+      if (calculateDistance(lat, lon, p.lat, p.lon) > radiusKm) return false;
+      const { mapped } = priceInt(p.price_level);
+      if (price_levels?.length && mapped && !price_levels.includes(mapped)) return false;
+      if (cuisine_types?.length && !cuisine_types.some((ct) => (p.types ?? []).includes(ct))) return false;
+      return true;
+    });
+
+    // Only venues we don't already have count: a shortfall caused by the user's exclude_ids or
+    // open-now (not missing data) returns known venues, and must not re-trigger daily.
+    const ids = qualifying.map((p: any) => (p.place_id || '').replace(/^places\//, ''));
+    const { data: known } = ids.length
+      ? await sb.from('venues').select('google_place_id').in('google_place_id', ids)
+      : { data: [] as any[] };
+    const knownIds = new Set((known ?? []).map((r: any) => r.google_place_id));
+    const fresh = qualifying.filter((_: any, i: number) => !knownIds.has(ids[i]));
+
+    if (fresh.length > 0) {
+      const rows = fresh.map((p: any) => ({
+        google_place_id: (p.place_id || '').replace(/^places\//, ''),
+        name: p.name, lat: p.lat, lng: p.lon, rating: p.rating, review_count: p.user_ratings_total,
+        price_level: priceInt(p.price_level).int, venue_types: p.types || [],
+        business_status: p.business_status ?? null, address: p.address,
+        enriched: false, is_chain: false,
+      }));
+      // Awaited (not fire-and-forget) so the caller's re-read sees them. Existing rows untouched.
+      await sb.from('venues').upsert(rows, { onConflict: 'google_place_id', ignoreDuplicates: true });
+    }
+
+    await sb.from('feed_topup_areas').update({
+      last_called_at: now.toISOString(),
+      last_returned: qualifying.length,
+      // Exhausted: Google itself has fewer than 10 top-tier venues here, or almost none we lack.
+      exhausted_until: qualifying.length < 10 || fresh.length < TOPUP_MIN_NEW
+        ? new Date(now.getTime() + TOPUP_EXHAUSTED_DAYS * 86_400_000).toISOString()
+        : null,
+    }).eq('area_key', area_key).eq('filter_key', filter_key);
+
+    console.log(`🔝 feed top-up ${area_key} ${filter_key}: "${query}" → ${places.length} returned, ${qualifying.length} top-tier, ${fresh.length} new saved`);
+    return fresh.length;
+  } catch (e: any) {
+    console.warn('[maybeTopUpFromGoogle] failed silently:', e.message);
+    return 0;
+  }
+}
+
+// ─── getSupabaseVenues — discovery feed, Supabase-first; Google only via maybeTopUpFromGoogle ───
 
 async function getSupabaseVenues(params: {
   lat: number; lon: number;
@@ -336,50 +454,72 @@ async function getSupabaseVenues(params: {
   if (RIPPLE_RINGS.length === 0 || RIPPLE_RINGS[RIPPLE_RINGS.length - 1] < admission.maxRadius) {
     RIPPLE_RINGS.push(admission.maxRadius);
   }
-  const THRESHOLD = 10; // minimum raw venue pool before Google fallback fires
+  const THRESHOLD = 10; // venues needed before the DB alone is enough (#409: counted after filters, at the top step)
+  const TOP = DISCOVERY_CRITERIA[0];
 
-  // ─── Ripple ring expansion: find smallest radius with >= 22 pass-1 quality venues ───
+  // ─── User filters (price, cuisine, open now) ───
+  const applyFilters = (pool: any[]) => {
+    let out = pool;
+    if (price_levels?.length) {
+      out = out.filter((v: any) => {
+        const pl = mapIntPriceLevel(v.price_level);
+        return pl == null || price_levels.includes(pl);
+      });
+    }
+    if (cuisine_types?.length) {
+      out = out.filter((v: any) =>
+        v.venue_types?.length && cuisine_types.some((ct: string) => v.venue_types.includes(ct))
+      );
+    }
+    // Venues with no stored hours stay in, ranked lower (unknownHours in STEP 4) — ~70% of
+    // venues have no hours yet and the weekly refresh is filling them in (#385).
+    if (open_now) {
+      out = out.filter((v: any) => openStatus(v.regular_opening_hours, local_time) !== 'closed');
+    }
+    return out;
+  };
+  const topTierCount = (pool: any[]) =>
+    applyFilters(pool).filter((v: any) => (v.rating ?? 0) >= TOP.minRating && (v.review_count ?? 0) >= TOP.minReviewCount).length;
+
+  // ─── Ripple ring expansion (#409) ───
+  // Smallest ring with >= THRESHOLD venues that pass the user's filters AND the top ladder
+  // step. Rings are DB-only (free). If none gets there, the widest ring with >= THRESHOLD
+  // feed venues of any rating is used, after an optional Google top-up below.
   let rawPool: any[] = [];
   let activeRadius = 0;
+  let topTierMet = false;
+  let topCount = 0;
 
   for (const ring of RIPPLE_RINGS) {
     const raw = await getSupabaseVenuesForArea(lat, lon, ring, exclude_ids);
     const typed = raw.filter((v: any) => isFeedVenue(v.venue_types));
-    if (typed.length >= THRESHOLD) {
-      rawPool = typed;
-      activeRadius = ring;
-      break;
-    }
+    if (typed.length < THRESHOLD) continue;
+    rawPool = typed;
+    activeRadius = ring;
+    topCount = topTierCount(typed);
+    if (topCount >= THRESHOLD) { topTierMet = true; break; }
   }
 
   if (activeRadius === 0) {
-    console.warn('⚠️ getSupabaseVenues: no ring produced >= 22 quality venues — falling back to Google');
+    console.warn('⚠️ getSupabaseVenues: no ring has >= 10 feed venues of any rating — falling back to Google');
     return { filteredVenues: [], reserve_venues: [], staged_venues: [], servedFromSupabase: false, relaxation_applied: false, relaxation_level: 0 };
   }
 
-  console.log(`🗄️ getSupabaseVenues: viable at ${activeRadius}km, ${rawPool.length} typed venues`);
+  if (!topTierMet) {
+    console.log(`📉 getSupabaseVenues: top-tier shortfall, ${topCount}/${THRESHOLD} at ${activeRadius}km after filters`);
+    const added = await maybeTopUpFromGoogle({
+      lat, lon, radiusKm: activeRadius, price_levels, cuisine_types, GOOGLE_KEY: params.GOOGLE_KEY,
+    });
+    if (added > 0) {
+      rawPool = (await getSupabaseVenuesForArea(lat, lon, activeRadius, exclude_ids))
+        .filter((v: any) => isFeedVenue(v.venue_types));
+    }
+  }
+
+  console.log(`🗄️ getSupabaseVenues: viable at ${activeRadius}km, ${rawPool.length} typed venues, top tier ${topTierMet ? 'met' : 'short'}`);
 
   // ─── Apply filters ───
-  let filtered = rawPool;
-
-  if (price_levels?.length) {
-    filtered = filtered.filter((v: any) => {
-      const pl = mapIntPriceLevel(v.price_level);
-      return pl == null || price_levels.includes(pl);
-    });
-  }
-
-  if (cuisine_types?.length) {
-    filtered = filtered.filter((v: any) =>
-      v.venue_types?.length && cuisine_types.some((ct: string) => v.venue_types.includes(ct))
-    );
-  }
-
-  // Venues with no stored hours stay in, ranked lower (unknownHours in STEP 4) — ~70% of
-  // venues have no hours yet and the weekly refresh is filling them in (#385).
-  if (open_now) {
-    filtered = filtered.filter((v: any) => openStatus(v.regular_opening_hours, local_time) !== 'closed');
-  }
+  const filtered = applyFilters(rawPool);
 
   // ─── Criteria pass ladder ───
   let admittedPool: any[] = [];
