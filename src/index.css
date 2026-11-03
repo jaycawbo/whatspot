@@ -108,6 +108,30 @@ All colors MUST be HSL.
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Mobile tap responsiveness (issue #412): skip double-tap-zoom delay and the grey tap flash. */
+  a,
+  button,
+  [role="button"],
+  [role="menuitem"],
+  [role="tab"],
+  input,
+  select,
+  textarea,
+  label,
+  summary {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Hover styles stick after a tap on touch devices; only the tap target feedback matters there. */
+@media (hover: none) {
+  button:active,
+  a:active,
+  [role="button"]:active {
+    opacity: 0.7;
+  }
 }
 
 /* Centered radial highlight that breathes in place on a loading placeholder, layered on top of

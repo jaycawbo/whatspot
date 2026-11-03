@@ -45,7 +45,7 @@ export default function Header({ onLogoClick, onCloseSearch } = {}) {
       <div className="flex items-center min-w-0 flex-1 overflow-hidden">
         <button
           onClick={() => setEditingLocation(true)}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors max-w-[160px] truncate"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors max-w-[160px] truncate min-h-11 -my-2 pr-3"
         >
           <MapPin className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">{state.locationName}</span>
@@ -71,21 +71,21 @@ export default function Header({ onLogoClick, onCloseSearch } = {}) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-11 w-11"
             onClick={() => dispatch({ type: 'CLEAR_SEARCH' })}
           >
             <X className="h-4 w-4" />
           </Button>
         )}
 
-        <Link to="/Spots" aria-label="My Spots" className="flex items-center text-muted-foreground hover:text-foreground transition-colors">
+        <Link to="/Spots" aria-label="My Spots" className="flex items-center justify-center h-11 w-11 -mx-1.5 text-muted-foreground hover:text-foreground transition-colors">
           <List className="h-5 w-5" />
         </Link>
 
         {isAuthenticated ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+              <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full">
                 <Avatar className="h-7 w-7">
                   <AvatarImage src={user?.user_metadata?.avatar_url} />
                   <AvatarFallback className="text-xs bg-primary text-primary-foreground">
@@ -111,7 +111,7 @@ export default function Header({ onLogoClick, onCloseSearch } = {}) {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <Button variant="ghost" size="sm" onClick={() => { onCloseSearch?.(); setAuthModalOpen(true); }}>
+          <Button variant="ghost" size="sm" className="h-11 px-4" onClick={() => { onCloseSearch?.(); setAuthModalOpen(true); }}>
             Sign in
           </Button>
         )}
