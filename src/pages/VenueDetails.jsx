@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import L from 'leaflet';
 import { useParams, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Share2, MapPin, Star, Phone, Globe, Clock, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,8 +12,10 @@ import { getAnonId } from '@/lib/identity';
 import VenueImageCarousel from '@/components/venue/VenueImageCarousel';
 import InstagramSection from '@/components/venue/InstagramSection';
 import { supabase } from '@/integrations/supabase/client';
-import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import { createPillMarker } from '@/components/map/createPillMarker';
+import { userLocationIcon } from '@/components/map/userLocationIcon';
+import useCurrentPosition from '@/hooks/useCurrentPosition';
 import { useSpots } from '@/hooks/useSpots';
 import 'leaflet/dist/leaflet.css';
 
@@ -35,8 +38,22 @@ function formatPrice(level) {
   return '$'.repeat(n);
 }
 
+// Zoom the (non-draggable) venue map out just enough to show both venue and user.
+// Skipped when the user is far away so the venue never becomes a tiny dot.
+function FitToBounds({ points }) {
+  const map = useMap();
+  const key = points.map((p) => p.join(',')).join('|');
+  useEffect(() => {
+    const bounds = L.latLngBounds(points);
+    if (map.distance(points[0], points[1]) > 15000) return;
+    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16, animate: false });
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
 export default function VenueDetails() {
   const { placeId } = useParams();
+  const userPos = useCurrentPosition();
   const { spots } = useSpots();
   const location = useLocation();
   const navigate = useNavigate();
@@ -397,6 +414,12 @@ export default function VenueDetails() {
                 spotsIds: new Set(spots.map(s => s.google_place_id)),
                 favIds: new Set(spots.filter(s => s.labels?.includes('Favourites')).map(s => s.google_place_id)),
               })} />
+              {userPos && (
+                <>
+                  <Marker position={[userPos.lat, userPos.lon]} icon={userLocationIcon} interactive={false} />
+                  <FitToBounds points={[[lat, lon], [userPos.lat, userPos.lon]]} />
+                </>
+              )}
             </MapContainer>
           </div>
         )}
