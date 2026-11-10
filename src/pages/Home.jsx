@@ -544,8 +544,8 @@ export default function Home() {
           </div>
 
           <div
-            className={`flex-1 flex items-center justify-center px-4 overflow-hidden ${isMobile ? 'pb-20' : ''}`}
-            style={{ '--deck-height': isMobile ? 'calc(100dvh - 280px)' : 'clamp(500px, calc(100dvh - 175px), 800px)' }}
+            className={`flex-1 flex items-center justify-center px-4 overflow-hidden ${isMobile ? 'pb-20' : 'pb-6'}`}
+            style={{ '--deck-height': isMobile ? 'calc(100dvh - 280px)' : 'clamp(500px, calc(100dvh - 205px), 800px)' }}
           >
             <div className="w-full mx-auto">
               {feedLoading ? (

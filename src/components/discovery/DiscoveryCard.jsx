@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { humanizeCategory } from '@/lib/filterOptions';
+import { useIsMobile } from '@/hooks/use-mobile';
 import BeenHereButton from '@/components/ui/BeenHereButton';
 import FeedbackTrigger from '@/components/venue/FeedbackTrigger';
 
@@ -15,16 +17,24 @@ function formatPrice(level) {
 
 const CROSSFADE_INTERVAL = 8000;
 
-const PLACEHOLDER_DESCRIPTORS = [
-  ['cozy neighbourhood gem', 'creative seasonal menu', 'great for date night'],
-  ['lively atmosphere', 'craft cocktails', 'late night bites'],
-  ['hidden local favourite', 'wood-fired everything', 'natural wine focus'],
-  ['sun-drenched patio', 'farm to table', 'weekend brunch spot'],
-  ['candlelit setting', 'handmade pasta daily', 'intimate vibe'],
-  ['buzzy open kitchen', 'bold flavour profiles', 'group-friendly'],
-  ['minimalist design', 'specialty coffee', 'perfect pastries'],
-  ['eclectic decor', 'global street food', 'budget-friendly gem'],
-];
+// Google types too generic to be worth a pill
+const GENERIC_TYPES = new Set([
+  'restaurant', 'food', 'point_of_interest', 'establishment', 'store',
+  'food_store', 'service', 'meal_takeaway', 'meal_delivery',
+]);
+
+// Factual fallback tags from the venue's Google types, used when no descriptors
+// have been generated for it yet. Never invent attributes the data doesn't support.
+function typeTags(venue) {
+  const types = venue?.types?.length ? venue.types
+    : venue?._rawTypes?.length ? venue._rawTypes
+      : venue?.venue_types || [];
+  const labels = types
+    .filter((t) => !GENERIC_TYPES.has(t))
+    .map(humanizeCategory)
+    .filter(Boolean);
+  return [...new Set(labels)].slice(0, 3);
+}
 
 export default function DiscoveryCard({
   venue,
@@ -42,6 +52,7 @@ export default function DiscoveryCard({
   wiggle = false,
 }) {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const photos = venue?.image_urls?.length > 0
     ? venue.image_urls
     : venue?._photoUrls?.length > 0
@@ -65,7 +76,7 @@ export default function DiscoveryCard({
 
   const descriptors = venue?.descriptors?.length > 0
     ? venue.descriptors.slice(0, 3)
-    : PLACEHOLDER_DESCRIPTORS[index % PLACEHOLDER_DESCRIPTORS.length];
+    : typeTags(venue);
 
   const placeId = (venue?.place_id || venue?.google_place_id || '').replace(/^places\//, '');
   const neighbourhood = venue?.address?.split(',').slice(1, 2).join('').trim() || venue?.address || '';
@@ -243,9 +254,12 @@ export default function DiscoveryCard({
   return (
     <div ref={cardRef} className={cn('relative w-full h-full rounded-2xl overflow-hidden bg-card border border-border shadow-xl flex flex-col', wiggle && 'discovery-card-wiggle')}>
       {/* Photo zone */}
+      {/* Desktop: the photo absorbs whatever height the deck gives the card, so the
+          info section below sits at its natural height with no dead space under the
+          tags. Mobile keeps its fixed proportion of --deck-height. */}
       <div
-        className="relative bg-muted overflow-hidden"
-        style={{ height: 'clamp(200px, calc(var(--deck-height, 78dvh) * 0.65), 520px)' }}
+        className={cn('relative bg-muted overflow-hidden', !isMobile && 'flex-1 min-h-[200px]')}
+        style={isMobile ? { height: 'clamp(200px, calc(var(--deck-height, 78dvh) * 0.65), 520px)' } : undefined}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
@@ -362,7 +376,7 @@ export default function DiscoveryCard({
 
       {/* Venue info area — tappable to open details */}
       <div
-        className="px-4 py-3 flex-1 cursor-pointer active:bg-accent/50 transition-colors"
+        className={cn('px-4 py-3 cursor-pointer active:bg-accent/50 transition-colors', isMobile ? 'flex-1' : 'shrink-0')}
         onClick={handleBodyTap}
       >
         <h2 className="text-lg font-bold text-foreground truncate">{(venue?.name || '').split('|')[0].trim()}</h2>
