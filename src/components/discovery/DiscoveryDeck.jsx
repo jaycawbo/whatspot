@@ -750,14 +750,9 @@ export default function DiscoveryDeck({ venues: initialVenues = [], overflowVenu
       className="flex flex-col w-full mx-auto max-w-[calc(100vw-2rem)] sm:max-w-[560px] lg:max-w-[660px]"
       style={{
         height: 'var(--deck-height, 78vh)',
-        // DiscoveryCard's own photo zone caps at 520px (see its clamp() height), but
-        // --deck-height (Home.jsx) can grow past that on tall desktop viewports since
-        // it isn't aware of that cap. Without a ceiling here, the card's h-full root
-        // outgrows its actual content and the leftover space collects below the info
-        // section (which fills it via flex-1), pushing the Skip button down with a
-        // large gap. 520 (max photo height) + ~145 (name/rating/tags content) + ~50
-        // (Skip button row + margin) — capped only on desktop; mobile's deck-height
-        // formula doesn't exhibit this and isn't touched.
+        // Desktop ceiling so the card doesn't keep growing on very tall viewports.
+        // DiscoveryCard's photo fills whatever height is left after the info section,
+        // so there's no dead space below the tags at any height up to this cap.
         maxHeight: isMobile ? undefined : '715px',
       }}
     >
