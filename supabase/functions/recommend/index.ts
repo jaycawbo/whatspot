@@ -2321,11 +2321,16 @@ Deno.serve(async (req) => {
           }))
           .filter((r: any) => r.descriptors.length > 0);
 
-        if (writeRows.length > 0) {
+        // Update, not upsert: an upsert with only these two columns fails the
+        // venues.name NOT NULL check, so nothing was ever cached. Venues not yet
+        // in the table (live Places results) simply match no row.
+        for (const r of writeRows) {
           sbDesc.from('venues')
-            .upsert(writeRows, { onConflict: 'google_place_id' })
-            .then(() => {})
-            .catch(() => {});
+            .update({ descriptors: r.descriptors })
+            .eq('google_place_id', r.google_place_id)
+            .then(({ error }: any) => {
+              if (error) console.warn(`⚠️ Descriptor write-back failed for ${r.google_place_id}: ${error.message}`);
+            });
         }
       }
 
